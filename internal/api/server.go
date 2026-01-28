@@ -127,15 +127,6 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// Placeholder handlers (implemented in next tasks)
-func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request)   {}
-func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request)    {}
-func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request)      {}
-func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request)   {}
-func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request)   {}
-func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request)  {}
-func (s *Server) handlePauseJob(w http.ResponseWriter, r *http.Request)    {}
-func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request)   {}
-func (s *Server) handleReorderJobs(w http.ResponseWriter, r *http.Request) {}
-func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request)   {}
+// Placeholder config handlers (implemented in config.go)
+func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request)    {}
 func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {}
