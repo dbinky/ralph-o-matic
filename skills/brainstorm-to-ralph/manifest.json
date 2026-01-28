@@ -1,0 +1,17 @@
+{
+  "name": "brainstorm-to-ralph",
+  "version": "1.0.0",
+  "description": "End-to-end orchestration from idea to ralph loop submission",
+  "author": "ryan",
+  "commands": [
+    {
+      "name": "brainstorm-to-ralph",
+      "description": "Start brainstorming an idea and ship it to ralph-o-matic for execution",
+      "usage": "/brainstorm-to-ralph \"<idea description>\" [--max-iterations N] [--priority high|normal|low] [--open-ended]"
+    }
+  ],
+  "dependencies": {
+    "plugins": ["superpowers", "ralph-wiggum"],
+    "tools": ["ralph-o-matic", "bd", "git", "gh"]
+  }
+}
