@@ -127,6 +127,3 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// Placeholder config handlers (implemented in config.go)
-func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request)    {}
-func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {}
