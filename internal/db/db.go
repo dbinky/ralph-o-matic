@@ -29,6 +29,12 @@ func New(path string) (*DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
+	// For in-memory databases, we need to use a single connection
+	// to ensure all queries see the same database state
+	if path == ":memory:" {
+		conn.SetMaxOpenConns(1)
+	}
+
 	// Test connection
 	if err := conn.Ping(); err != nil {
 		conn.Close()
