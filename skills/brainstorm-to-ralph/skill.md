@@ -77,3 +77,67 @@ Each phase document must follow the writing-plans format:
 - Proceed to Phase 3
 
 ---
+
+## Phase 3: Beads Setup (AUTOMATIC)
+
+**Announce:** "Setting up task tracking with Beads..."
+
+Initialize Beads if needed and create the task structure:
+
+### Step 1: Initialize Beads
+
+```bash
+# Check if Beads is initialized
+if [ ! -d ".beads" ]; then
+    bd init
+fi
+```
+
+### Step 2: Create Phase Tasks
+
+For each phase document, create a parent task:
+
+```bash
+# Example for 3 phases
+bd add "Phase 1: Database Schema" --id PHASE-1
+bd add "Phase 2: API Endpoints" --id PHASE-2 --blocked-by PHASE-1
+bd add "Phase 3: Frontend Integration" --id PHASE-3 --blocked-by PHASE-2
+```
+
+### Step 3: Create Sub-Tasks
+
+Parse each phase document and create sub-tasks for each "Task N:" section:
+
+```bash
+# Example sub-tasks for Phase 1
+bd add "Create users table" --id PHASE-1-1 --parent PHASE-1
+bd add "Create sessions table" --id PHASE-1-2 --parent PHASE-1 --blocked-by PHASE-1-1
+bd add "Add indexes" --id PHASE-1-3 --parent PHASE-1 --blocked-by PHASE-1-1,PHASE-1-2
+```
+
+### Step 4: Verify Structure
+
+```bash
+bd list --tree
+```
+
+Should show:
+```
+Phase 1: Database Schema [PHASE-1]
+├── Create users table [PHASE-1-1] ○
+├── Create sessions table [PHASE-1-2] ○ (blocked by PHASE-1-1)
+└── Add indexes [PHASE-1-3] ○ (blocked by PHASE-1-1, PHASE-1-2)
+
+Phase 2: API Endpoints [PHASE-2] (blocked by PHASE-1)
+├── POST /auth/register [PHASE-2-1] ○
+├── POST /auth/login [PHASE-2-2] ○
+└── POST /auth/logout [PHASE-2-3] ○
+...
+```
+
+**On completion:**
+- Commit `.beads/` directory
+- Announce: "Task tracking ready. {N} tasks created. Starting parallel execution..."
+- Proceed to Phase 4
+
+---
