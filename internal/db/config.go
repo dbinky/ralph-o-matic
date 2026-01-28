@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -46,9 +47,24 @@ func (r *ConfigRepo) Get() (*models.ServerConfig, error) {
 
 // Save persists the entire config
 func (r *ConfigRepo) Save(cfg *models.ServerConfig) error {
+	// Serialize structured fields as JSON
+	largeModelJSON, err := json.Marshal(cfg.LargeModel)
+	if err != nil {
+		return fmt.Errorf("failed to marshal large_model: %w", err)
+	}
+	smallModelJSON, err := json.Marshal(cfg.SmallModel)
+	if err != nil {
+		return fmt.Errorf("failed to marshal small_model: %w", err)
+	}
+	ollamaJSON, err := json.Marshal(cfg.Ollama)
+	if err != nil {
+		return fmt.Errorf("failed to marshal ollama: %w", err)
+	}
+
 	values := map[string]string{
-		"large_model":            cfg.LargeModel,
-		"small_model":            cfg.SmallModel,
+		"large_model":            string(largeModelJSON),
+		"small_model":            string(smallModelJSON),
+		"ollama":                 string(ollamaJSON),
 		"default_max_iterations": strconv.Itoa(cfg.DefaultMaxIterations),
 		"concurrent_jobs":        strconv.Itoa(cfg.ConcurrentJobs),
 		"workspace_dir":          cfg.WorkspaceDir,
@@ -108,9 +124,27 @@ func (r *ConfigRepo) GetKey(key string) (string, error) {
 func applyConfigValue(cfg *models.ServerConfig, key, value string) error {
 	switch key {
 	case "large_model":
-		cfg.LargeModel = value
+		var mp models.ModelPlacement
+		if err := json.Unmarshal([]byte(value), &mp); err != nil {
+			// Backwards compatibility: treat as plain model name
+			cfg.LargeModel.Name = value
+			return nil
+		}
+		cfg.LargeModel = mp
 	case "small_model":
-		cfg.SmallModel = value
+		var mp models.ModelPlacement
+		if err := json.Unmarshal([]byte(value), &mp); err != nil {
+			// Backwards compatibility: treat as plain model name
+			cfg.SmallModel.Name = value
+			return nil
+		}
+		cfg.SmallModel = mp
+	case "ollama":
+		var oc models.OllamaConfig
+		if err := json.Unmarshal([]byte(value), &oc); err != nil {
+			return err
+		}
+		cfg.Ollama = oc
 	case "default_max_iterations":
 		v, err := strconv.Atoi(value)
 		if err != nil {

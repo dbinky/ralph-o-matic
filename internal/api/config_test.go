@@ -26,15 +26,17 @@ func TestAPI_GetConfig(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	// Should return defaults
-	assert.Equal(t, "qwen3-coder:70b", resp.LargeModel)
+	assert.Equal(t, "qwen3-coder:70b", resp.LargeModel.Name)
+	assert.Equal(t, "cpu", resp.LargeModel.Device)
+	assert.Equal(t, "http://localhost:11434", resp.Ollama.Host)
 }
 
 func TestAPI_UpdateConfig(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	payload := map[string]interface{}{
-		"large_model":     "custom-model:latest",
-		"concurrent_jobs": 3,
+	payload := models.ServerConfig{
+		LargeModel:     models.ModelPlacement{Name: "custom-model:latest"},
+		ConcurrentJobs: 3,
 	}
 
 	body, _ := json.Marshal(payload)
@@ -49,6 +51,7 @@ func TestAPI_UpdateConfig(t *testing.T) {
 	var resp models.ServerConfig
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
-	assert.Equal(t, "custom-model:latest", resp.LargeModel)
+	assert.Equal(t, "custom-model:latest", resp.LargeModel.Name)
+	assert.Equal(t, "cpu", resp.LargeModel.Device) // Preserved from default
 	assert.Equal(t, 3, resp.ConcurrentJobs)
 }
