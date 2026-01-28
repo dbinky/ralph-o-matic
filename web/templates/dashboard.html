@@ -1,0 +1,169 @@
+{{define "title"}}Dashboard - Ralph-o-matic{{end}}
+
+{{define "content"}}
+<!-- Running Jobs -->
+{{if .Running}}
+<div class="section">
+    <div class="section-header">
+        <span class="section-title">Running</span>
+    </div>
+    {{range .Running}}
+    <div class="job-card running" data-job-id="{{.ID}}">
+        <div class="job-header">
+            <div>
+                <span class="job-id">#{{.ID}}</span>
+                <span class="job-branch">{{.Branch}}</span>
+            </div>
+            <span>iter {{.Iteration}}/{{.MaxIterations}}</span>
+        </div>
+        <div class="job-progress">
+            <div class="job-progress-bar" style="width: {{printf "%.0f" (multiply .Progress 100)}}%"></div>
+        </div>
+        <div class="job-meta">
+            <span>{{.Prompt | truncate 50}}</span>
+            <span>Running {{.Duration | duration}}</span>
+        </div>
+        <div class="job-actions">
+            <button class="btn btn-secondary" onclick="pauseJob({{.ID}})">Pause</button>
+            <button class="btn btn-danger" onclick="cancelJob({{.ID}})">Cancel</button>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+<!-- Paused Jobs -->
+{{if .Paused}}
+<div class="section">
+    <div class="section-header">
+        <span class="section-title">Paused</span>
+    </div>
+    {{range .Paused}}
+    <div class="job-card paused" data-job-id="{{.ID}}">
+        <div class="job-header">
+            <div>
+                <span class="drag-handle">≡</span>
+                <span class="job-id">#{{.ID}}</span>
+                <span class="job-branch">{{.Branch}}</span>
+            </div>
+            <span>iter {{.Iteration}}/{{.MaxIterations}}</span>
+        </div>
+        <div class="job-meta">
+            <span>Paused {{.PausedAt | timeago}}</span>
+        </div>
+        <div class="job-actions">
+            <button class="btn btn-primary" onclick="resumeJob({{.ID}})">Resume</button>
+            <button class="btn btn-danger" onclick="cancelJob({{.ID}})">Cancel</button>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+<!-- Queued Jobs -->
+<div class="section">
+    <div class="section-header">
+        <span class="section-title">Queued</span>
+        <span class="badge">{{len .Queued}}</span>
+    </div>
+    <div id="queued-jobs">
+        {{range .Queued}}
+        <div class="job-card queued" data-job-id="{{.ID}}">
+            <div class="job-header">
+                <div>
+                    <span class="drag-handle">≡</span>
+                    <span class="job-id">#{{.ID}}</span>
+                    <span class="job-branch">{{.Branch}}</span>
+                </div>
+                <span class="priority-{{.Priority}}">{{.Priority}}</span>
+            </div>
+            <div class="job-meta">
+                <span>0/{{.MaxIterations}}</span>
+            </div>
+            <div class="job-actions">
+                <button class="btn btn-danger" onclick="cancelJob({{.ID}})">Cancel</button>
+            </div>
+        </div>
+        {{else}}
+        <p style="color: #666; text-align: center; padding: 20px;">No jobs in queue</p>
+        {{end}}
+    </div>
+</div>
+
+<!-- Completed Today -->
+{{if .Completed}}
+<div class="section">
+    <div class="section-header">
+        <span class="section-title">Completed Today</span>
+    </div>
+    {{range .Completed}}
+    <div class="job-card {{if eq .Status "completed"}}completed{{else}}failed{{end}}" data-job-id="{{.ID}}">
+        <div class="job-header">
+            <div>
+                <span class="job-id">#{{.ID}}</span>
+                <span class="job-branch">{{.Branch}}</span>
+            </div>
+            <div>
+                {{if eq .Status "completed"}}&#10003; PASSED{{else}}&#10007; FAILED{{end}}
+                <span>{{.Iteration}} iters</span>
+            </div>
+        </div>
+        {{if .PRURL}}
+        <div class="job-meta">
+            <a href="{{.PRURL}}" target="_blank" style="color: #60a5fa;">View PR</a>
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+</div>
+{{end}}
+{{end}}
+
+{{define "scripts"}}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<script>
+    // Initialize sortable for queued jobs
+    new Sortable(document.getElementById('queued-jobs'), {
+        animation: 150,
+        handle: '.drag-handle',
+        ghostClass: 'sortable-ghost',
+        onEnd: function(evt) {
+            const jobCards = document.querySelectorAll('#queued-jobs .job-card');
+            const jobIds = Array.from(jobCards).map(card => parseInt(card.dataset.jobId));
+            reorderJobs(jobIds);
+        }
+    });
+
+    async function pauseJob(id) {
+        await fetch(`/api/jobs/${id}/pause`, { method: 'POST' });
+        location.reload();
+    }
+
+    async function resumeJob(id) {
+        await fetch(`/api/jobs/${id}/resume`, { method: 'POST' });
+        location.reload();
+    }
+
+    async function cancelJob(id) {
+        if (confirm('Cancel this job?')) {
+            await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
+            location.reload();
+        }
+    }
+
+    async function reorderJobs(jobIds) {
+        await fetch('/api/jobs/order', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_ids: jobIds })
+        });
+    }
+
+    // SSE for live updates
+    const evtSource = new EventSource('/api/events');
+    evtSource.onmessage = function(event) {
+        // Simple refresh on any update
+        location.reload();
+    };
+</script>
+{{end}}

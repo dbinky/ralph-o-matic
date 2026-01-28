@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{block "title" .}}Ralph-o-matic{{end}}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 1px solid #333;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 1.5rem;
+            color: #fff;
+        }
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+        .nav-links a {
+            color: #888;
+            text-decoration: none;
+        }
+        .nav-links a:hover {
+            color: #fff;
+        }
+        .badge {
+            background: #333;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.875rem;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .section-title {
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            color: #888;
+        }
+        .job-card {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-left: 4px solid #333;
+        }
+        .job-card.running { border-left-color: #4ade80; }
+        .job-card.paused { border-left-color: #fbbf24; }
+        .job-card.queued { border-left-color: #60a5fa; }
+        .job-card.completed { border-left-color: #22c55e; }
+        .job-card.failed { border-left-color: #ef4444; }
+        .job-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .job-id {
+            color: #888;
+            font-size: 0.875rem;
+        }
+        .job-branch {
+            font-weight: 600;
+        }
+        .job-progress {
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .job-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4ade80, #22c55e);
+            transition: width 0.3s ease;
+        }
+        .job-meta {
+            display: flex;
+            gap: 20px;
+            font-size: 0.875rem;
+            color: #888;
+        }
+        .job-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background 0.2s;
+        }
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+        .btn-secondary {
+            background: #333;
+            color: #eee;
+        }
+        .btn-secondary:hover {
+            background: #444;
+        }
+        .priority-high { color: #ef4444; }
+        .priority-normal { color: #60a5fa; }
+        .priority-low { color: #888; }
+        .drag-handle {
+            cursor: grab;
+            color: #555;
+            margin-right: 10px;
+        }
+        .sortable-ghost {
+            opacity: 0.4;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Ralph-o-matic</h1>
+            <div class="nav-links">
+                <a href="/">Dashboard</a>
+                <a href="/config">Config</a>
+                <span class="badge">Queue: {{.QueueSize}}</span>
+            </div>
+        </header>
+
+        {{block "content" .}}{{end}}
+    </div>
+
+    {{block "scripts" .}}{{end}}
+</body>
+</html>
