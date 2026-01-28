@@ -375,6 +375,39 @@ function Show-Success {
     Write-Host ""
 }
 
+function Install-Plugins {
+    Write-Info "Installing Claude Code plugins..."
+
+    try {
+        $null = & claude --version 2>$null
+    } catch {
+        Write-Warn "Claude Code not installed, skipping plugins"
+        return
+    }
+
+    # Install ralph-wiggum plugin
+    try {
+        & claude plugins install ralph-wiggum 2>$null
+        Write-Success "ralph-wiggum plugin installed"
+    } catch {
+        Write-Warn "Failed to install ralph-wiggum (may already be installed)"
+    }
+
+    # Install brainstorm-to-ralph skill
+    $skillsDir = "$env:USERPROFILE\.claude\skills"
+    New-Item -ItemType Directory -Path $skillsDir -Force | Out-Null
+
+    $skillUrl = "$ReleaseUrl/brainstorm-to-ralph-skill.zip"
+    try {
+        Invoke-WebRequest -Uri $skillUrl -OutFile "$env:TEMP\skill.zip"
+        Expand-Archive -Path "$env:TEMP\skill.zip" -DestinationPath $skillsDir -Force
+        Remove-Item "$env:TEMP\skill.zip"
+        Write-Success "brainstorm-to-ralph skill installed"
+    } catch {
+        Write-Warn "Could not install brainstorm-to-ralph skill"
+    }
+}
+
 # Main
 function Main {
     Show-Banner
@@ -390,6 +423,7 @@ function Main {
     }
 
     Install-Binaries
+    Install-Plugins
     Set-Configuration
     Show-Success
 }

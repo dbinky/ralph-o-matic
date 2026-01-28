@@ -424,23 +424,39 @@ install_binaries() {
 }
 
 install_plugins() {
-    if [[ "$MODE" == "client" ]]; then
-        # Client mode: install the skill for submitting jobs
-        info "Installing Claude Code plugins..."
+    info "Installing Claude Code plugins..."
 
-        # Install ralph-wiggum plugin
-        if command -v claude &>/dev/null; then
-            claude plugins install ralph-wiggum || true
-            success "ralph-wiggum plugin installed"
-
-            claude plugins install brainstorm-to-ralph || true
-            success "brainstorm-to-ralph plugin installed"
-        else
-            warn "Claude Code not installed, skipping plugins"
-        fi
+    if ! command -v claude &>/dev/null; then
+        warn "Claude Code not installed, skipping plugins"
+        return
     fi
 
-    # Server mode: plugins are optional (server shells out to claude)
+    # Install ralph-wiggum plugin
+    if claude plugins install ralph-wiggum 2>/dev/null; then
+        success "ralph-wiggum plugin installed"
+    else
+        warn "Failed to install ralph-wiggum (may already be installed)"
+    fi
+
+    # Install brainstorm-to-ralph skill
+    # This is bundled with ralph-o-matic, copy to Claude Code skills directory
+    local skills_dir="$HOME/.claude/skills"
+    mkdir -p "$skills_dir"
+
+    if [[ -d "/usr/local/share/ralph-o-matic/skills/brainstorm-to-ralph" ]]; then
+        cp -r /usr/local/share/ralph-o-matic/skills/brainstorm-to-ralph "$skills_dir/"
+        success "brainstorm-to-ralph skill installed"
+    else
+        # Download from release
+        local skill_url="$RELEASE_URL/brainstorm-to-ralph-skill.tar.gz"
+        if curl -fsSL "$skill_url" -o /tmp/skill.tar.gz 2>/dev/null; then
+            tar -xzf /tmp/skill.tar.gz -C "$skills_dir/"
+            rm /tmp/skill.tar.gz
+            success "brainstorm-to-ralph skill installed"
+        else
+            warn "Could not install brainstorm-to-ralph skill"
+        fi
+    fi
 }
 
 configure_ralph() {
