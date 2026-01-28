@@ -141,3 +141,77 @@ Phase 2: API Endpoints [PHASE-2] (blocked by PHASE-1)
 - Proceed to Phase 4
 
 ---
+
+## Phase 4: Execute (PARALLEL)
+
+**Announce:** "Launching parallel execution agents..."
+
+**REQUIRED:** Use `superpowers:dispatching-parallel-agents` to execute phase documents concurrently.
+
+### Agent Configuration
+
+Spawn one agent per phase document. Each agent receives:
+
+```markdown
+You are executing an implementation plan for a specific phase.
+
+**Phase Document:** docs/plans/YYYY-MM-DD-{topic}-design-phase-{N}.md
+
+**REQUIRED:** Invoke `superpowers:executing-plans` with this phase document.
+
+**Beads Integration:**
+
+Before starting any task:
+```bash
+bd list --ready
+```
+
+After completing a task:
+```bash
+bd done {TASK-ID}
+```
+
+If blocked by another agent's work:
+```bash
+bd list --blocked
+# Wait and poll every 30 seconds until unblocked
+```
+
+After all tasks complete, verify:
+```bash
+bd list --status PHASE-{N}
+# Should show all tasks complete
+```
+
+**Commit Strategy:**
+- Commit after each task completion
+- Use conventional commit messages
+- Reference task ID in commit message: "feat: create users table [PHASE-1-1]"
+```
+
+### Execution Flow
+
+1. Dispatch agents for all phases simultaneously
+2. Agents that are blocked will wait automatically (via Beads)
+3. Monitor progress through Beads:
+   ```bash
+   watch -n 5 'bd list --compact'
+   ```
+4. Wait for all agents to complete
+
+### Handling Failures
+
+If an agent fails:
+1. Check which task failed: `bd list --failed`
+2. Review the error in agent output
+3. Either:
+   - Fix manually and mark done: `bd done {TASK-ID}`
+   - Reset and retry: `bd reset {TASK-ID}` and re-run agent
+
+**On completion:**
+- Verify all Beads tasks are complete: `bd list --summary`
+- Run full test suite to verify implementation
+- Announce: "Implementation complete. All {N} phases done. Preparing for ralph submission..."
+- Proceed to Phase 5
+
+---
