@@ -81,3 +81,18 @@ fmt:
 
 vet:
 	$(GOCMD) vet ./...
+
+## Skill packaging
+
+.PHONY: package-skill
+package-skill:
+	@echo "Packaging brainstorm-to-ralph skill..."
+	@mkdir -p dist
+	@tar -czvf dist/brainstorm-to-ralph-skill.tar.gz -C skills brainstorm-to-ralph
+	@cd skills && zip -r ../dist/brainstorm-to-ralph-skill.zip brainstorm-to-ralph
+	@echo "Skill packaged: dist/brainstorm-to-ralph-skill.tar.gz"
+	@echo "Skill packaged: dist/brainstorm-to-ralph-skill.zip"
+
+.PHONY: release
+release: build-all package-skill
+	@echo "Release artifacts ready in dist/"
