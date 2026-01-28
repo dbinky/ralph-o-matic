@@ -25,8 +25,10 @@ error() { echo -e "${RED}✗${NC} $1"; exit 1; }
 MODE="full"  # full, server, client
 YES_FLAG=false
 SERVER_URL=""
-LARGE_MODEL="qwen3-coder:70b"
-SMALL_MODEL="qwen2.5-coder:7b"
+LARGE_MODEL=""
+SMALL_MODEL=""
+OLLAMA_URL="http://localhost:11434"
+INFERENCE_MODE=""  # gpu_cpu_split, gpu_only, cpu_only, remote
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -182,6 +184,220 @@ detect_gpu() {
             info "GPU VRAM insufficient for models, will use CPU/RAM"
         fi
     fi
+}
+
+show_hardware_summary() {
+    echo ""
+    echo -e "${BLUE}Hardware Summary:${NC}"
+    echo "  OS:   $OS ($ARCH)"
+    echo "  RAM:  ${RAM_GB}GB"
+    if [[ "$GPU_TYPE" == "apple" ]]; then
+        echo "  GPU:  Apple Silicon (unified memory)"
+    elif [[ "$GPU_TYPE" == "nvidia" ]]; then
+        echo "  GPU:  NVIDIA (${GPU_VRAM_MB}MB VRAM)"
+    elif [[ "$GPU_TYPE" == "amd" ]]; then
+        echo "  GPU:  AMD (${GPU_VRAM_MB}MB VRAM)"
+    else
+        echo "  GPU:  None detected"
+    fi
+    echo ""
+}
+
+show_model_recommendation() {
+    local rec_large="$1"
+    local rec_small="$2"
+    local rec_mode="$3"
+
+    echo -e "${GREEN}Recommended configuration:${NC}"
+    echo "  Inference mode: $rec_mode"
+    echo "  Large model:    $rec_large"
+    echo "  Small model:    $rec_small"
+    echo ""
+}
+
+customize_models() {
+    echo ""
+    echo "Available large models:"
+    echo "  [1] qwen3-coder:70b     (42GB, quality 10 - best)"
+    echo "  [2] qwen2.5-coder:32b   (20GB, quality 8)"
+    echo "  [3] qwen2.5-coder:14b   (10GB, quality 6)"
+    echo "  [4] qwen2.5-coder:7b    (5GB,  quality 4)"
+    echo ""
+    read -p "Select large model [1-4]: " -n 1 -r
+    echo ""
+    case $REPLY in
+        1) LARGE_MODEL="qwen3-coder:70b" ;;
+        2) LARGE_MODEL="qwen2.5-coder:32b" ;;
+        3) LARGE_MODEL="qwen2.5-coder:14b" ;;
+        4) LARGE_MODEL="qwen2.5-coder:7b" ;;
+        *) warn "Invalid choice, using qwen2.5-coder:14b"; LARGE_MODEL="qwen2.5-coder:14b" ;;
+    esac
+
+    echo ""
+    echo "Available small models:"
+    echo "  [1] qwen2.5-coder:7b    (5GB,   quality 4)"
+    echo "  [2] qwen2.5-coder:1.5b  (1.5GB, quality 2 - fastest)"
+    echo ""
+    read -p "Select small model [1-2]: " -n 1 -r
+    echo ""
+    case $REPLY in
+        1) SMALL_MODEL="qwen2.5-coder:7b" ;;
+        2) SMALL_MODEL="qwen2.5-coder:1.5b" ;;
+        *) warn "Invalid choice, using qwen2.5-coder:7b"; SMALL_MODEL="qwen2.5-coder:7b" ;;
+    esac
+
+    success "Selected: large=$LARGE_MODEL, small=$SMALL_MODEL"
+}
+
+setup_remote_ollama() {
+    echo ""
+    read -p "Enter remote Ollama URL (e.g. http://192.168.1.100:11434): " OLLAMA_URL
+
+    info "Checking remote Ollama at $OLLAMA_URL..."
+    if curl -sf "$OLLAMA_URL/api/tags" &>/dev/null; then
+        success "Remote Ollama is reachable"
+
+        # List available models on remote
+        local remote_models
+        remote_models=$(curl -sf "$OLLAMA_URL/api/tags" | grep -o '"name":"[^"]*"' | cut -d'"' -f4 || true)
+        if [[ -n "$remote_models" ]]; then
+            echo ""
+            echo "Models available on remote:"
+            echo "$remote_models" | while read -r m; do echo "  - $m"; done
+            echo ""
+        fi
+    else
+        warn "Could not reach remote Ollama at $OLLAMA_URL"
+        warn "Continuing anyway - ensure the remote is available before running jobs"
+    fi
+
+    # Still need to pick models (they run on remote)
+    if [[ -z "$LARGE_MODEL" ]]; then
+        LARGE_MODEL="qwen3-coder:70b"
+    fi
+    if [[ -z "$SMALL_MODEL" ]]; then
+        SMALL_MODEL="qwen2.5-coder:7b"
+    fi
+}
+
+select_models() {
+    show_hardware_summary
+
+    # Compute recommendation based on hardware
+    local rec_large="qwen2.5-coder:14b"
+    local rec_small="qwen2.5-coder:7b"
+    local rec_mode="cpu_only"
+
+    if [[ "$GPU_TYPE" == "apple" ]]; then
+        # Apple Silicon unified memory
+        if [[ $RAM_GB -ge 64 ]]; then
+            rec_large="qwen3-coder:70b"
+            rec_mode="gpu_only"
+        elif [[ $RAM_GB -ge 32 ]]; then
+            rec_large="qwen2.5-coder:32b"
+            rec_mode="gpu_only"
+        elif [[ $RAM_GB -ge 16 ]]; then
+            rec_large="qwen2.5-coder:14b"
+            rec_mode="gpu_only"
+        else
+            rec_large="qwen2.5-coder:7b"
+            rec_mode="gpu_only"
+        fi
+    elif [[ "$GPU_TYPE" == "nvidia" ]] || [[ "$GPU_TYPE" == "amd" ]]; then
+        if [[ "$GPU_CAN_RUN_LARGE" == true ]]; then
+            rec_large="qwen3-coder:70b"
+            rec_mode="gpu_only"
+        elif [[ "$GPU_CAN_RUN_SMALL" == true ]]; then
+            rec_mode="gpu_cpu_split"
+            if [[ $RAM_GB -ge 64 ]]; then
+                rec_large="qwen3-coder:70b"
+            elif [[ $RAM_GB -ge 32 ]]; then
+                rec_large="qwen2.5-coder:32b"
+            else
+                rec_large="qwen2.5-coder:14b"
+            fi
+        else
+            rec_mode="cpu_only"
+            if [[ $RAM_GB -ge 64 ]]; then
+                rec_large="qwen3-coder:70b"
+            elif [[ $RAM_GB -ge 32 ]]; then
+                rec_large="qwen2.5-coder:32b"
+            else
+                rec_large="qwen2.5-coder:14b"
+            fi
+        fi
+    else
+        # No GPU
+        rec_mode="cpu_only"
+        if [[ $RAM_GB -ge 64 ]]; then
+            rec_large="qwen3-coder:70b"
+        elif [[ $RAM_GB -ge 32 ]]; then
+            rec_large="qwen2.5-coder:32b"
+        else
+            rec_large="qwen2.5-coder:14b"
+        fi
+    fi
+
+    show_model_recommendation "$rec_large" "$rec_small" "$rec_mode"
+
+    # If --yes flag or CLI overrides provided, use defaults/overrides
+    if [[ "$YES_FLAG" == true ]]; then
+        if [[ -z "$LARGE_MODEL" ]]; then LARGE_MODEL="$rec_large"; fi
+        if [[ -z "$SMALL_MODEL" ]]; then SMALL_MODEL="$rec_small"; fi
+        INFERENCE_MODE="$rec_mode"
+        success "Using recommended configuration (--yes)"
+        return
+    fi
+
+    # Check if user passed model overrides via CLI flags
+    if [[ -n "$LARGE_MODEL" ]] && [[ -n "$SMALL_MODEL" ]]; then
+        INFERENCE_MODE="$rec_mode"
+        success "Using CLI-specified models: large=$LARGE_MODEL, small=$SMALL_MODEL"
+        return
+    fi
+
+    echo "How would you like to run inference?"
+    echo ""
+    echo "  [1] GPU + CPU split (large model on CPU/RAM, small model on GPU)"
+    echo "  [2] GPU only (all models on GPU)"
+    echo "  [3] CPU only (all models on CPU/RAM)"
+    echo "  [4] Remote Ollama (use a remote Ollama server)"
+    echo ""
+    read -p "Select mode [1-4] (recommended: press Enter for $rec_mode): " -n 1 -r
+    echo ""
+
+    case $REPLY in
+        1) INFERENCE_MODE="gpu_cpu_split" ;;
+        2) INFERENCE_MODE="gpu_only" ;;
+        3) INFERENCE_MODE="cpu_only" ;;
+        4) INFERENCE_MODE="remote" ;;
+        "") INFERENCE_MODE="$rec_mode" ;;
+        *) warn "Invalid choice, using recommended"; INFERENCE_MODE="$rec_mode" ;;
+    esac
+
+    if [[ "$INFERENCE_MODE" == "remote" ]]; then
+        setup_remote_ollama
+        echo ""
+        read -p "Accept recommended models? [Y/n] " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            customize_models
+        fi
+        return
+    fi
+
+    # Offer accept or customize
+    echo ""
+    read -p "Accept recommended models ($rec_large + $rec_small)? [Y/n] " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        customize_models
+    else
+        LARGE_MODEL="$rec_large"
+        SMALL_MODEL="$rec_small"
+    fi
+
+    success "Configuration: mode=$INFERENCE_MODE, large=$LARGE_MODEL, small=$SMALL_MODEL"
 }
 
 configure_ollama() {
@@ -360,6 +576,13 @@ install_package() {
 }
 
 pull_models() {
+    # Skip pulling for remote Ollama - models are managed on the remote
+    if [[ "$INFERENCE_MODE" == "remote" ]]; then
+        info "Using remote Ollama at $OLLAMA_URL - skipping local model pull"
+        info "Ensure models '$LARGE_MODEL' and '$SMALL_MODEL' are available on the remote"
+        return
+    fi
+
     info "Pulling Ollama models (this may take a while)..."
 
     # Ensure Ollama is running
@@ -383,7 +606,7 @@ pull_models() {
     fi
 
     # Pull large model
-    info "Pulling $LARGE_MODEL (this is ~40GB, be patient)..."
+    info "Pulling $LARGE_MODEL..."
     if ollama pull "$LARGE_MODEL"; then
         success "$LARGE_MODEL ready"
     else
@@ -489,8 +712,13 @@ EOF
 
         cat > "$config_dir/config.yaml" <<EOF
 # Ralph-o-matic Server Configuration
-large_model: $LARGE_MODEL
-small_model: $SMALL_MODEL
+ollama:
+  url: $OLLAMA_URL
+  inference_mode: $INFERENCE_MODE
+large_model:
+  name: $LARGE_MODEL
+small_model:
+  name: $SMALL_MODEL
 default_max_iterations: 50
 concurrent_jobs: 1
 bind_address: $lan_ip
@@ -639,6 +867,7 @@ main() {
     install_missing_dependencies
     if [[ "$MODE" != "client" ]]; then
         detect_gpu
+        select_models
         configure_ollama
         pull_models
     fi
