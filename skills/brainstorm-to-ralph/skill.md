@@ -52,3 +52,28 @@ This phase is **interactive**. You will:
 - Proceed to Phase 2
 
 ---
+
+## Phase 2: Plan (AUTOMATIC)
+
+**Announce:** "Creating implementation plan from design..."
+
+**REQUIRED:** Invoke `superpowers:writing-plans` to create detailed phase documents.
+
+Using the design document from Phase 1, create:
+- `docs/plans/YYYY-MM-DD-{topic}-design-phase-1.md`
+- `docs/plans/YYYY-MM-DD-{topic}-design-phase-2.md`
+- `docs/plans/YYYY-MM-DD-{topic}-design-phase-3.md`
+- (etc., as many phases as needed)
+
+Each phase document must follow the writing-plans format:
+- Clear task breakdown with exact file paths
+- TDD approach (tests before implementation)
+- Step-by-step instructions
+- Commit points
+
+**On completion:**
+- Commit all phase documents
+- Announce: "Planning complete. {N} phases created. Setting up task tracking..."
+- Proceed to Phase 3
+
+---
