@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -152,4 +153,82 @@ func TestOllamaClient_ContextCancellation(t *testing.T) {
 
 	err := client.Ping(ctx)
 	assert.Error(t, err)
+}
+
+func TestOllamaClient_HTTP500_WithErrorBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"internal"}`))
+	}))
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL)
+	err := client.PullModel(context.Background(), "any-model")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "internal")
+}
+
+func TestOllamaClient_ConnectionRefused_ListModels(t *testing.T) {
+	client := NewOllamaClient("http://127.0.0.1:1")
+	_, err := client.ListModels(context.Background())
+	assert.Error(t, err)
+}
+
+func TestOllamaClient_SlowResponse_ContextTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(5 * time.Second)
+		w.Write([]byte(`{"models":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	err := client.Ping(ctx)
+	assert.Error(t, err)
+}
+
+func TestOllamaClient_ModelNameSpecialChars(t *testing.T) {
+	var receivedBody map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/pull" {
+			json.NewDecoder(r.Body).Decode(&receivedBody)
+			json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+			return
+		}
+		// /api/tags for HasModel
+		resp := map[string]interface{}{
+			"models": []map[string]interface{}{
+				{"name": "org/model+variant:latest", "size": 5000000000},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL)
+
+	// Pull with special chars
+	err := client.PullModel(context.Background(), "org/model+variant:latest")
+	require.NoError(t, err)
+	assert.Equal(t, "org/model+variant:latest", receivedBody["name"])
+
+	// HasModel with special chars
+	has, err := client.HasModel(context.Background(), "org/model+variant:latest")
+	require.NoError(t, err)
+	assert.True(t, has)
+}
+
+func TestOllamaClient_PullModel_MalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("not json at all"))
+	}))
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL)
+	// PullModel with 200 but non-JSON body should succeed (it doesn't parse body on 200)
+	err := client.PullModel(context.Background(), "test-model")
+	assert.NoError(t, err)
 }

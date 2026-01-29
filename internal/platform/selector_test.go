@@ -204,3 +204,121 @@ func TestSelectModels_UnifiedMemoryAppleSilicon(t *testing.T) {
 	// or small:14b + tiny:7b = 10 but 10+5=15 < 24, both on gpu
 	assert.Equal(t, "gpu", best.Large.Device)
 }
+
+func TestSelectModels_SingleModelCatalog(t *testing.T) {
+	// Only a "both" model and a "small" model, 16GB RAM
+	catalog := &Catalog{
+		Models: []CatalogModel{
+			{Name: "flex:7b", MemoryGB: 5, Role: "both", Quality: 4},
+			{Name: "helper:1.5b", MemoryGB: 1.5, Role: "small", Quality: 2},
+		},
+	}
+	hw := &HardwareInfo{SystemRAMGB: 16, GPUs: nil}
+
+	results, err := SelectModels(catalog, hw)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+
+	best := results[0]
+	assert.Equal(t, "flex:7b", best.Large.Name)
+	assert.Equal(t, "helper:1.5b", best.Small.Name)
+}
+
+func TestSelectModels_AllModelsTooLarge(t *testing.T) {
+	catalog := &Catalog{
+		Models: []CatalogModel{
+			{Name: "huge:70b", MemoryGB: 10, Role: "large", Quality: 10},
+			{Name: "small:1b", MemoryGB: 3, Role: "small", Quality: 2},
+		},
+	}
+	hw := &HardwareInfo{SystemRAMGB: 4, GPUs: nil}
+
+	_, err := SelectModels(catalog, hw)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "memory")
+}
+
+func TestSelectModels_LargeGPU_80GB(t *testing.T) {
+	// 128GB RAM + 80GB A100 -> both on GPU (42+5=47 < 80)
+	hw := &HardwareInfo{
+		SystemRAMGB: 128,
+		GPUs:        []GPUInfo{{Type: "nvidia", Name: "A100", VRAMGB: 80}},
+	}
+
+	results, err := SelectModels(testCatalog(), hw)
+	require.NoError(t, err)
+
+	best := results[0]
+	assert.Equal(t, "big:70b", best.Large.Name)
+	assert.Equal(t, "gpu", best.Large.Device)
+	assert.Equal(t, "gpu", best.Small.Device)
+}
+
+func TestSelectModels_MultipleGPUs_UsesBest(t *testing.T) {
+	// 64GB RAM + [8GB, 80GB] GPUs -> uses best (80GB), both on GPU
+	hw := &HardwareInfo{
+		SystemRAMGB: 64,
+		GPUs: []GPUInfo{
+			{Type: "nvidia", Name: "RTX 3070", VRAMGB: 8},
+			{Type: "nvidia", Name: "A100", VRAMGB: 80},
+		},
+	}
+
+	results, err := SelectModels(testCatalog(), hw)
+	require.NoError(t, err)
+
+	best := results[0]
+	assert.Equal(t, "big:70b", best.Large.Name)
+	assert.Equal(t, "gpu", best.Large.Device)
+	assert.Equal(t, "gpu", best.Small.Device)
+}
+
+func TestSelectModels_AppleSilicon_ExactFit(t *testing.T) {
+	// 12GB unified memory, models need 10+1.5=11.5GB -> TightFit
+	catalog := &Catalog{
+		Models: []CatalogModel{
+			{Name: "mid:14b", MemoryGB: 10, Role: "large", Quality: 6},
+			{Name: "helper:1.5b", MemoryGB: 1.5, Role: "small", Quality: 2},
+		},
+	}
+	hw := &HardwareInfo{
+		SystemRAMGB: 12,
+		GPUs:        []GPUInfo{{Type: "apple", Name: "Apple Silicon", VRAMGB: 12}},
+	}
+
+	results, err := SelectModels(catalog, hw)
+	require.NoError(t, err)
+
+	best := results[0]
+	assert.Equal(t, "gpu", best.Large.Device)
+	assert.Equal(t, "gpu", best.Small.Device)
+	assert.True(t, best.TightFit)
+}
+
+func TestSelectModels_MaxFiveResults(t *testing.T) {
+	// Large catalog that generates many combos
+	catalog := &Catalog{
+		Models: []CatalogModel{
+			{Name: "a:70b", MemoryGB: 42, Role: "large", Quality: 10},
+			{Name: "b:32b", MemoryGB: 20, Role: "large", Quality: 8},
+			{Name: "c:14b", MemoryGB: 10, Role: "large", Quality: 6},
+			{Name: "d:7b", MemoryGB: 5, Role: "both", Quality: 4},
+			{Name: "e:3b", MemoryGB: 3, Role: "both", Quality: 3},
+			{Name: "f:1.5b", MemoryGB: 1.5, Role: "small", Quality: 2},
+			{Name: "g:0.5b", MemoryGB: 0.5, Role: "small", Quality: 1},
+		},
+	}
+	hw := &HardwareInfo{SystemRAMGB: 128, GPUs: nil}
+
+	results, err := SelectModels(catalog, hw)
+	require.NoError(t, err)
+	assert.LessOrEqual(t, len(results), 5)
+}
+
+func TestSelectModels_EmptyCatalog(t *testing.T) {
+	catalog := &Catalog{Models: nil}
+	hw := &HardwareInfo{SystemRAMGB: 64, GPUs: nil}
+
+	_, err := SelectModels(catalog, hw)
+	assert.Error(t, err)
+}

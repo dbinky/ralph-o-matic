@@ -638,12 +638,14 @@ install_binaries() {
         success "Server installed to $bin_dir/ralph-o-matic-server"
     fi
 
-    # Install CLI
-    info "Downloading CLI..."
-    curl -fsSL "$RELEASE_URL/$cli_binary" -o /tmp/ralph-o-matic
-    chmod +x /tmp/ralph-o-matic
-    sudo mv /tmp/ralph-o-matic "$bin_dir/ralph-o-matic"
-    success "CLI installed to $bin_dir/ralph-o-matic"
+    # Install CLI (if not server-only mode)
+    if [[ "$MODE" != "server" ]]; then
+        info "Downloading CLI..."
+        curl -fsSL "$RELEASE_URL/$cli_binary" -o /tmp/ralph-o-matic
+        chmod +x /tmp/ralph-o-matic
+        sudo mv /tmp/ralph-o-matic "$bin_dir/ralph-o-matic"
+        success "CLI installed to $bin_dir/ralph-o-matic"
+    fi
 }
 
 install_plugins() {
