@@ -867,6 +867,11 @@ print_success() {
 
 # Main installation flow
 main() {
+    # Reopen stdin from terminal so interactive prompts work with curl | bash
+    if [[ ! -t 0 ]]; then
+        exec 0</dev/tty
+    fi
+
     print_banner
     detect_platform
     check_ram_requirement
