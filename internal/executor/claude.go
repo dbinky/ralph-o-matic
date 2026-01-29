@@ -32,11 +32,11 @@ func (e *ClaudeExecutor) BuildEnv(extra map[string]string) []string {
 
 	// Ollama configuration
 	ollamaEnv := map[string]string{
-		"ANTHROPIC_BASE_URL":            "http://localhost:11434",
+		"ANTHROPIC_BASE_URL":            e.config.Ollama.Host,
 		"ANTHROPIC_AUTH_TOKEN":          "ollama",
 		"ANTHROPIC_API_KEY":             "",
-		"ANTHROPIC_MODEL":               e.config.LargeModel,
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL": e.config.SmallModel,
+		"ANTHROPIC_MODEL":               e.config.LargeModel.Name,
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL": e.config.SmallModel.Name,
 	}
 
 	for k, v := range ollamaEnv {

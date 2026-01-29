@@ -13,13 +13,24 @@ func TestClaudeExecutor_BuildEnv(t *testing.T) {
 
 	env := exec.BuildEnv(map[string]string{"CUSTOM": "value"})
 
-	// Should contain Ollama config
+	// Should contain Ollama config from ServerConfig
 	assert.Contains(t, env, "ANTHROPIC_BASE_URL=http://localhost:11434")
 	assert.Contains(t, env, "ANTHROPIC_AUTH_TOKEN=ollama")
 	assert.Contains(t, env, "ANTHROPIC_API_KEY=")
 	assert.Contains(t, env, "ANTHROPIC_MODEL=qwen3-coder:70b")
 	assert.Contains(t, env, "ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen2.5-coder:7b")
 	assert.Contains(t, env, "CUSTOM=value")
+}
+
+func TestClaudeExecutor_BuildEnv_RemoteOllama(t *testing.T) {
+	cfg := models.DefaultServerConfig()
+	cfg.Ollama.Host = "http://192.168.1.50:11434"
+	cfg.Ollama.IsRemote = true
+	exec := NewClaudeExecutor(cfg)
+
+	env := exec.BuildEnv(nil)
+
+	assert.Contains(t, env, "ANTHROPIC_BASE_URL=http://192.168.1.50:11434")
 }
 
 func TestClaudeExecutor_BuildCommand(t *testing.T) {
@@ -54,4 +65,46 @@ func TestClaudeExecutor_ParseOutput_NoPromise(t *testing.T) {
 	output := "Still working on tests..."
 
 	assert.False(t, ContainsPromise(output, "COMPLETE"))
+}
+
+func TestClaudeExecutor_BuildEnv_CustomModels(t *testing.T) {
+	cfg := models.DefaultServerConfig()
+	cfg.LargeModel.Name = "my-custom:70b"
+	cfg.SmallModel.Name = "my-helper:1.5b"
+	exec := NewClaudeExecutor(cfg)
+
+	env := exec.BuildEnv(nil)
+
+	assert.Contains(t, env, "ANTHROPIC_MODEL=my-custom:70b")
+	assert.Contains(t, env, "ANTHROPIC_DEFAULT_HAIKU_MODEL=my-helper:1.5b")
+}
+
+func TestClaudeExecutor_BuildEnv_NilExtra(t *testing.T) {
+	cfg := models.DefaultServerConfig()
+	exec := NewClaudeExecutor(cfg)
+
+	// Should not panic with nil extra map
+	env := exec.BuildEnv(nil)
+	assert.NotEmpty(t, env)
+	assert.Contains(t, env, "ANTHROPIC_AUTH_TOKEN=ollama")
+}
+
+func TestClaudeExecutor_BuildEnv_DevicePlacement(t *testing.T) {
+	cfg := models.DefaultServerConfig()
+	cfg.LargeModel.Device = "gpu"
+	cfg.SmallModel.Device = "cpu"
+	exec := NewClaudeExecutor(cfg)
+
+	// Device placement doesn't affect env vars, just verify no panic
+	env := exec.BuildEnv(nil)
+	assert.Contains(t, env, "ANTHROPIC_MODEL=qwen3-coder:70b")
+}
+
+func TestClaudeExecutor_BuildEnv_EmptyHost(t *testing.T) {
+	cfg := models.DefaultServerConfig()
+	cfg.Ollama.Host = ""
+	exec := NewClaudeExecutor(cfg)
+
+	env := exec.BuildEnv(nil)
+	assert.Contains(t, env, "ANTHROPIC_BASE_URL=")
 }

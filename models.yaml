@@ -1,0 +1,33 @@
+# models.yaml - Recommended coding models for ralph-o-matic
+# quality: relative ranking (higher = better coding performance)
+# role: "large" (primary model), "small" (helper), or "both"
+models:
+  - name: "qwen3-coder:70b"
+    memory_gb: 42
+    role: large
+    quality: 10
+    description: "Best coding performance, needs ~42GB"
+
+  - name: "qwen2.5-coder:32b"
+    memory_gb: 20
+    role: large
+    quality: 8
+    description: "Strong coding, much smaller footprint"
+
+  - name: "qwen2.5-coder:14b"
+    memory_gb: 10
+    role: large
+    quality: 6
+    description: "Good coding capability"
+
+  - name: "qwen2.5-coder:7b"
+    memory_gb: 5
+    role: both
+    quality: 4
+    description: "Decent coding, fast inference"
+
+  - name: "qwen2.5-coder:1.5b"
+    memory_gb: 1.5
+    role: small
+    quality: 2
+    description: "Lightweight helper only"

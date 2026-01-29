@@ -1,4 +1,4 @@
-.PHONY: all build test test-unit test-integration test-coverage clean
+.PHONY: all build test test-unit test-integration test-coverage test-bats test-all clean
 
 # Go parameters
 GOCMD=go
@@ -62,6 +62,11 @@ test-integration:
 test-coverage:
 	$(GOTEST) -v -race -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
+
+test-bats:
+	bats scripts/tests/
+
+test-all: test-unit test-bats
 
 ## Utility targets
 

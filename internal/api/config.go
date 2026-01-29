@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/ryan/ralph-o-matic/internal/db"
@@ -29,44 +30,37 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse updates
-	var updates map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+	// Read raw body for field-presence-aware merge
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read body")
+		return
+	}
+
+	// Validate it's valid JSON
+	if !json.Valid(raw) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 
-	// Apply updates
-	if v, ok := updates["large_model"].(string); ok {
-		current.LargeModel = v
-	}
-	if v, ok := updates["small_model"].(string); ok {
-		current.SmallModel = v
-	}
-	if v, ok := updates["default_max_iterations"].(float64); ok {
-		current.DefaultMaxIterations = int(v)
-	}
-	if v, ok := updates["concurrent_jobs"].(float64); ok {
-		current.ConcurrentJobs = int(v)
-	}
-	if v, ok := updates["workspace_dir"].(string); ok {
-		current.WorkspaceDir = v
-	}
-	if v, ok := updates["job_retention_days"].(float64); ok {
-		current.JobRetentionDays = int(v)
+	// Apply updates via merge with field-presence detection
+	merged, err := current.MergeJSON(json.RawMessage(raw))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
 	}
 
 	// Validate
-	if err := current.Validate(); err != nil {
+	if err := merged.Validate(); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// Save
-	if err := configRepo.Save(current); err != nil {
+	if err := configRepo.Save(merged); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, current)
+	writeJSON(w, http.StatusOK, merged)
 }

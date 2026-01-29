@@ -309,8 +309,9 @@ func serverConfigCmd() *cobra.Command {
 					return err
 				}
 
-				fmt.Printf("large_model: %s\n", serverCfg.LargeModel)
-				fmt.Printf("small_model: %s\n", serverCfg.SmallModel)
+				fmt.Printf("ollama_host: %s (remote: %v)\n", serverCfg.Ollama.Host, serverCfg.Ollama.IsRemote)
+				fmt.Printf("large_model: %s (device: %s, %.1fGB)\n", serverCfg.LargeModel.Name, serverCfg.LargeModel.Device, serverCfg.LargeModel.MemoryGB)
+				fmt.Printf("small_model: %s (device: %s, %.1fGB)\n", serverCfg.SmallModel.Name, serverCfg.SmallModel.Device, serverCfg.SmallModel.MemoryGB)
 				fmt.Printf("default_max_iterations: %d\n", serverCfg.DefaultMaxIterations)
 				fmt.Printf("concurrent_jobs: %d\n", serverCfg.ConcurrentJobs)
 				return nil
