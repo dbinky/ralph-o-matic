@@ -27,6 +27,7 @@ issues:
       linters:
         - errcheck
         - gosec
+        - gocritic
 
 run:
   timeout: 5m

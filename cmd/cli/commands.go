@@ -234,15 +234,16 @@ func moveCmd() *cobra.Command {
 			}
 
 			// Insert at new position
-			if first {
+			switch {
+			case first:
 				newOrder = append([]int64{id}, newOrder...)
-			} else if position > 0 {
+			case position > 0:
 				pos := position - 1
 				if pos > len(newOrder) {
 					pos = len(newOrder)
 				}
 				newOrder = append(newOrder[:pos], append([]int64{id}, newOrder[pos:]...)...)
-			} else {
+			default:
 				newOrder = append(newOrder, id)
 			}
 
