@@ -81,7 +81,7 @@ jobs:
             EXT=".exe"
           fi
           GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -ldflags "-s -w" -trimpath -o "build/ralph-o-matic-${{ matrix.os }}-${{ matrix.arch }}${EXT}" ./cmd/cli
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: build-${{ matrix.os }}-${{ matrix.arch }}
           path: build/
