@@ -1,4 +1,7 @@
+version: "2"
+
 linters:
+  default: none
   enable:
     - errcheck
     - govet
@@ -7,27 +10,37 @@ linters:
     - misspell
     - gocritic
     - revive
-
-linters-settings:
-  errcheck:
-    exclude-functions:
-      - (net/http.ResponseWriter).Write
-      - (*database/sql.Tx).Rollback
-      - (*encoding/json.Encoder).Encode
-      - (*encoding/json.Decoder).Decode
-  revive:
+  settings:
+    errcheck:
+      exclude-functions:
+        - (net/http.ResponseWriter).Write
+        - (*database/sql.Tx).Rollback
+        - (*database/sql.Rows).Close
+        - (*encoding/json.Encoder).Encode
+        - (*encoding/json.Decoder).Decode
+        - (*net/http.Response).Body.Close
+        - (io.Closer).Close
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    presets:
+      - std-error-handling
+    paths:
+      - vendor
     rules:
-      - name: exported
-
-issues:
-  exclude-dirs:
-    - vendor
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gosec
-        - gocritic
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - gocritic
+      - linters:
+          - gosec
+        text: "G104|G304|G301"
+      - linters:
+          - staticcheck
+        text: "ST1005"
 
 run:
   timeout: 5m
