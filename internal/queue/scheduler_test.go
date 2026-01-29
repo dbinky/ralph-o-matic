@@ -59,24 +59,26 @@ func TestScheduler_ProcessJob(t *testing.T) {
 	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
 	require.NoError(t, q.Enqueue(job))
 
-	var processedJob *models.Job
+	done := make(chan *models.Job, 1)
 	handler := func(ctx context.Context, j *models.Job) error {
-		processedJob = j
+		done <- j
 		return nil
 	}
 
 	s := NewScheduler(q, handler)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	go s.Start(ctx)
 
-	// Wait for processing
-	time.Sleep(200 * time.Millisecond)
-
-	assert.NotNil(t, processedJob)
-	assert.Equal(t, job.ID, processedJob.ID)
+	select {
+	case processedJob := <-done:
+		assert.NotNil(t, processedJob)
+		assert.Equal(t, job.ID, processedJob.ID)
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for job to be processed")
+	}
 }
 
 func TestScheduler_HandlerError(t *testing.T) {

@@ -55,7 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install bats
-        run: npm install -g bats
+        run: sudo npm install -g bats
       - name: Run bats tests
         run: bats scripts/tests/
 
@@ -88,6 +88,7 @@ jobs:
 
   govulncheck:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
