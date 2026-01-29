@@ -759,8 +759,9 @@ prompt_start_server() {
 start_server() {
     info "Starting ralph-o-matic server..."
 
-    # Start in background
+    # Start in background (disown to detach from tty)
     nohup ralph-o-matic-server &>/dev/null &
+    disown
     sleep 2
 
     # Check if running
