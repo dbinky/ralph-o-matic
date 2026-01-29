@@ -1,4 +1,7 @@
+version: "2"
+
 linters:
+  default: none
   enable:
     - errcheck
     - govet
@@ -7,27 +10,25 @@ linters:
     - misspell
     - gocritic
     - revive
-
-linters-settings:
-  errcheck:
-    exclude-functions:
-      - (net/http.ResponseWriter).Write
-      - (*database/sql.Tx).Rollback
-      - (*encoding/json.Encoder).Encode
-      - (*encoding/json.Decoder).Decode
-  revive:
+  settings:
+    errcheck:
+      exclude-functions:
+        - (net/http.ResponseWriter).Write
+        - (*database/sql.Tx).Rollback
+        - (*encoding/json.Encoder).Encode
+        - (*encoding/json.Decoder).Decode
+    revive:
+      rules:
+        - name: exported
+  exclusions:
+    paths:
+      - vendor
     rules:
-      - name: exported
-
-issues:
-  exclude-dirs:
-    - vendor
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gosec
-        - gocritic
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - gocritic
 
 run:
   timeout: 5m
