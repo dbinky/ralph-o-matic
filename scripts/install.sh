@@ -662,8 +662,8 @@ install_plugins() {
         return
     fi
 
-    # Install ralph-wiggum plugin
-    if claude plugins install ralph-wiggum 2>/dev/null; then
+    # Install ralph-wiggum plugin (pipe empty stdin to skip TUI trust dialog)
+    if echo "" | claude plugin install ralph-wiggum 2>/dev/null; then
         success "ralph-wiggum plugin installed"
     else
         warn "Failed to install ralph-wiggum (may already be installed)"
