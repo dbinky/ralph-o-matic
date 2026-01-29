@@ -11,11 +11,11 @@ The [Ralph Wiggum loop](https://github.com/anthropics/claude-code) technique —
 Draft your implementation with Claude Code + Opus 4.5 on your laptop. Then hand off to ralph-o-matic, which runs the refinement loop on a machine with local LLMs via [Ollama](https://ollama.com). Queue multiple jobs, walk away, review results as PRs.
 
 ```
-Mac (Opus 4.5)                    Gaming PC / Server (Ollama)
+Your Dev Env (Opus 4.5)            Ralph-o-Matic Server (Ollama)
 ┌─────────────────┐               ┌─────────────────────────┐
-│ Brainstorm       │  submit job   │ ralph-o-matic-server    │
-│ Plan             │──────────────>│ Queue → Execute loop    │
-│ Draft            │               │ Commit → Push → PR      │
+│ Brainstorm      │  submit job   │ ralph-o-matic-server    │
+│ Plan            │──────────────>│ Queue → Execute loop    │
+│ Draft           │               │ Commit → Push → PR      │
 └─────────────────┘               └─────────────────────────┘
                                            │
                                    Review PR when done
@@ -37,7 +37,7 @@ Mac (Opus 4.5)                    Gaming PC / Server (Ollama)
 ### Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ryan/ralph-o-matic/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dbinky/ralph-o-matic/main/scripts/install.sh | bash
 ```
 
 The installer detects your hardware, recommends models, installs dependencies, and starts the server. Use `--yes` for non-interactive mode.
