@@ -23,6 +23,12 @@ func main() {
 		os.Exit(0)
 	}
 
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	addr := ":9090"
 	if v := os.Getenv("RALPH_ADDR"); v != "" {
 		addr = v
@@ -35,19 +41,17 @@ func main() {
 
 	database, err := db.New(dbPath)
 	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
+		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer database.Close()
 
 	if err := database.Migrate(); err != nil {
-		database.Close()
-		log.Fatalf("Failed to migrate database: %v", err)
+		return fmt.Errorf("failed to migrate database: %w", err)
 	}
 
 	q := queue.New(database)
 	srv := api.NewServer(database, q, addr)
 
-	// Graceful shutdown on SIGINT/SIGTERM
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -63,7 +67,5 @@ func main() {
 	log.Println("Shutting down...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Shutdown error: %v", err)
-	}
+	return srv.Shutdown(shutdownCtx)
 }
