@@ -4,8 +4,8 @@ set -euo pipefail
 # Ralph-o-matic Installer
 # "It just works."
 
-VERSION="1.0.0"
-REPO_URL="https://github.com/ryan/ralph-o-matic"
+VERSION="0.0.2"
+REPO_URL="https://github.com/dbinky/ralph-o-matic"
 RELEASE_URL="$REPO_URL/releases/download/v$VERSION"
 
 # Colors
@@ -884,6 +884,6 @@ main() {
 }
 
 # Only run main when executed directly, not when sourced (e.g., by tests)
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ "${BASH_SOURCE[0]:-$0}" == "${0}" ]]; then
     main "$@"
 fi
