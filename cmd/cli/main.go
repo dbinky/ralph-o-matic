@@ -8,6 +8,9 @@ import (
 	"github.com/ryan/ralph-o-matic/internal/cli"
 )
 
+// version is set via -ldflags at build time.
+var version = "dev"
+
 var (
 	cfg    *cli.Config
 	client *cli.Client
@@ -24,8 +27,9 @@ func main() {
 	client = cli.NewClient(cfg.Server)
 
 	rootCmd := &cobra.Command{
-		Use:   "ralph-o-matic",
-		Short: "Ralph-o-matic CLI - submit and manage ralph loop jobs",
+		Use:     "ralph-o-matic",
+		Short:   "Ralph-o-matic CLI - submit and manage ralph loop jobs",
+		Version: version,
 	}
 
 	rootCmd.AddCommand(

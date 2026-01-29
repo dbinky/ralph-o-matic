@@ -1,0 +1,17 @@
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - gosec
+    - misspell
+    - gocritic
+    - revive
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+
+run:
+  timeout: 5m

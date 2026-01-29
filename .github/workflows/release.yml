@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run tests
+        run: go test -v -short -race ./...
+      - name: Build all targets
+        run: make build-all
+      - name: Package skill
+        run: make package-skill
+      - name: Generate SHA256SUMS
+        run: |
+          {
+            if [ -d build ]; then cd build && sha256sum * && cd ..; fi
+            if [ -d dist ]; then cd dist && sha256sum * && cd ..; fi
+          } > SHA256SUMS
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/*
+            dist/*
+            SHA256SUMS
