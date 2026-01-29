@@ -3,31 +3,42 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/ryan/ralph-o-matic/internal/dashboard"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/queue"
+	"github.com/ryan/ralph-o-matic/web"
 )
 
 // Server is the HTTP API server
 type Server struct {
-	db     *db.DB
-	queue  *queue.Queue
-	addr   string
-	router chi.Router
-	server *http.Server
+	db        *db.DB
+	queue     *queue.Queue
+	dashboard *dashboard.Dashboard
+	addr      string
+	router    chi.Router
+	server    *http.Server
 }
 
 // NewServer creates a new API server
 func NewServer(database *db.DB, q *queue.Queue, addr string) *Server {
+	templatesFS, err := fs.Sub(web.Templates, "templates")
+	if err != nil {
+		log.Fatalf("failed to load templates: %v", err)
+	}
+
 	s := &Server{
-		db:    database,
-		queue: q,
-		addr:  addr,
+		db:        database,
+		queue:     q,
+		dashboard: dashboard.New(database, q, templatesFS),
+		addr:      addr,
 	}
 
 	s.setupRoutes()
@@ -45,6 +56,18 @@ func (s *Server) setupRoutes() {
 
 	// Health check
 	r.Get("/health", s.handleHealth)
+
+	// Dashboard
+	r.Get("/", s.dashboard.HandleIndex)
+	r.Get("/jobs/{jobID}", func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "jobID")
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			http.Error(w, "Invalid job ID", http.StatusBadRequest)
+			return
+		}
+		s.dashboard.HandleJob(w, r, id)
+	})
 
 	// API routes
 	r.Route("/api", func(r chi.Router) {
