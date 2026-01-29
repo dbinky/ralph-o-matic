@@ -13,8 +13,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Version = "1.0.0"
-$RepoUrl = "https://github.com/ryan/ralph-o-matic"
+$Version = "0.0.2"
+$RepoUrl = "https://github.com/dbinky/ralph-o-matic"
 $ReleaseUrl = "$RepoUrl/releases/download/v$Version"
 
 # Logging

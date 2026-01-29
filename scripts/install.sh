@@ -4,8 +4,8 @@ set -euo pipefail
 # Ralph-o-matic Installer
 # "It just works."
 
-VERSION="1.0.0"
-REPO_URL="https://github.com/ryan/ralph-o-matic"
+VERSION="0.0.2"
+REPO_URL="https://github.com/dbinky/ralph-o-matic"
 RELEASE_URL="$REPO_URL/releases/download/v$VERSION"
 
 # Colors
@@ -23,6 +23,7 @@ error() { echo -e "${RED}✗${NC} $1"; exit 1; }
 
 # Parse arguments
 MODE="full"  # full, server, client
+MODE_SET=false
 YES_FLAG=false
 SERVER_URL=""
 LARGE_MODEL=""
@@ -33,7 +34,7 @@ INFERENCE_MODE=""  # gpu_cpu_split, gpu_only, cpu_only, remote
 while [[ $# -gt 0 ]]; do
     case $1 in
         --yes|-y) YES_FLAG=true; shift ;;
-        --mode=*) MODE="${1#*=}"; shift ;;
+        --mode=*) MODE="${1#*=}"; MODE_SET=true; shift ;;
         --server=*) SERVER_URL="${1#*=}"; shift ;;
         --large-model=*) LARGE_MODEL="${1#*=}"; shift ;;
         --small-model=*) SMALL_MODEL="${1#*=}"; shift ;;
@@ -796,7 +797,7 @@ verify_installation() {
 }
 
 prompt_mode() {
-    if [[ "$YES_FLAG" == true ]]; then
+    if [[ "$YES_FLAG" == true ]] || [[ "$MODE_SET" == true ]]; then
         return
     fi
 
@@ -884,6 +885,6 @@ main() {
 }
 
 # Only run main when executed directly, not when sourced (e.g., by tests)
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ "${BASH_SOURCE[0]:-$0}" == "${0}" ]]; then
     main "$@"
 fi
