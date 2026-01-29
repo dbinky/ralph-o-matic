@@ -23,6 +23,7 @@ error() { echo -e "${RED}✗${NC} $1"; exit 1; }
 
 # Parse arguments
 MODE="full"  # full, server, client
+MODE_SET=false
 YES_FLAG=false
 SERVER_URL=""
 LARGE_MODEL=""
@@ -33,7 +34,7 @@ INFERENCE_MODE=""  # gpu_cpu_split, gpu_only, cpu_only, remote
 while [[ $# -gt 0 ]]; do
     case $1 in
         --yes|-y) YES_FLAG=true; shift ;;
-        --mode=*) MODE="${1#*=}"; shift ;;
+        --mode=*) MODE="${1#*=}"; MODE_SET=true; shift ;;
         --server=*) SERVER_URL="${1#*=}"; shift ;;
         --large-model=*) LARGE_MODEL="${1#*=}"; shift ;;
         --small-model=*) SMALL_MODEL="${1#*=}"; shift ;;
@@ -796,7 +797,7 @@ verify_installation() {
 }
 
 prompt_mode() {
-    if [[ "$YES_FLAG" == true ]]; then
+    if [[ "$YES_FLAG" == true ]] || [[ "$MODE_SET" == true ]]; then
         return
     fi
 
