@@ -26,7 +26,7 @@ all: test build
 
 ## Build targets
 
-build: build-cli
+build: build-server build-cli
 
 build-server:
 	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(SERVER_BINARY) $(CMD_SERVER)
@@ -36,7 +36,7 @@ build-cli:
 
 ## Cross-compilation targets
 
-build-all: build-cli-all
+build-all: build-server-all build-cli-all
 
 build-server-all:
 	GOOS=darwin GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(SERVER_BINARY)-darwin-arm64 $(CMD_SERVER)
