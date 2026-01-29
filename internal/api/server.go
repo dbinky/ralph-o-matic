@@ -59,6 +59,7 @@ func (s *Server) setupRoutes() {
 
 	// Dashboard
 	r.Get("/", s.dashboard.HandleIndex)
+	r.Get("/config", s.dashboard.HandleConfig)
 	r.Get("/jobs/{jobID}", func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "jobID")
 		id, err := strconv.ParseInt(idStr, 10, 64)

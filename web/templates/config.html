@@ -1,0 +1,20 @@
+{{define "title"}}Config - Ralph-o-matic{{end}}
+
+{{define "content"}}
+<div class="section">
+    <div class="section-header">
+        <h2 class="section-title">Server Configuration</h2>
+    </div>
+
+    <div class="job-card">
+        <table style="width: 100%; border-collapse: collapse;">
+            {{range .Settings}}
+            <tr style="border-bottom: 1px solid #333;">
+                <td style="padding: 10px; color: #888; width: 30%; vertical-align: top;">{{.Key}}</td>
+                <td style="padding: 10px; font-family: monospace;">{{.Value}}</td>
+            </tr>
+            {{end}}
+        </table>
+    </div>
+</div>
+{{end}}

@@ -59,6 +59,7 @@ type Dashboard struct {
 	queue         *queue.Queue
 	dashboardTmpl *template.Template
 	jobTmpl       *template.Template
+	configTmpl    *template.Template
 }
 
 // New creates a new dashboard handler from a template filesystem
@@ -73,11 +74,16 @@ func New(database *db.DB, q *queue.Queue, templatesFS fs.FS) *Dashboard {
 		template.New("layout.html").Funcs(funcs).ParseFS(templatesFS, "layout.html", "job.html"),
 	)
 
+	configTmpl := template.Must(
+		template.New("layout.html").Funcs(funcs).ParseFS(templatesFS, "layout.html", "config.html"),
+	)
+
 	return &Dashboard{
 		db:            database,
 		queue:         q,
 		dashboardTmpl: dashboardTmpl,
 		jobTmpl:       jobTmpl,
+		configTmpl:    configTmpl,
 	}
 }
 
@@ -138,6 +144,50 @@ func (d *Dashboard) HandleJob(w http.ResponseWriter, r *http.Request, jobID int6
 	}
 
 	d.render(w, d.jobTmpl, data)
+}
+
+// ConfigSetting is a key-value pair for display
+type ConfigSetting struct {
+	Key   string
+	Value string
+}
+
+// ConfigData is the data for the config page
+type ConfigData struct {
+	QueueSize int
+	Settings  []ConfigSetting
+}
+
+// HandleConfig renders the config page
+func (d *Dashboard) HandleConfig(w http.ResponseWriter, r *http.Request) {
+	configRepo := db.NewConfigRepo(d.db)
+	cfg, err := configRepo.Get()
+	if err != nil {
+		http.Error(w, "Failed to load config", http.StatusInternalServerError)
+		return
+	}
+
+	settings := []ConfigSetting{
+		{"ollama.host", cfg.Ollama.Host},
+		{"ollama.is_remote", fmt.Sprintf("%v", cfg.Ollama.IsRemote)},
+		{"large_model.name", cfg.LargeModel.Name},
+		{"large_model.device", cfg.LargeModel.Device},
+		{"large_model.memory_gb", fmt.Sprintf("%.0f", cfg.LargeModel.MemoryGB)},
+		{"small_model.name", cfg.SmallModel.Name},
+		{"small_model.device", cfg.SmallModel.Device},
+		{"small_model.memory_gb", fmt.Sprintf("%.0f", cfg.SmallModel.MemoryGB)},
+		{"default_max_iterations", fmt.Sprintf("%d", cfg.DefaultMaxIterations)},
+		{"concurrent_jobs", fmt.Sprintf("%d", cfg.ConcurrentJobs)},
+		{"workspace_dir", cfg.WorkspaceDir},
+		{"job_retention_days", fmt.Sprintf("%d", cfg.JobRetentionDays)},
+	}
+
+	data := ConfigData{
+		QueueSize: d.queue.Size(),
+		Settings:  settings,
+	}
+
+	d.render(w, d.configTmpl, data)
 }
 
 func toFloat64(v interface{}) float64 {
