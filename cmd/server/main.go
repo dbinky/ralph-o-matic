@@ -40,6 +40,7 @@ func main() {
 	defer database.Close()
 
 	if err := database.Migrate(); err != nil {
+		database.Close()
 		log.Fatalf("Failed to migrate database: %v", err)
 	}
 
