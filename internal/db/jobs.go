@@ -208,7 +208,7 @@ func (r *JobRepo) List(opts ListOptions) ([]*models.Job, int, error) {
 	}
 
 	// Build query with pagination
-	query := "SELECT id FROM jobs " + whereClause + " ORDER BY created_at DESC"
+	query := "SELECT id FROM jobs " + whereClause + " ORDER BY created_at DESC" //nolint:gosec // pagination values are integers, not user strings
 	if opts.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", opts.Limit)
 		if opts.Offset > 0 {

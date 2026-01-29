@@ -80,8 +80,9 @@ func (s *Server) Router() chi.Router {
 // Start begins listening for HTTP requests
 func (s *Server) Start() error {
 	s.server = &http.Server{
-		Addr:    s.addr,
-		Handler: s.router,
+		Addr:              s.addr,
+		Handler:           s.router,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	log.Printf("API server starting on %s", s.addr)

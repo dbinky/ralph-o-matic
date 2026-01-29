@@ -49,7 +49,7 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) error {
 
 	// Execute claude with the prompt
 	result, err := h.executor.Execute(ctx, workDir, job.Prompt, job.Env, func(line string) {
-		h.logRepo.Append(job.ID, job.Iteration, line)
+		_ = h.logRepo.Append(job.ID, job.Iteration, line)
 	})
 
 	if err != nil {

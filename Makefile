@@ -16,8 +16,11 @@ CMD_SERVER=./cmd/server
 CMD_CLI=./cmd/cli
 BUILD_DIR=./build
 
+# Version injection
+VERSION ?= $(shell git describe --tags --always --dirty)
+
 # Build flags
-LDFLAGS=-ldflags "-s -w"
+LDFLAGS=-ldflags "-s -w -X main.version=$(VERSION)" -trimpath
 
 all: test build
 
@@ -76,6 +79,7 @@ clean:
 
 deps:
 	$(GOMOD) download
+	$(GOMOD) verify
 	$(GOMOD) tidy
 
 lint:
