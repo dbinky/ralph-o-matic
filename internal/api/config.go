@@ -2,10 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/ryan/ralph-o-matic/internal/db"
-	"github.com/ryan/ralph-o-matic/internal/models"
 )
 
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
@@ -30,15 +30,25 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse updates as a ServerConfig (partial)
-	var updates models.ServerConfig
-	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+	// Read raw body for field-presence-aware merge
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read body")
+		return
+	}
+
+	// Validate it's valid JSON
+	if !json.Valid(raw) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 
-	// Apply updates via merge
-	merged := current.Merge(&updates)
+	// Apply updates via merge with field-presence detection
+	merged, err := current.MergeJSON(json.RawMessage(raw))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
 
 	// Validate
 	if err := merged.Validate(); err != nil {

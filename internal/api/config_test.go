@@ -93,11 +93,8 @@ func TestAPI_ConfigRoundTrip_FullModelPlacement(t *testing.T) {
 func TestAPI_ConfigRoundTrip_PartialUpdate_PreservesDefaults(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	// Only update the name
-	payload := models.ServerConfig{
-		LargeModel: models.ModelPlacement{Name: "only-name:14b"},
-	}
-	body, _ := json.Marshal(payload)
+	// Only update the name — send raw JSON to avoid Go zero-value fields
+	body := []byte(`{"large_model": {"name": "only-name:14b"}}`)
 	req := httptest.NewRequest("PATCH", "/api/config", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -109,6 +106,24 @@ func TestAPI_ConfigRoundTrip_PartialUpdate_PreservesDefaults(t *testing.T) {
 	assert.Equal(t, "only-name:14b", resp.LargeModel.Name)
 	assert.Equal(t, "cpu", resp.LargeModel.Device) // preserved from default
 	assert.Equal(t, 42.0, resp.LargeModel.MemoryGB) // preserved from default
+}
+
+func TestAPI_ConfigRoundTrip_ExplicitZeroValues(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	// Explicitly set memory_gb to 0 and is_remote to false
+	body := []byte(`{"large_model": {"name": "test:7b", "memory_gb": 0}, "ollama": {"host": "http://localhost:11434", "is_remote": false}}`)
+	req := httptest.NewRequest("PATCH", "/api/config", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp models.ServerConfig
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "test:7b", resp.LargeModel.Name)
+	assert.Equal(t, 0.0, resp.LargeModel.MemoryGB) // explicitly set to 0
+	assert.False(t, resp.Ollama.IsRemote)            // explicitly set to false
 }
 
 func TestAPI_UpdateConfig_InvalidModel(t *testing.T) {

@@ -97,12 +97,18 @@ func TestOllamaClient_PullModel_ServerError(t *testing.T) {
 
 func TestOllamaClient_HasModel(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := map[string]interface{}{
-			"models": []map[string]interface{}{
-				{"name": "qwen3-coder:70b", "size": 42000000000},
-			},
+		if r.URL.Path != "/api/show" || r.Method != "POST" {
+			w.WriteHeader(http.StatusNotFound)
+			return
 		}
-		json.NewEncoder(w).Encode(resp)
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+
+		if body["name"] == "qwen3-coder:70b" {
+			json.NewEncoder(w).Encode(map[string]string{"modelfile": "..."})
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))
 	defer server.Close()
 
@@ -197,13 +203,18 @@ func TestOllamaClient_ModelNameSpecialChars(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 			return
 		}
-		// /api/tags for HasModel
-		resp := map[string]interface{}{
-			"models": []map[string]interface{}{
-				{"name": "org/model+variant:latest", "size": 5000000000},
-			},
+		// /api/show for HasModel
+		if r.URL.Path == "/api/show" {
+			var body map[string]string
+			json.NewDecoder(r.Body).Decode(&body)
+			if body["name"] == "org/model+variant:latest" {
+				json.NewEncoder(w).Encode(map[string]string{"modelfile": "..."})
+			} else {
+				w.WriteHeader(http.StatusNotFound)
+			}
+			return
 		}
-		json.NewEncoder(w).Encode(resp)
+		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
 

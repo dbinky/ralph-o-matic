@@ -55,7 +55,7 @@ func SelectModels(catalog *Catalog, hw *HardwareInfo) ([]ModelConfig, error) {
 	}
 
 	if len(configs) == 0 {
-		return nil, fmt.Errorf("no valid model configuration fits in available memory (%.1fGB RAM", hw.SystemRAMGB)
+		return nil, fmt.Errorf("no valid model configuration fits in available memory (%.1fGB RAM)", hw.SystemRAMGB)
 	}
 
 	// Sort by score descending, then by large model memory descending (prefer bigger)
@@ -108,19 +108,19 @@ func findBestPlacement(large, small CatalogModel, hw *HardwareInfo) *placementRe
 		}
 	}
 
-	// Strategy 2: Large on CPU, small on GPU (split)
-	if gpuMem > 0 && small.MemoryGB <= gpuMem && large.MemoryGB <= cpuMem {
-		return &placementResult{
-			large: models.ModelPlacement{Name: large.Name, Device: "cpu", MemoryGB: large.MemoryGB},
-			small: models.ModelPlacement{Name: small.Name, Device: "gpu", MemoryGB: small.MemoryGB},
-		}
-	}
-
-	// Strategy 3: Large on GPU, small on CPU (split, less common)
+	// Strategy 2: Large on GPU, small on CPU (preferred split — large model benefits most from GPU)
 	if gpuMem > 0 && large.MemoryGB <= gpuMem && small.MemoryGB <= cpuMem {
 		return &placementResult{
 			large: models.ModelPlacement{Name: large.Name, Device: "gpu", MemoryGB: large.MemoryGB},
 			small: models.ModelPlacement{Name: small.Name, Device: "cpu", MemoryGB: small.MemoryGB},
+		}
+	}
+
+	// Strategy 3: Large on CPU, small on GPU (when large doesn't fit on GPU)
+	if gpuMem > 0 && small.MemoryGB <= gpuMem && large.MemoryGB <= cpuMem {
+		return &placementResult{
+			large: models.ModelPlacement{Name: large.Name, Device: "cpu", MemoryGB: large.MemoryGB},
+			small: models.ModelPlacement{Name: small.Name, Device: "gpu", MemoryGB: small.MemoryGB},
 		}
 	}
 

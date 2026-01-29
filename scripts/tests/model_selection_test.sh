@@ -3,12 +3,12 @@
 # Model selection tests for install script
 
 setup() {
-    # Source install script functions without running main
-    # Override error() to not exit
+    # Source install script functions (main is guarded by BASH_SOURCE check)
+    # Override error() to not exit during tests
     error() { echo "ERROR: $1"; return 1; }
     export -f error
 
-    source scripts/install.sh 2>/dev/null || true
+    source scripts/install.sh
 }
 
 @test "show_hardware_summary outputs system info" {

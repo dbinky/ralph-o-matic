@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -67,6 +68,10 @@ func (c *OllamaClient) ListModels(ctx context.Context) ([]OllamaModel, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to list models: Ollama returned status %d", resp.StatusCode)
+	}
+
 	var result struct {
 		Models []struct {
 			Name string `json:"name"`
@@ -91,17 +96,27 @@ func (c *OllamaClient) ListModels(ctx context.Context) ([]OllamaModel, error) {
 
 // HasModel checks if a specific model is available on the server
 func (c *OllamaClient) HasModel(ctx context.Context, name string) (bool, error) {
-	models, err := c.ListModels(ctx)
+	body := fmt.Sprintf(`{"name":%q}`, name)
+	req, err := http.NewRequestWithContext(ctx, "POST", c.host+"/api/show", strings.NewReader(body))
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to create request: %w", err)
 	}
+	req.Header.Set("Content-Type", "application/json")
 
-	for _, m := range models {
-		if m.Name == name {
-			return true, nil
-		}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("failed to check model %s: %w", name, err)
 	}
-	return false, nil
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body) //nolint:errcheck
+
+	if resp.StatusCode == http.StatusOK {
+		return true, nil
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	return false, fmt.Errorf("failed to check model %s: HTTP %d", name, resp.StatusCode)
 }
 
 // PullModel downloads a model from the Ollama registry
@@ -128,6 +143,12 @@ func (c *OllamaClient) PullModel(ctx context.Context, name string) error {
 			return fmt.Errorf("failed to pull model %s: %s", name, errResp.Error)
 		}
 		return fmt.Errorf("failed to pull model %s: HTTP %d", name, resp.StatusCode)
+	}
+
+	// Consume the full streaming NDJSON response so Ollama completes the pull.
+	// Each line is a JSON status object; we read until EOF.
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return fmt.Errorf("failed to pull model %s: error reading response: %w", name, err)
 	}
 
 	return nil

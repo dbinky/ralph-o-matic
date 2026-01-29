@@ -55,7 +55,8 @@ func (h *HardwareInfo) HasGPU() bool {
 	return len(h.GPUs) > 0
 }
 
-// BestGPU returns the GPU with the most VRAM, or nil if no GPUs
+// BestGPU returns the GPU with the most VRAM, or nil if no GPUs.
+// Callers should check HasGPU() before using the returned pointer.
 func (h *HardwareInfo) BestGPU() *GPUInfo {
 	if len(h.GPUs) == 0 {
 		return nil

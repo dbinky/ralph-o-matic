@@ -1,6 +1,9 @@
 package models
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // ModelPlacement describes which model to use and where to run it
 type ModelPlacement struct {
@@ -155,4 +158,51 @@ func (c *ServerConfig) Merge(updates *ServerConfig) *ServerConfig {
 	}
 
 	return &result
+}
+
+// MergeJSON applies a partial JSON update to the config, correctly handling
+// zero values (false, 0) by checking which fields are actually present in the
+// raw JSON rather than relying on Go zero-value detection.
+func (c *ServerConfig) MergeJSON(raw json.RawMessage) (*ServerConfig, error) {
+	// First, do the standard merge for non-zero fields
+	var updates ServerConfig
+	if err := json.Unmarshal(raw, &updates); err != nil {
+		return nil, err
+	}
+	result := c.Merge(&updates)
+
+	// Now check for explicitly-set zero-value fields using a raw map
+	var rawMap map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &rawMap); err != nil {
+		return nil, err
+	}
+
+	if ollamaRaw, ok := rawMap["ollama"]; ok {
+		var ollamaMap map[string]json.RawMessage
+		if err := json.Unmarshal(ollamaRaw, &ollamaMap); err == nil {
+			if _, ok := ollamaMap["is_remote"]; ok {
+				result.Ollama.IsRemote = updates.Ollama.IsRemote
+			}
+		}
+	}
+
+	if lmRaw, ok := rawMap["large_model"]; ok {
+		var lmMap map[string]json.RawMessage
+		if err := json.Unmarshal(lmRaw, &lmMap); err == nil {
+			if _, ok := lmMap["memory_gb"]; ok {
+				result.LargeModel.MemoryGB = updates.LargeModel.MemoryGB
+			}
+		}
+	}
+
+	if smRaw, ok := rawMap["small_model"]; ok {
+		var smMap map[string]json.RawMessage
+		if err := json.Unmarshal(smRaw, &smMap); err == nil {
+			if _, ok := smMap["memory_gb"]; ok {
+				result.SmallModel.MemoryGB = updates.SmallModel.MemoryGB
+			}
+		}
+	}
+
+	return result, nil
 }
