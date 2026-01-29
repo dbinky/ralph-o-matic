@@ -743,6 +743,8 @@ EOF
 }
 
 prompt_start_server() {
+    install_service
+
     if [[ "$YES_FLAG" == true ]]; then
         start_server
         return
@@ -756,19 +758,89 @@ prompt_start_server() {
     fi
 }
 
+install_service() {
+    info "Installing ralph-o-matic as a system service..."
+
+    local config_dir="$HOME/.config/ralph-o-matic"
+    local log_dir="$config_dir/logs"
+    mkdir -p "$log_dir"
+
+    if [[ "$OS" == "darwin" ]]; then
+        local plist_path="$HOME/Library/LaunchAgents/com.ralph-o-matic.server.plist"
+        cat > "$plist_path" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ralph-o-matic.server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/ralph-o-matic-server</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>${config_dir}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>RALPH_DB</key>
+        <string>${config_dir}/data/ralph.db</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${log_dir}/server.log</string>
+    <key>StandardErrorPath</key>
+    <string>${log_dir}/server.err</string>
+</dict>
+</plist>
+EOF
+        success "launchd service installed at $plist_path"
+
+    elif [[ "$OS" == "linux" ]]; then
+        local service_dir="$HOME/.config/systemd/user"
+        mkdir -p "$service_dir"
+        cat > "$service_dir/ralph-o-matic.service" <<EOF
+[Unit]
+Description=Ralph-o-matic Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ralph-o-matic-server
+WorkingDirectory=${config_dir}
+Environment=RALPH_DB=${config_dir}/data/ralph.db
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+        systemctl --user daemon-reload
+        systemctl --user enable ralph-o-matic.service
+        success "systemd user service installed and enabled"
+    fi
+}
+
 start_server() {
     info "Starting ralph-o-matic server..."
 
-    # Start in background (disown to detach from tty)
-    nohup ralph-o-matic-server &>/dev/null &
-    disown
-    sleep 2
+    if [[ "$OS" == "darwin" ]]; then
+        launchctl bootout "gui/$(id -u)" "com.ralph-o-matic.server" 2>/dev/null
+        launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.ralph-o-matic.server.plist"
+        sleep 2
+
+    elif [[ "$OS" == "linux" ]]; then
+        systemctl --user restart ralph-o-matic.service
+        sleep 2
+    fi
 
     # Check if running
     if pgrep -x ralph-o-matic-server &>/dev/null; then
-        success "Server started"
+        success "Server started (runs automatically on login)"
     else
-        warn "Server may have failed to start - check logs"
+        warn "Server may have failed to start - check logs at ~/.config/ralph-o-matic/logs/"
     fi
 }
 
