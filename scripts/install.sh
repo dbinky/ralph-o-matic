@@ -101,22 +101,27 @@ detect_platform() {
 }
 
 check_ram_requirement() {
-    local MIN_RAM=32
+    local MIN_RAM=16
 
     if [[ "$MODE" == "client" ]]; then
-        # Client doesn't need 32GB
+        # Client doesn't need much RAM
         return 0
     fi
 
     if [[ $RAM_GB -lt $MIN_RAM ]]; then
-        error "Insufficient RAM: ${RAM_GB}GB detected, ${MIN_RAM}GB required for server mode.
+        error "Insufficient RAM: ${RAM_GB}GB detected, ${MIN_RAM}GB minimum required.
 
-Server mode requires 32GB RAM to run qwen3-coder.
+Server mode requires at least 16GB RAM to run coding models.
 If you only want to submit jobs to a remote server, use:
   $0 --mode=client --server=http://your-server:9090"
     fi
 
-    success "RAM check passed: ${RAM_GB}GB available"
+    if [[ $RAM_GB -lt 32 ]]; then
+        warn "RAM: ${RAM_GB}GB detected. The default 70b model needs 42GB."
+        info "The installer will recommend smaller models that fit your hardware."
+    else
+        success "RAM check passed: ${RAM_GB}GB available"
+    fi
 }
 
 # GPU detection
