@@ -827,12 +827,14 @@ start_server() {
     info "Starting ralph-o-matic server..."
 
     if [[ "$OS" == "darwin" ]]; then
-        launchctl bootout "gui/$(id -u)" "com.ralph-o-matic.server" 2>/dev/null
-        launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.ralph-o-matic.server.plist"
+        # Unload first (ignore errors if not loaded)
+        launchctl bootout "gui/$(id -u)" "com.ralph-o-matic.server" 2>/dev/null || true
+        sleep 1
+        launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.ralph-o-matic.server.plist" || true
         sleep 2
 
     elif [[ "$OS" == "linux" ]]; then
-        systemctl --user restart ralph-o-matic.service
+        systemctl --user restart ralph-o-matic.service || true
         sleep 2
     fi
 
@@ -854,7 +856,7 @@ verify_installation() {
         success "CLI working"
     else
         warn "CLI verification failed"
-        ((errors++))
+        errors=$((errors + 1))
     fi
 
     # Check server (if installed)
@@ -863,7 +865,7 @@ verify_installation() {
             success "Server binary working"
         else
             warn "Server verification failed"
-            ((errors++))
+            errors=$((errors + 1))
         fi
     fi
 
