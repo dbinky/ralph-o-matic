@@ -41,7 +41,7 @@ func TestClaudeExecutor_BuildCommand(t *testing.T) {
 
 	assert.Equal(t, "claude", cmd[0])
 	assert.Contains(t, cmd, "--print")
-	// Prompt should be passed via stdin, not command line
+	assert.Contains(t, cmd, "--dangerously-skip-permissions")
 }
 
 func TestClaudeExecutor_ParseOutput_Iteration(t *testing.T) {

@@ -54,7 +54,8 @@ func (e *ClaudeExecutor) BuildEnv(extra map[string]string) []string {
 func (e *ClaudeExecutor) BuildCommand(prompt string) []string {
 	return []string{
 		"claude",
-		"--print", // Non-interactive mode
+		"--print",
+		"--dangerously-skip-permissions",
 	}
 }
 
@@ -71,7 +72,7 @@ type OutputCallback func(line string)
 
 // Execute runs Claude Code with the given prompt
 func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, env map[string]string, onOutput OutputCallback) (*ExecutionResult, error) {
-	cmd := exec.CommandContext(ctx, "claude", "--print")
+	cmd := exec.CommandContext(ctx, "claude", "--print", "--dangerously-skip-permissions")
 	cmd.Dir = workDir
 	cmd.Env = e.BuildEnv(env)
 
