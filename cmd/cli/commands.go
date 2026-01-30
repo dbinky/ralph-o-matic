@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -336,8 +337,23 @@ func serverConfigCmd() *cobra.Command {
 // Helper functions
 
 func getGitInfo() (string, string, error) {
-	// TODO: Implement using git commands
-	return "", "", fmt.Errorf("not implemented")
+	repoURL, err := execGit("remote", "get-url", "origin")
+	if err != nil {
+		return "", "", fmt.Errorf("get remote URL: %w", err)
+	}
+	branch, err := execGit("branch", "--show-current")
+	if err != nil {
+		return "", "", fmt.Errorf("get branch: %w", err)
+	}
+	return strings.TrimSpace(repoURL), strings.TrimSpace(branch), nil
+}
+
+func execGit(args ...string) (string, error) {
+	out, err := exec.Command("git", args...).Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 func readPromptFile(workingDir string) (string, error) {
