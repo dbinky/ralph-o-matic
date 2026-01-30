@@ -11,7 +11,9 @@ import (
 
 	"github.com/ryan/ralph-o-matic/internal/api"
 	"github.com/ryan/ralph-o-matic/internal/db"
+	"github.com/ryan/ralph-o-matic/internal/executor"
 	"github.com/ryan/ralph-o-matic/internal/queue"
+	"github.com/ryan/ralph-o-matic/internal/worker"
 )
 
 // version is set via -ldflags at build time.
@@ -52,6 +54,21 @@ func run() error {
 	q := queue.New(database)
 	srv := api.NewServer(database, q, addr)
 
+	// Load config for executor
+	configRepo := db.NewConfigRepo(database)
+	config, err := configRepo.Get()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	workspaceDir := config.WorkspaceDir
+	if workspaceDir == "" {
+		workspaceDir = "workspaces"
+	}
+
+	handler := executor.NewRalphHandler(database, config, workspaceDir)
+	w := worker.New(q, handler, 5*time.Second)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -60,6 +77,8 @@ func run() error {
 			log.Printf("Server stopped: %v", err)
 		}
 	}()
+
+	go w.Run(ctx)
 
 	log.Printf("ralph-o-matic-server %s listening on %s", version, addr)
 	<-ctx.Done()

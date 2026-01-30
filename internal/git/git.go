@@ -24,7 +24,7 @@ func (g *Git) IsInstalled() bool {
 
 // Clone clones a repository
 func (g *Git) Clone(ctx context.Context, repoURL, branch, dest string) error {
-	args := []string{"clone", "--branch", branch, "--single-branch", "--depth", "1", repoURL, dest}
+	args := []string{"clone", "--branch", branch, "--single-branch", repoURL, dest}
 	return g.run(ctx, "", args...)
 }
 
@@ -84,6 +84,15 @@ func (g *Git) AddAll(ctx context.Context, dir string) error {
 // GetLog returns the git log
 func (g *Git) GetLog(ctx context.Context, dir string, limit int) (string, error) {
 	return g.runOutput(ctx, dir, "log", "--oneline", fmt.Sprintf("-n%d", limit))
+}
+
+// HasCommitsAhead returns true if headBranch has commits not in baseBranch
+func (g *Git) HasCommitsAhead(ctx context.Context, dir, baseBranch, headBranch string) (bool, error) {
+	output, err := g.runOutput(ctx, dir, "rev-list", "--count", baseBranch+".."+headBranch)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(output) != "0", nil
 }
 
 func (g *Git) run(ctx context.Context, dir string, args ...string) error {

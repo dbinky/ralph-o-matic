@@ -95,6 +95,7 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, en
 
 	// Read output in goroutines
 	var outputBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -105,7 +106,11 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, en
 
 	go func() {
 		defer wg.Done()
-		e.readOutput(stderr, &outputBuf, onOutput)
+		e.readOutput(stderr, &stderrBuf, func(line string) {
+			if onOutput != nil {
+				onOutput("[stderr] " + line)
+			}
+		})
 	}()
 
 	wg.Wait()
@@ -113,11 +118,18 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, en
 	err = cmd.Wait()
 
 	output := outputBuf.String()
+	if err != nil {
+		errDetail := stderrBuf.String()
+		if errDetail != "" {
+			return nil, fmt.Errorf("claude exited with error: %w\nstderr: %s", err, errDetail)
+		}
+		return nil, fmt.Errorf("claude exited with error: %w", err)
+	}
+
 	result := &ExecutionResult{
 		Output:     output,
 		Iterations: ParseIterations(output),
 		Completed:  ContainsPromise(output, "COMPLETE") || ContainsPromise(output, "DONE"),
-		Error:      err,
 	}
 
 	return result, nil

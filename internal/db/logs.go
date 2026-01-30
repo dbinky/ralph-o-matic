@@ -7,11 +7,11 @@ import (
 
 // JobLog represents a single log entry
 type JobLog struct {
-	ID        int64
-	JobID     int64
-	Iteration int
-	Timestamp time.Time
-	Message   string
+	ID        int64     `json:"id"`
+	JobID     int64     `json:"job_id"`
+	Iteration int       `json:"iteration"`
+	Timestamp time.Time `json:"timestamp"`
+	Message   string    `json:"message"`
 }
 
 // LogRepo handles job log persistence
