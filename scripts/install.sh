@@ -117,7 +117,7 @@ If you only want to submit jobs to a remote server, use:
     fi
 
     if [[ $RAM_GB -lt 32 ]]; then
-        warn "RAM: ${RAM_GB}GB detected. The default 70b model needs 42GB."
+        warn "RAM: ${RAM_GB}GB detected. Smaller models will be recommended."
         info "The installer will recommend smaller models that fit your hardware."
     else
         success "RAM check passed: ${RAM_GB}GB available"
@@ -173,9 +173,9 @@ detect_gpu() {
     fi
 
     # Determine what models can run on GPU
-    # qwen3-coder:70b needs ~40GB VRAM
-    # qwen2.5-coder:7b needs ~5GB VRAM
-    if [[ $GPU_VRAM_MB -ge 45000 ]]; then
+    # devstral needs ~15GB VRAM
+    # qwen3:8b needs ~5GB VRAM
+    if [[ $GPU_VRAM_MB -ge 16000 ]]; then
         GPU_CAN_RUN_LARGE=true
         GPU_CAN_RUN_SMALL=true
         success "GPU can run both large and small models"
@@ -223,33 +223,33 @@ show_model_recommendation() {
 
 customize_models() {
     echo ""
-    echo "Available large models:"
-    echo "  [1] qwen3-coder:70b     (42GB, quality 10 - best)"
-    echo "  [2] qwen2.5-coder:32b   (20GB, quality 8)"
-    echo "  [3] qwen2.5-coder:14b   (10GB, quality 6)"
-    echo "  [4] qwen2.5-coder:7b    (5GB,  quality 4)"
+    echo "Available large models (all support tool use):"
+    echo "  [1] devstral            (15GB, quality 9 - best)"
+    echo "  [2] qwen3-coder:30b    (19GB, quality 8)"
+    echo "  [3] qwen3:14b          (9.3GB, quality 6)"
+    echo "  [4] qwen3:8b           (5.2GB, quality 4)"
     echo ""
     read -p "Select large model [1-4]: " -n 1 -r
     echo ""
     case $REPLY in
-        1) LARGE_MODEL="qwen3-coder:70b" ;;
-        2) LARGE_MODEL="qwen2.5-coder:32b" ;;
-        3) LARGE_MODEL="qwen2.5-coder:14b" ;;
-        4) LARGE_MODEL="qwen2.5-coder:7b" ;;
-        *) warn "Invalid choice, using qwen2.5-coder:14b"; LARGE_MODEL="qwen2.5-coder:14b" ;;
+        1) LARGE_MODEL="devstral" ;;
+        2) LARGE_MODEL="qwen3-coder:30b" ;;
+        3) LARGE_MODEL="qwen3:14b" ;;
+        4) LARGE_MODEL="qwen3:8b" ;;
+        *) warn "Invalid choice, using qwen3:14b"; LARGE_MODEL="qwen3:14b" ;;
     esac
 
     echo ""
     echo "Available small models:"
-    echo "  [1] qwen2.5-coder:7b    (5GB,   quality 4)"
-    echo "  [2] qwen2.5-coder:1.5b  (1.5GB, quality 2 - fastest)"
+    echo "  [1] qwen3:8b    (5.2GB, quality 4 - tool use)"
+    echo "  [2] qwen3:4b    (2.5GB, quality 2 - fastest)"
     echo ""
     read -p "Select small model [1-2]: " -n 1 -r
     echo ""
     case $REPLY in
-        1) SMALL_MODEL="qwen2.5-coder:7b" ;;
-        2) SMALL_MODEL="qwen2.5-coder:1.5b" ;;
-        *) warn "Invalid choice, using qwen2.5-coder:7b"; SMALL_MODEL="qwen2.5-coder:7b" ;;
+        1) SMALL_MODEL="qwen3:8b" ;;
+        2) SMALL_MODEL="qwen3:4b" ;;
+        *) warn "Invalid choice, using qwen3:8b"; SMALL_MODEL="qwen3:8b" ;;
     esac
 
     success "Selected: large=$LARGE_MODEL, small=$SMALL_MODEL"
@@ -279,10 +279,10 @@ setup_remote_ollama() {
 
     # Still need to pick models (they run on remote)
     if [[ -z "$LARGE_MODEL" ]]; then
-        LARGE_MODEL="qwen3-coder:70b"
+        LARGE_MODEL="devstral"
     fi
     if [[ -z "$SMALL_MODEL" ]]; then
-        SMALL_MODEL="qwen2.5-coder:7b"
+        SMALL_MODEL="qwen3:8b"
     fi
 }
 
@@ -290,57 +290,63 @@ select_models() {
     show_hardware_summary
 
     # Compute recommendation based on hardware
-    local rec_large="qwen2.5-coder:14b"
-    local rec_small="qwen2.5-coder:7b"
+    local rec_large="qwen3:14b"
+    local rec_small="qwen3:8b"
     local rec_mode="cpu_only"
 
     if [[ "$GPU_TYPE" == "apple" ]]; then
         # Apple Silicon unified memory
-        if [[ $RAM_GB -ge 64 ]]; then
-            rec_large="qwen3-coder:70b"
+        if [[ $RAM_GB -ge 48 ]]; then
+            rec_large="devstral"
             rec_mode="gpu_only"
         elif [[ $RAM_GB -ge 32 ]]; then
-            rec_large="qwen2.5-coder:32b"
+            rec_large="qwen3-coder:30b"
             rec_mode="gpu_only"
         elif [[ $RAM_GB -ge 16 ]]; then
-            rec_large="qwen2.5-coder:14b"
+            rec_large="qwen3:14b"
             rec_mode="gpu_only"
         else
-            rec_large="qwen2.5-coder:7b"
+            rec_large="qwen3:8b"
             rec_mode="gpu_only"
         fi
     elif [[ "$GPU_TYPE" == "nvidia" ]] || [[ "$GPU_TYPE" == "amd" ]]; then
         if [[ "$GPU_CAN_RUN_LARGE" == true ]]; then
-            rec_large="qwen3-coder:70b"
+            rec_large="devstral"
             rec_mode="gpu_only"
         elif [[ "$GPU_CAN_RUN_SMALL" == true ]]; then
             rec_mode="gpu_cpu_split"
-            if [[ $RAM_GB -ge 64 ]]; then
-                rec_large="qwen3-coder:70b"
+            if [[ $RAM_GB -ge 48 ]]; then
+                rec_large="devstral"
             elif [[ $RAM_GB -ge 32 ]]; then
-                rec_large="qwen2.5-coder:32b"
+                rec_large="qwen3-coder:30b"
+            elif [[ $RAM_GB -ge 16 ]]; then
+                rec_large="qwen3:14b"
             else
-                rec_large="qwen2.5-coder:14b"
+                rec_large="qwen3:8b"
             fi
         else
             rec_mode="cpu_only"
-            if [[ $RAM_GB -ge 64 ]]; then
-                rec_large="qwen3-coder:70b"
+            if [[ $RAM_GB -ge 48 ]]; then
+                rec_large="devstral"
             elif [[ $RAM_GB -ge 32 ]]; then
-                rec_large="qwen2.5-coder:32b"
+                rec_large="qwen3-coder:30b"
+            elif [[ $RAM_GB -ge 16 ]]; then
+                rec_large="qwen3:14b"
             else
-                rec_large="qwen2.5-coder:14b"
+                rec_large="qwen3:8b"
             fi
         fi
     else
         # No GPU
         rec_mode="cpu_only"
-        if [[ $RAM_GB -ge 64 ]]; then
-            rec_large="qwen3-coder:70b"
+        if [[ $RAM_GB -ge 48 ]]; then
+            rec_large="devstral"
         elif [[ $RAM_GB -ge 32 ]]; then
-            rec_large="qwen2.5-coder:32b"
+            rec_large="qwen3-coder:30b"
+        elif [[ $RAM_GB -ge 16 ]]; then
+            rec_large="qwen3:14b"
         else
-            rec_large="qwen2.5-coder:14b"
+            rec_large="qwen3:8b"
         fi
     fi
 

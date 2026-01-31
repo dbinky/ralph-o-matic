@@ -36,8 +36,8 @@ func TestOllamaClient_ListModels(t *testing.T) {
 		assert.Equal(t, "/api/tags", r.URL.Path)
 		resp := map[string]interface{}{
 			"models": []map[string]interface{}{
-				{"name": "qwen3-coder:70b", "size": 42000000000},
-				{"name": "qwen2.5-coder:7b", "size": 5000000000},
+				{"name": "devstral", "size": 15000000000},
+				{"name": "qwen3:8b", "size": 5200000000},
 			},
 		}
 		json.NewEncoder(w).Encode(resp)
@@ -48,8 +48,8 @@ func TestOllamaClient_ListModels(t *testing.T) {
 	models, err := client.ListModels(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, models, 2)
-	assert.Equal(t, "qwen3-coder:70b", models[0].Name)
-	assert.InDelta(t, 39.1, models[0].SizeGB, 1.0)
+	assert.Equal(t, "devstral", models[0].Name)
+	assert.InDelta(t, 14.0, models[0].SizeGB, 1.0)
 }
 
 func TestOllamaClient_ListModels_Empty(t *testing.T) {
@@ -104,7 +104,7 @@ func TestOllamaClient_HasModel(t *testing.T) {
 		var body map[string]string
 		json.NewDecoder(r.Body).Decode(&body)
 
-		if body["name"] == "qwen3-coder:70b" {
+		if body["name"] == "devstral" {
 			json.NewEncoder(w).Encode(map[string]string{"modelfile": "..."})
 		} else {
 			w.WriteHeader(http.StatusNotFound)
@@ -114,7 +114,7 @@ func TestOllamaClient_HasModel(t *testing.T) {
 
 	client := NewOllamaClient(server.URL)
 
-	has, err := client.HasModel(context.Background(), "qwen3-coder:70b")
+	has, err := client.HasModel(context.Background(), "devstral")
 	require.NoError(t, err)
 	assert.True(t, has)
 

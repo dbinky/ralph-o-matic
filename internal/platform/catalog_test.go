@@ -13,10 +13,10 @@ func TestLoadEmbeddedCatalog(t *testing.T) {
 	assert.GreaterOrEqual(t, len(catalog.Models), 5)
 
 	// Verify first model
-	assert.Equal(t, "qwen3-coder:70b", catalog.Models[0].Name)
-	assert.Equal(t, 42.0, catalog.Models[0].MemoryGB)
+	assert.Equal(t, "devstral", catalog.Models[0].Name)
+	assert.Equal(t, 15.0, catalog.Models[0].MemoryGB)
 	assert.Equal(t, "large", catalog.Models[0].Role)
-	assert.Equal(t, 10, catalog.Models[0].Quality)
+	assert.Equal(t, 9, catalog.Models[0].Quality)
 }
 
 func TestLoadCatalogFromBytes(t *testing.T) {

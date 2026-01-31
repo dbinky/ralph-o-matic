@@ -1,33 +1,34 @@
 # models.yaml - Recommended coding models for ralph-o-matic
 # quality: relative ranking (higher = better coding performance)
 # role: "large" (primary model), "small" (helper), or "both"
+# All models must support tool use for agent mode
 models:
-  - name: "qwen3-coder:70b"
-    memory_gb: 42
+  - name: "devstral"
+    memory_gb: 15
     role: large
-    quality: 10
-    description: "Best coding performance, needs ~42GB"
+    quality: 9
+    description: "#1 SWE-bench open source, built for agents (24B dense)"
 
-  - name: "qwen2.5-coder:32b"
-    memory_gb: 20
+  - name: "qwen3-coder:30b"
+    memory_gb: 19
     role: large
     quality: 8
-    description: "Strong coding, much smaller footprint"
+    description: "Best open coding model with tool use (3.3B MoE)"
 
-  - name: "qwen2.5-coder:14b"
-    memory_gb: 10
+  - name: "qwen3:14b"
+    memory_gb: 9.3
     role: large
     quality: 6
-    description: "Good coding capability"
+    description: "Tool use capable, good for constrained RAM (14B dense)"
 
-  - name: "qwen2.5-coder:7b"
-    memory_gb: 5
+  - name: "qwen3:8b"
+    memory_gb: 5.2
     role: both
     quality: 4
-    description: "Decent coding, fast inference"
+    description: "Minimum viable for tool use (8B dense)"
 
-  - name: "qwen2.5-coder:1.5b"
-    memory_gb: 1.5
+  - name: "qwen3:4b"
+    memory_gb: 2.5
     role: small
     quality: 2
     description: "Lightweight helper only"

@@ -16,9 +16,9 @@ func TestConfigRepo_GetDefault(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return defaults when no config exists
-	assert.Equal(t, "qwen3-coder:70b", cfg.LargeModel.Name)
+	assert.Equal(t, "qwen3-coder:30b", cfg.LargeModel.Name)
 	assert.Equal(t, "cpu", cfg.LargeModel.Device)
-	assert.Equal(t, "qwen2.5-coder:7b", cfg.SmallModel.Name)
+	assert.Equal(t, "qwen3:8b", cfg.SmallModel.Name)
 	assert.Equal(t, "gpu", cfg.SmallModel.Device)
 	assert.Equal(t, "http://localhost:11434", cfg.Ollama.Host)
 	assert.False(t, cfg.Ollama.IsRemote)

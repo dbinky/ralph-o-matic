@@ -17,8 +17,8 @@ func TestClaudeExecutor_BuildEnv(t *testing.T) {
 	assert.Contains(t, env, "ANTHROPIC_BASE_URL=http://localhost:11434")
 	assert.Contains(t, env, "ANTHROPIC_AUTH_TOKEN=ollama")
 	assert.Contains(t, env, "ANTHROPIC_API_KEY=")
-	assert.Contains(t, env, "ANTHROPIC_MODEL=qwen3-coder:70b")
-	assert.Contains(t, env, "ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen2.5-coder:7b")
+	assert.Contains(t, env, "ANTHROPIC_MODEL=qwen3-coder:30b")
+	assert.Contains(t, env, "ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3:8b")
 	assert.Contains(t, env, "CUSTOM=value")
 }
 
@@ -40,7 +40,7 @@ func TestClaudeExecutor_BuildCommand(t *testing.T) {
 	cmd := exec.BuildCommand("Write tests for auth module")
 
 	assert.Equal(t, "claude", cmd[0])
-	assert.Contains(t, cmd, "--print")
+	assert.NotContains(t, cmd, "--print")
 	assert.Contains(t, cmd, "--dangerously-skip-permissions")
 }
 
@@ -97,7 +97,7 @@ func TestClaudeExecutor_BuildEnv_DevicePlacement(t *testing.T) {
 
 	// Device placement doesn't affect env vars, just verify no panic
 	env := exec.BuildEnv(nil)
-	assert.Contains(t, env, "ANTHROPIC_MODEL=qwen3-coder:70b")
+	assert.Contains(t, env, "ANTHROPIC_MODEL=qwen3-coder:30b")
 }
 
 func TestClaudeExecutor_BuildEnv_EmptyHost(t *testing.T) {

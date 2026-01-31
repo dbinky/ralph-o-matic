@@ -27,7 +27,7 @@ func TestAPI_GetConfig(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	// Should return defaults
-	assert.Equal(t, "qwen3-coder:70b", resp.LargeModel.Name)
+	assert.Equal(t, "qwen3-coder:30b", resp.LargeModel.Name)
 	assert.Equal(t, "cpu", resp.LargeModel.Device)
 	assert.Equal(t, "http://localhost:11434", resp.Ollama.Host)
 }
@@ -105,7 +105,7 @@ func TestAPI_ConfigRoundTrip_PartialUpdate_PreservesDefaults(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "only-name:14b", resp.LargeModel.Name)
 	assert.Equal(t, "cpu", resp.LargeModel.Device) // preserved from default
-	assert.Equal(t, 42.0, resp.LargeModel.MemoryGB) // preserved from default
+	assert.Equal(t, 19.0, resp.LargeModel.MemoryGB) // preserved from default
 }
 
 func TestAPI_ConfigRoundTrip_ExplicitZeroValues(t *testing.T) {

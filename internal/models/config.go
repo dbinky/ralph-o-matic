@@ -67,8 +67,8 @@ type ServerConfig struct {
 func DefaultServerConfig() *ServerConfig {
 	return &ServerConfig{
 		Ollama:               OllamaConfig{Host: "http://localhost:11434", IsRemote: false},
-		LargeModel:           ModelPlacement{Name: "qwen3-coder:70b", Device: "cpu", MemoryGB: 42},
-		SmallModel:           ModelPlacement{Name: "qwen2.5-coder:7b", Device: "gpu", MemoryGB: 5},
+		LargeModel:           ModelPlacement{Name: "qwen3-coder:30b", Device: "cpu", MemoryGB: 19},
+		SmallModel:           ModelPlacement{Name: "qwen3:8b", Device: "gpu", MemoryGB: 5.2},
 		DefaultMaxIterations: 50,
 		ConcurrentJobs:       1,
 		JobRetentionDays:     30,

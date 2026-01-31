@@ -10,7 +10,7 @@ import (
 
 func TestModelPlacement_Validate(t *testing.T) {
 	t.Run("valid placement", func(t *testing.T) {
-		mp := ModelPlacement{Name: "qwen3-coder:70b", Device: "gpu", MemoryGB: 42}
+		mp := ModelPlacement{Name: "qwen3-coder:30b", Device: "gpu", MemoryGB: 19}
 		assert.NoError(t, mp.Validate())
 	})
 
@@ -70,14 +70,14 @@ func TestDefaultServerConfig(t *testing.T) {
 	assert.False(t, cfg.Ollama.IsRemote)
 
 	// LargeModel defaults
-	assert.Equal(t, "qwen3-coder:70b", cfg.LargeModel.Name)
+	assert.Equal(t, "qwen3-coder:30b", cfg.LargeModel.Name)
 	assert.Equal(t, "cpu", cfg.LargeModel.Device)
-	assert.Equal(t, 42.0, cfg.LargeModel.MemoryGB)
+	assert.Equal(t, 19.0, cfg.LargeModel.MemoryGB)
 
 	// SmallModel defaults
-	assert.Equal(t, "qwen2.5-coder:7b", cfg.SmallModel.Name)
+	assert.Equal(t, "qwen3:8b", cfg.SmallModel.Name)
 	assert.Equal(t, "gpu", cfg.SmallModel.Device)
-	assert.Equal(t, 5.0, cfg.SmallModel.MemoryGB)
+	assert.Equal(t, 5.2, cfg.SmallModel.MemoryGB)
 
 	// Existing fields
 	assert.Equal(t, 50, cfg.DefaultMaxIterations)
@@ -143,7 +143,7 @@ func TestServerConfig_Merge(t *testing.T) {
 		merged := base.Merge(updates)
 		assert.Equal(t, "new-model", merged.LargeModel.Name)
 		assert.Equal(t, "cpu", merged.LargeModel.Device)
-		assert.Equal(t, 42.0, merged.LargeModel.MemoryGB)
+		assert.Equal(t, 19.0, merged.LargeModel.MemoryGB)
 	})
 
 	t.Run("merge updates ollama host without clobbering IsRemote", func(t *testing.T) {
@@ -182,7 +182,7 @@ func TestServerConfig_JSON(t *testing.T) {
 
 	assert.Equal(t, "test-model", decoded.LargeModel.Name)
 	assert.Equal(t, "cpu", decoded.LargeModel.Device)
-	assert.Equal(t, 42.0, decoded.LargeModel.MemoryGB)
+	assert.Equal(t, 19.0, decoded.LargeModel.MemoryGB)
 	assert.Equal(t, cfg.SmallModel, decoded.SmallModel)
 	assert.Equal(t, "http://localhost:11434", decoded.Ollama.Host)
 	assert.True(t, decoded.Ollama.IsRemote)
