@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/ryan/ralph-o-matic/internal/models"
@@ -223,4 +224,48 @@ func TestAPI_ReorderJobs(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAPI_CreateJob_WithBackend(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := `{"repo_url":"https://github.com/foo/bar","branch":"main","prompt":"fix bugs","max_iterations":10,"backend":"anthropic"}`
+	req := httptest.NewRequest("POST", "/api/jobs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var job models.Job
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &job))
+	assert.Equal(t, models.BackendAnthropic, job.Backend)
+}
+
+func TestAPI_CreateJob_InvalidBackend(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := `{"repo_url":"https://github.com/foo/bar","branch":"main","prompt":"fix bugs","max_iterations":10,"backend":"gpt"}`
+	req := httptest.NewRequest("POST", "/api/jobs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_CreateJob_EmptyBackend_UsesDefault(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := `{"repo_url":"https://github.com/foo/bar","branch":"main","prompt":"fix bugs","max_iterations":10}`
+	req := httptest.NewRequest("POST", "/api/jobs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var job models.Job
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &job))
+	assert.Equal(t, models.Backend(""), job.Backend)
 }

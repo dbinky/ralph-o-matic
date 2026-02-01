@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ type CreateJobRequest struct {
 	Priority      string            `json:"priority,omitempty"`
 	WorkingDir    string            `json:"working_dir,omitempty"`
 	Env           map[string]string `json:"env,omitempty"`
+	Backend       string            `json:"backend,omitempty"`
 }
 
 // ListJobsResponse is the response for listing jobs
@@ -54,6 +56,15 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		job.Priority = priority
+	}
+
+	if req.Backend != "" {
+		backend := models.Backend(req.Backend)
+		if !backend.Valid() {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid backend: %q", req.Backend))
+			return
+		}
+		job.Backend = backend
 	}
 
 	if err := s.queue.Enqueue(job); err != nil {
