@@ -13,7 +13,7 @@ import (
 )
 
 func submitCmd() *cobra.Command {
-	var prompt, priority, workingDir string
+	var prompt, priority, workingDir, backend string
 	var maxIterations int
 	var openEnded bool
 
@@ -51,6 +51,10 @@ func submitCmd() *cobra.Command {
 				WorkingDir:    workingDir,
 			}
 
+			if backend != "" {
+				req.Backend = backend
+			}
+
 			fmt.Println("Submitting job...")
 			fmt.Printf("  Repository:    %s\n", repoURL)
 			fmt.Printf("  Branch:        %s\n", branch)
@@ -73,6 +77,7 @@ func submitCmd() *cobra.Command {
 	cmd.Flags().IntVar(&maxIterations, "max-iterations", 0, "Max iterations")
 	cmd.Flags().StringVar(&workingDir, "working-dir", "", "Working directory")
 	cmd.Flags().BoolVar(&openEnded, "open-ended", false, "Use open-ended prompt")
+	cmd.Flags().StringVar(&backend, "backend", "", "Backend to use: ollama or anthropic (default: server setting)")
 
 	return cmd
 }

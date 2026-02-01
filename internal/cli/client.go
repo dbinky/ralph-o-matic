@@ -35,6 +35,7 @@ type CreateJobRequest struct {
 	Priority      string            `json:"priority,omitempty"`
 	WorkingDir    string            `json:"working_dir,omitempty"`
 	Env           map[string]string `json:"env,omitempty"`
+	Backend       string            `json:"backend,omitempty"`
 }
 
 // GetJobs retrieves jobs from the server
