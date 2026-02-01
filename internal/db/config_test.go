@@ -16,7 +16,7 @@ func TestConfigRepo_GetDefault(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return defaults when no config exists
-	assert.Equal(t, "qwen3-coder:30b", cfg.LargeModel.Name)
+	assert.Equal(t, "devstral", cfg.LargeModel.Name)
 	assert.Equal(t, "cpu", cfg.LargeModel.Device)
 	assert.Equal(t, "qwen3:8b", cfg.SmallModel.Name)
 	assert.Equal(t, "gpu", cfg.SmallModel.Device)
@@ -214,6 +214,37 @@ func TestConfigRepo_FloatPrecision(t *testing.T) {
 	fetched, err := repo.Get()
 	require.NoError(t, err)
 	assert.Equal(t, 42.5, fetched.LargeModel.MemoryGB)
+}
+
+func TestConfigRepo_SaveAnthropic(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewConfigRepo(db)
+
+	cfg := models.DefaultServerConfig()
+	cfg.DefaultBackend = models.BackendAnthropic
+	cfg.Anthropic.APIKey = "sk-test-key"
+	cfg.Anthropic.LargeModel = "claude-sonnet-4-20250514"
+	cfg.Anthropic.SmallModel = "claude-haiku-4-5-20251001"
+
+	err := repo.Save(cfg)
+	require.NoError(t, err)
+
+	fetched, err := repo.Get()
+	require.NoError(t, err)
+
+	assert.Equal(t, models.BackendAnthropic, fetched.DefaultBackend)
+	assert.Equal(t, "sk-test-key", fetched.Anthropic.APIKey)
+	assert.Equal(t, "claude-sonnet-4-20250514", fetched.Anthropic.LargeModel)
+	assert.Equal(t, "claude-haiku-4-5-20251001", fetched.Anthropic.SmallModel)
+}
+
+func TestConfigRepo_DefaultBackend_Defaults(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewConfigRepo(db)
+
+	cfg, err := repo.Get()
+	require.NoError(t, err)
+	assert.Equal(t, models.BackendOllama, cfg.DefaultBackend)
 }
 
 func TestConfigRepo_SaveThenSave_Overwrites(t *testing.T) {
