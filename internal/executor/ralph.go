@@ -54,8 +54,11 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) error {
 		}
 	}
 
+	// Resolve backend: job > server default > ollama
+	backend := effectiveBackend(job.Backend, h.config.DefaultBackend)
+
 	// Execute claude with the prompt
-	result, err := h.executor.Execute(ctx, workDir, job.Prompt, job.Backend, job.Env, func(line string) {
+	result, err := h.executor.Execute(ctx, workDir, job.Prompt, backend, job.Env, func(line string) {
 		_ = h.logRepo.Append(job.ID, job.Iteration, line)
 	})
 
@@ -124,6 +127,17 @@ func (h *RalphHandler) finalize(ctx context.Context, job *models.Job, success bo
 
 	log.Printf("Job %d PR created: %s", job.ID, prURL)
 	return nil
+}
+
+// effectiveBackend resolves which backend to use: job > server > ollama
+func effectiveBackend(jobBackend, serverDefault models.Backend) models.Backend {
+	if jobBackend != "" {
+		return jobBackend
+	}
+	if serverDefault != "" {
+		return serverDefault
+	}
+	return models.BackendOllama
 }
 
 func shouldContinue(job *models.Job) bool {
