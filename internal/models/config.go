@@ -143,6 +143,14 @@ func (c *ServerConfig) Validate() error {
 	if c.JobRetentionDays < 0 {
 		return fmt.Errorf("job_retention_days cannot be negative")
 	}
+	if !c.DefaultBackend.Valid() {
+		return fmt.Errorf("invalid default_backend: %q", c.DefaultBackend)
+	}
+	if c.DefaultBackend == BackendAnthropic {
+		if err := c.Anthropic.Validate(); err != nil {
+			return fmt.Errorf("anthropic: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -202,6 +210,22 @@ func (c *ServerConfig) Merge(updates *ServerConfig) *ServerConfig {
 		result.GitRetryBackoffMs = updates.GitRetryBackoffMs
 	}
 
+	// DefaultBackend
+	if updates.DefaultBackend != "" {
+		result.DefaultBackend = updates.DefaultBackend
+	}
+
+	// Anthropic: merge individual fields
+	if updates.Anthropic.APIKey != "" {
+		result.Anthropic.APIKey = updates.Anthropic.APIKey
+	}
+	if updates.Anthropic.LargeModel != "" {
+		result.Anthropic.LargeModel = updates.Anthropic.LargeModel
+	}
+	if updates.Anthropic.SmallModel != "" {
+		result.Anthropic.SmallModel = updates.Anthropic.SmallModel
+	}
+
 	return &result
 }
 
@@ -245,6 +269,19 @@ func (c *ServerConfig) MergeJSON(raw json.RawMessage) (*ServerConfig, error) {
 		if err := json.Unmarshal(smRaw, &smMap); err == nil {
 			if _, ok := smMap["memory_gb"]; ok {
 				result.SmallModel.MemoryGB = updates.SmallModel.MemoryGB
+			}
+		}
+	}
+
+	if _, ok := rawMap["default_backend"]; ok {
+		result.DefaultBackend = updates.DefaultBackend
+	}
+
+	if anthropicRaw, ok := rawMap["anthropic"]; ok {
+		var anthropicMap map[string]json.RawMessage
+		if err := json.Unmarshal(anthropicRaw, &anthropicMap); err == nil {
+			if _, ok := anthropicMap["api_key"]; ok {
+				result.Anthropic.APIKey = updates.Anthropic.APIKey
 			}
 		}
 	}

@@ -203,6 +203,62 @@ func TestServerConfig_Merge(t *testing.T) {
 	})
 }
 
+func TestServerConfig_Validate_Anthropic(t *testing.T) {
+	t.Run("default config validates", func(t *testing.T) {
+		cfg := DefaultServerConfig()
+		assert.NoError(t, cfg.Validate())
+	})
+
+	t.Run("anthropic backend with empty large model fails", func(t *testing.T) {
+		cfg := DefaultServerConfig()
+		cfg.DefaultBackend = BackendAnthropic
+		cfg.Anthropic.LargeModel = ""
+		assert.Error(t, cfg.Validate())
+	})
+
+	t.Run("ollama backend skips anthropic validation", func(t *testing.T) {
+		cfg := DefaultServerConfig()
+		cfg.DefaultBackend = BackendOllama
+		cfg.Anthropic.LargeModel = ""
+		assert.NoError(t, cfg.Validate())
+	})
+
+	t.Run("invalid backend fails", func(t *testing.T) {
+		cfg := DefaultServerConfig()
+		cfg.DefaultBackend = "gpt"
+		assert.Error(t, cfg.Validate())
+	})
+}
+
+func TestServerConfig_Merge_Backend(t *testing.T) {
+	t.Run("merge updates default_backend", func(t *testing.T) {
+		base := DefaultServerConfig()
+		updates := &ServerConfig{DefaultBackend: BackendAnthropic}
+		merged := base.Merge(updates)
+		assert.Equal(t, BackendAnthropic, merged.DefaultBackend)
+	})
+
+	t.Run("empty backend preserves base", func(t *testing.T) {
+		base := DefaultServerConfig()
+		base.DefaultBackend = BackendAnthropic
+		updates := &ServerConfig{}
+		merged := base.Merge(updates)
+		assert.Equal(t, BackendAnthropic, merged.DefaultBackend)
+	})
+
+	t.Run("merge updates anthropic config", func(t *testing.T) {
+		base := DefaultServerConfig()
+		updates := &ServerConfig{
+			Anthropic: AnthropicConfig{
+				LargeModel: "claude-sonnet-4-20250514",
+			},
+		}
+		merged := base.Merge(updates)
+		assert.Equal(t, "claude-sonnet-4-20250514", merged.Anthropic.LargeModel)
+		assert.Equal(t, "claude-haiku-4-5-20251001", merged.Anthropic.SmallModel)
+	})
+}
+
 func TestServerConfig_JSON(t *testing.T) {
 	cfg := DefaultServerConfig()
 	cfg.LargeModel.Name = "test-model"
