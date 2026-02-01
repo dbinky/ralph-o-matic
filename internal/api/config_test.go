@@ -27,7 +27,7 @@ func TestAPI_GetConfig(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	// Should return defaults
-	assert.Equal(t, "qwen3-coder:30b", resp.LargeModel.Name)
+	assert.Equal(t, "devstral", resp.LargeModel.Name)
 	assert.Equal(t, "cpu", resp.LargeModel.Device)
 	assert.Equal(t, "http://localhost:11434", resp.Ollama.Host)
 }
@@ -105,7 +105,7 @@ func TestAPI_ConfigRoundTrip_PartialUpdate_PreservesDefaults(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "only-name:14b", resp.LargeModel.Name)
 	assert.Equal(t, "cpu", resp.LargeModel.Device) // preserved from default
-	assert.Equal(t, 19.0, resp.LargeModel.MemoryGB) // preserved from default
+	assert.Equal(t, 15.0, resp.LargeModel.MemoryGB) // preserved from default
 }
 
 func TestAPI_ConfigRoundTrip_ExplicitZeroValues(t *testing.T) {
@@ -178,6 +178,45 @@ func TestAPI_ConfigRoundTrip_OllamaRemote(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "http://remote:11434", resp.Ollama.Host)
 	assert.True(t, resp.Ollama.IsRemote)
+}
+
+func TestAPI_ConfigRoundTrip_Anthropic(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := []byte(`{"default_backend":"anthropic","anthropic":{"api_key":"sk-test","large_model":"claude-sonnet-4-20250514","small_model":"claude-haiku-4-5-20251001"}}`)
+	req := httptest.NewRequest("PATCH", "/api/config", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	// GET and verify
+	req = httptest.NewRequest("GET", "/api/config", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp models.ServerConfig
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, models.BackendAnthropic, resp.DefaultBackend)
+	assert.Equal(t, "sk-test", resp.Anthropic.APIKey)
+	assert.Equal(t, "claude-sonnet-4-20250514", resp.Anthropic.LargeModel)
+	assert.Equal(t, "claude-haiku-4-5-20251001", resp.Anthropic.SmallModel)
+}
+
+func TestAPI_GetConfig_IncludesAnthropicDefaults(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp models.ServerConfig
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, models.BackendOllama, resp.DefaultBackend)
+	assert.Equal(t, "claude-opus-4-5-20251101", resp.Anthropic.LargeModel)
+	assert.Equal(t, "claude-haiku-4-5-20251001", resp.Anthropic.SmallModel)
 }
 
 func TestAPI_GetConfig_ResponseStructure(t *testing.T) {
