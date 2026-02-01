@@ -10,7 +10,7 @@ import (
 
 func TestModelPlacement_Validate(t *testing.T) {
 	t.Run("valid placement", func(t *testing.T) {
-		mp := ModelPlacement{Name: "qwen3-coder:30b", Device: "gpu", MemoryGB: 19}
+		mp := ModelPlacement{Name: "devstral", Device: "gpu", MemoryGB: 15}
 		assert.NoError(t, mp.Validate())
 	})
 
@@ -70,9 +70,9 @@ func TestDefaultServerConfig(t *testing.T) {
 	assert.False(t, cfg.Ollama.IsRemote)
 
 	// LargeModel defaults
-	assert.Equal(t, "qwen3-coder:30b", cfg.LargeModel.Name)
+	assert.Equal(t, "devstral", cfg.LargeModel.Name)
 	assert.Equal(t, "cpu", cfg.LargeModel.Device)
-	assert.Equal(t, 19.0, cfg.LargeModel.MemoryGB)
+	assert.Equal(t, 15.0, cfg.LargeModel.MemoryGB)
 
 	// SmallModel defaults
 	assert.Equal(t, "qwen3:8b", cfg.SmallModel.Name)
@@ -86,6 +86,41 @@ func TestDefaultServerConfig(t *testing.T) {
 	assert.Equal(t, 3, cfg.MaxClaudeRetries)
 	assert.Equal(t, 3, cfg.MaxGitRetries)
 	assert.Equal(t, 1000, cfg.GitRetryBackoffMs)
+}
+
+func TestBackend_Valid(t *testing.T) {
+	assert.True(t, BackendOllama.Valid())
+	assert.True(t, BackendAnthropic.Valid())
+	assert.False(t, Backend("gpt").Valid())
+	assert.True(t, Backend("").Valid())
+}
+
+func TestAnthropicConfig_Validate(t *testing.T) {
+	t.Run("valid config", func(t *testing.T) {
+		ac := AnthropicConfig{
+			LargeModel: "claude-opus-4-5-20251101",
+			SmallModel: "claude-haiku-4-5-20251001",
+		}
+		assert.NoError(t, ac.Validate())
+	})
+
+	t.Run("empty large model fails", func(t *testing.T) {
+		ac := AnthropicConfig{LargeModel: "", SmallModel: "claude-haiku-4-5-20251001"}
+		assert.Error(t, ac.Validate())
+	})
+
+	t.Run("empty small model fails", func(t *testing.T) {
+		ac := AnthropicConfig{LargeModel: "claude-opus-4-5-20251101", SmallModel: ""}
+		assert.Error(t, ac.Validate())
+	})
+}
+
+func TestDefaultServerConfig_AnthropicDefaults(t *testing.T) {
+	cfg := DefaultServerConfig()
+	assert.Equal(t, BackendOllama, cfg.DefaultBackend)
+	assert.Equal(t, "claude-opus-4-5-20251101", cfg.Anthropic.LargeModel)
+	assert.Equal(t, "claude-haiku-4-5-20251001", cfg.Anthropic.SmallModel)
+	assert.Empty(t, cfg.Anthropic.APIKey)
 }
 
 func TestServerConfig_Validate(t *testing.T) {
@@ -143,7 +178,7 @@ func TestServerConfig_Merge(t *testing.T) {
 		merged := base.Merge(updates)
 		assert.Equal(t, "new-model", merged.LargeModel.Name)
 		assert.Equal(t, "cpu", merged.LargeModel.Device)
-		assert.Equal(t, 19.0, merged.LargeModel.MemoryGB)
+		assert.Equal(t, 15.0, merged.LargeModel.MemoryGB)
 	})
 
 	t.Run("merge updates ollama host without clobbering IsRemote", func(t *testing.T) {
@@ -182,7 +217,7 @@ func TestServerConfig_JSON(t *testing.T) {
 
 	assert.Equal(t, "test-model", decoded.LargeModel.Name)
 	assert.Equal(t, "cpu", decoded.LargeModel.Device)
-	assert.Equal(t, 19.0, decoded.LargeModel.MemoryGB)
+	assert.Equal(t, 15.0, decoded.LargeModel.MemoryGB)
 	assert.Equal(t, cfg.SmallModel, decoded.SmallModel)
 	assert.Equal(t, "http://localhost:11434", decoded.Ollama.Host)
 	assert.True(t, decoded.Ollama.IsRemote)
