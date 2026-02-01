@@ -26,20 +26,30 @@ func NewClaudeExecutor(config *models.ServerConfig) *ClaudeExecutor {
 	return &ClaudeExecutor{config: config}
 }
 
-// BuildEnv creates the environment variables for Claude Code with Ollama
-func (e *ClaudeExecutor) BuildEnv(extra map[string]string) []string {
+// BuildEnv creates the environment variables for Claude Code based on backend
+func (e *ClaudeExecutor) BuildEnv(backend models.Backend, extra map[string]string) []string {
 	env := os.Environ()
 
-	// Ollama configuration
-	ollamaEnv := map[string]string{
-		"ANTHROPIC_BASE_URL":            e.config.Ollama.Host,
-		"ANTHROPIC_AUTH_TOKEN":          "ollama",
-		"ANTHROPIC_API_KEY":             "",
-		"ANTHROPIC_MODEL":               e.config.LargeModel.Name,
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL": e.config.SmallModel.Name,
+	var backendEnv map[string]string
+
+	switch backend {
+	case models.BackendAnthropic:
+		backendEnv = map[string]string{
+			"ANTHROPIC_API_KEY":             e.resolveAnthropicKey(),
+			"ANTHROPIC_MODEL":               e.config.Anthropic.LargeModel,
+			"ANTHROPIC_DEFAULT_HAIKU_MODEL": e.config.Anthropic.SmallModel,
+		}
+	default: // ollama
+		backendEnv = map[string]string{
+			"ANTHROPIC_BASE_URL":            e.config.Ollama.Host,
+			"ANTHROPIC_AUTH_TOKEN":          "ollama",
+			"ANTHROPIC_API_KEY":             "",
+			"ANTHROPIC_MODEL":               e.config.LargeModel.Name,
+			"ANTHROPIC_DEFAULT_HAIKU_MODEL": e.config.SmallModel.Name,
+		}
 	}
 
-	for k, v := range ollamaEnv {
+	for k, v := range backendEnv {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 
@@ -50,10 +60,19 @@ func (e *ClaudeExecutor) BuildEnv(extra map[string]string) []string {
 	return env
 }
 
+// resolveAnthropicKey returns the API key, preferring env var over config
+func (e *ClaudeExecutor) resolveAnthropicKey() string {
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		return key
+	}
+	return e.config.Anthropic.APIKey
+}
+
 // BuildCommand creates the claude command arguments
 func (e *ClaudeExecutor) BuildCommand(prompt string) []string {
 	return []string{
 		"claude",
+		"--print",
 		"--dangerously-skip-permissions",
 	}
 }
@@ -70,10 +89,10 @@ type ExecutionResult struct {
 type OutputCallback func(line string)
 
 // Execute runs Claude Code with the given prompt
-func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, env map[string]string, onOutput OutputCallback) (*ExecutionResult, error) {
-	cmd := exec.CommandContext(ctx, "claude", "--dangerously-skip-permissions")
+func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, backend models.Backend, env map[string]string, onOutput OutputCallback) (*ExecutionResult, error) {
+	cmd := exec.CommandContext(ctx, "claude", "--print", "--dangerously-skip-permissions")
 	cmd.Dir = workDir
-	cmd.Env = e.BuildEnv(env)
+	cmd.Env = e.BuildEnv(backend, env)
 
 	// Pass prompt via stdin
 	cmd.Stdin = strings.NewReader(prompt)

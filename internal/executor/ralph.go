@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/git"
@@ -36,19 +37,25 @@ func NewRalphHandler(database *db.DB, config *models.ServerConfig, workspaceDir 
 func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) error {
 	log.Printf("Starting ralph loop for job %d: %s", job.ID, job.Branch)
 
-	// Setup workspace
-	workDir, err := h.repoManager.Setup(ctx, job.ID, job.RepoURL, job.Branch)
-	if err != nil {
-		return fmt.Errorf("failed to setup workspace: %w", err)
-	}
-
 	// Determine working directory
-	if job.WorkingDir != "" {
-		workDir = workDir + "/" + job.WorkingDir
+	var workDir string
+	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
+		// Direct mode: use the absolute working directory as-is (no clone)
+		workDir = job.WorkingDir
+	} else {
+		// Standard mode: clone into workspace
+		var err error
+		workDir, err = h.repoManager.Setup(ctx, job.ID, job.RepoURL, job.Branch)
+		if err != nil {
+			return fmt.Errorf("failed to setup workspace: %w", err)
+		}
+		if job.WorkingDir != "" {
+			workDir = workDir + "/" + job.WorkingDir
+		}
 	}
 
 	// Execute claude with the prompt
-	result, err := h.executor.Execute(ctx, workDir, job.Prompt, job.Env, func(line string) {
+	result, err := h.executor.Execute(ctx, workDir, job.Prompt, job.Backend, job.Env, func(line string) {
 		_ = h.logRepo.Append(job.ID, job.Iteration, line)
 	})
 
@@ -85,9 +92,14 @@ func (h *RalphHandler) updateIteration(job *models.Job, iteration int) {
 }
 
 func (h *RalphHandler) finalize(ctx context.Context, job *models.Job, success bool) error {
-	workDir := h.repoManager.WorkspacePath(job.ID)
-	if job.WorkingDir != "" {
-		workDir = workDir + "/" + job.WorkingDir
+	var workDir string
+	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
+		workDir = job.WorkingDir
+	} else {
+		workDir = h.repoManager.WorkspacePath(job.ID)
+		if job.WorkingDir != "" {
+			workDir = workDir + "/" + job.WorkingDir
+		}
 	}
 
 	// Commit any remaining changes
