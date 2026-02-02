@@ -35,18 +35,6 @@ func TestEffectiveBackend(t *testing.T) {
 	})
 }
 
-func TestRalphHandler_ShouldContinue(t *testing.T) {
-	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
-
-	// Not at max
-	job.Iteration = 5
-	assert.True(t, shouldContinue(job))
-
-	// At max
-	job.Iteration = 10
-	assert.False(t, shouldContinue(job))
-}
-
 func TestRalphHandler_UpdateIteration(t *testing.T) {
 	database := newTestDB(t)
 	jobRepo := db.NewJobRepo(database)

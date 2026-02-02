@@ -34,17 +34,6 @@ func TestClaudeExecutor_BuildEnv_RemoteOllama(t *testing.T) {
 	assert.Contains(t, env, "ANTHROPIC_BASE_URL=http://192.168.1.50:11434")
 }
 
-func TestClaudeExecutor_BuildCommand(t *testing.T) {
-	cfg := models.DefaultServerConfig()
-	exec := NewClaudeExecutor(cfg)
-
-	cmd := exec.BuildCommand("Write tests for auth module")
-
-	assert.Equal(t, "claude", cmd[0])
-	assert.Contains(t, cmd, "--print")
-	assert.Contains(t, cmd, "--dangerously-skip-permissions")
-}
-
 func TestClaudeExecutor_ParseOutput_Iteration(t *testing.T) {
 	output := `[iteration 5] Running tests...
 [iteration 5] Tests failed: 3 errors

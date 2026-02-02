@@ -283,6 +283,12 @@ func (c *ServerConfig) MergeJSON(raw json.RawMessage) (*ServerConfig, error) {
 			if _, ok := anthropicMap["api_key"]; ok {
 				result.Anthropic.APIKey = updates.Anthropic.APIKey
 			}
+			if _, ok := anthropicMap["large_model"]; ok {
+				result.Anthropic.LargeModel = updates.Anthropic.LargeModel
+			}
+			if _, ok := anthropicMap["small_model"]; ok {
+				result.Anthropic.SmallModel = updates.Anthropic.SmallModel
+			}
 		}
 	}
 

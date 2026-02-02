@@ -23,13 +23,14 @@ func TestAPI_GetConfig(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var resp models.ServerConfig
+	var resp configResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	// Should return defaults
 	assert.Equal(t, "devstral", resp.LargeModel.Name)
 	assert.Equal(t, "cpu", resp.LargeModel.Device)
 	assert.Equal(t, "http://localhost:11434", resp.Ollama.Host)
+	assert.False(t, resp.Anthropic.APIKeySet)
 }
 
 func TestAPI_UpdateConfig(t *testing.T) {
@@ -49,7 +50,7 @@ func TestAPI_UpdateConfig(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var resp models.ServerConfig
+	var resp configResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	assert.Equal(t, "custom-model:latest", resp.LargeModel.Name)
@@ -78,7 +79,7 @@ func TestAPI_ConfigRoundTrip_FullModelPlacement(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp models.ServerConfig
+	var resp configResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "http://10.0.0.1:11434", resp.Ollama.Host)
 	assert.True(t, resp.Ollama.IsRemote)
@@ -101,7 +102,7 @@ func TestAPI_ConfigRoundTrip_PartialUpdate_PreservesDefaults(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp models.ServerConfig
+	var resp configResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "only-name:14b", resp.LargeModel.Name)
 	assert.Equal(t, "cpu", resp.LargeModel.Device) // preserved from default
@@ -119,7 +120,7 @@ func TestAPI_ConfigRoundTrip_ExplicitZeroValues(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp models.ServerConfig
+	var resp configResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "test:7b", resp.LargeModel.Name)
 	assert.Equal(t, 0.0, resp.LargeModel.MemoryGB) // explicitly set to 0
@@ -174,7 +175,7 @@ func TestAPI_ConfigRoundTrip_OllamaRemote(t *testing.T) {
 	w = httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 
-	var resp models.ServerConfig
+	var resp configResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "http://remote:11434", resp.Ollama.Host)
 	assert.True(t, resp.Ollama.IsRemote)
@@ -190,18 +191,23 @@ func TestAPI_ConfigRoundTrip_Anthropic(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	// GET and verify
+	// GET and verify -- API key should be redacted
 	req = httptest.NewRequest("GET", "/api/config", nil)
 	w = httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp models.ServerConfig
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, models.BackendAnthropic, resp.DefaultBackend)
-	assert.Equal(t, "sk-test", resp.Anthropic.APIKey)
-	assert.Equal(t, "claude-sonnet-4-20250514", resp.Anthropic.LargeModel)
-	assert.Equal(t, "claude-haiku-4-5-20251001", resp.Anthropic.SmallModel)
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &raw))
+
+	var anthropic map[string]interface{}
+	require.NoError(t, json.Unmarshal(raw["anthropic"], &anthropic))
+	assert.Equal(t, true, anthropic["api_key_set"])
+	assert.Equal(t, "claude-sonnet-4-20250514", anthropic["large_model"])
+	assert.Equal(t, "claude-haiku-4-5-20251001", anthropic["small_model"])
+	// api_key must NOT be present in response
+	_, hasAPIKey := anthropic["api_key"]
+	assert.False(t, hasAPIKey, "API key must not be returned in GET response")
 }
 
 func TestAPI_GetConfig_IncludesAnthropicDefaults(t *testing.T) {
@@ -212,11 +218,12 @@ func TestAPI_GetConfig_IncludesAnthropicDefaults(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp models.ServerConfig
+	var resp configResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, models.BackendOllama, resp.DefaultBackend)
 	assert.Equal(t, "claude-opus-4-5-20251101", resp.Anthropic.LargeModel)
 	assert.Equal(t, "claude-haiku-4-5-20251001", resp.Anthropic.SmallModel)
+	assert.False(t, resp.Anthropic.APIKeySet)
 }
 
 func TestAPI_GetConfig_ResponseStructure(t *testing.T) {

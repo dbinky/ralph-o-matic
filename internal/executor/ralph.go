@@ -33,29 +33,30 @@ func NewRalphHandler(database *db.DB, config *models.ServerConfig, workspaceDir 
 	}
 }
 
-// Handle executes the ralph loop for a job
+// Handle executes a single iteration of the ralph loop for a job.
+// The caller (worker) is responsible for iteration counting, looping,
+// and calling Finalize when the job is done.
 func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) error {
-	log.Printf("Starting ralph loop for job %d: %s", job.ID, job.Branch)
+	log.Printf("Starting ralph iteration %d for job %d: %s", job.Iteration, job.ID, job.Branch)
 
-	// Determine working directory
-	var workDir string
-	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
-		// Direct mode: use the absolute working directory as-is (no clone)
-		workDir = job.WorkingDir
-	} else {
-		// Standard mode: clone into workspace
+	workDir := h.resolveWorkDir(ctx, job)
+	if workDir == "" {
 		var err error
-		workDir, err = h.repoManager.Setup(ctx, job.ID, job.RepoURL, job.Branch)
+		workDir, err = h.setupWorkDir(ctx, job)
 		if err != nil {
-			return fmt.Errorf("failed to setup workspace: %w", err)
-		}
-		if job.WorkingDir != "" {
-			workDir = workDir + "/" + job.WorkingDir
+			return err
 		}
 	}
 
 	// Resolve backend: job > server default > ollama
 	backend := effectiveBackend(job.Backend, h.config.DefaultBackend)
+
+	// Pre-flight: validate Anthropic API key before running
+	if backend == models.BackendAnthropic {
+		if key := h.executor.resolveAnthropicKey(); key == "" {
+			return fmt.Errorf("anthropic backend requires an API key; set ANTHROPIC_API_KEY env var or configure via API")
+		}
+	}
 
 	// Execute claude with the prompt
 	result, err := h.executor.Execute(ctx, workDir, job.Prompt, backend, job.Env, func(line string) {
@@ -66,25 +67,17 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) error {
 		return fmt.Errorf("claude execution failed: %w", err)
 	}
 
-	// Update iteration from output
+	// Update iteration from output if claude reports higher
 	if result.Iterations > job.Iteration {
 		h.updateIteration(job, result.Iterations)
 	}
 
-	// Check completion
-	if result.Completed {
-		log.Printf("Job %d completed successfully after %d iterations", job.ID, job.Iteration)
-		return h.finalize(ctx, job, true)
-	}
-
-	// Check max iterations
-	if job.HasReachedMaxIterations() {
-		log.Printf("Job %d reached max iterations (%d)", job.ID, job.MaxIterations)
-		return h.finalize(ctx, job, false)
-	}
-
-	// Continue running (scheduler will handle re-execution)
 	return nil
+}
+
+// Finalize commits remaining changes and creates a PR for the job.
+func (h *RalphHandler) Finalize(ctx context.Context, job *models.Job, success bool) error {
+	return h.finalize(ctx, job, success)
 }
 
 func (h *RalphHandler) updateIteration(job *models.Job, iteration int) {
@@ -94,16 +87,41 @@ func (h *RalphHandler) updateIteration(job *models.Job, iteration int) {
 	}
 }
 
-func (h *RalphHandler) finalize(ctx context.Context, job *models.Job, success bool) error {
-	var workDir string
+// resolveWorkDir returns the working directory for a job. For direct mode
+// (absolute WorkingDir), it returns the path as-is. For standard mode, it
+// returns the workspace path with any relative WorkingDir appended.
+// This does NOT clone; use setupWorkDir for initial setup.
+func (h *RalphHandler) resolveWorkDir(ctx context.Context, job *models.Job) string {
 	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
-		workDir = job.WorkingDir
-	} else {
-		workDir = h.repoManager.WorkspacePath(job.ID)
-		if job.WorkingDir != "" {
-			workDir = workDir + "/" + job.WorkingDir
-		}
+		return job.WorkingDir
 	}
+	base := h.repoManager.WorkspacePath(job.ID)
+	if base == "" {
+		return ""
+	}
+	if job.WorkingDir != "" {
+		return base + "/" + job.WorkingDir
+	}
+	return base
+}
+
+// setupWorkDir clones the repo and returns the working directory.
+func (h *RalphHandler) setupWorkDir(ctx context.Context, job *models.Job) (string, error) {
+	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
+		return job.WorkingDir, nil
+	}
+	workDir, err := h.repoManager.Setup(ctx, job.ID, job.RepoURL, job.Branch)
+	if err != nil {
+		return "", fmt.Errorf("failed to setup workspace: %w", err)
+	}
+	if job.WorkingDir != "" {
+		workDir = workDir + "/" + job.WorkingDir
+	}
+	return workDir, nil
+}
+
+func (h *RalphHandler) finalize(ctx context.Context, job *models.Job, success bool) error {
+	workDir := h.resolveWorkDir(ctx, job)
 
 	// Commit any remaining changes
 	hash, err := h.repoManager.Commit(ctx, workDir, fmt.Sprintf("Ralph iteration %d", job.Iteration))
@@ -140,6 +158,3 @@ func effectiveBackend(jobBackend, serverDefault models.Backend) models.Backend {
 	return models.BackendOllama
 }
 
-func shouldContinue(job *models.Job) bool {
-	return job.Iteration < job.MaxIterations
-}

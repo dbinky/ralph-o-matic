@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -43,6 +44,12 @@ func (w *Worker) Run(ctx context.Context) {
 }
 
 func (w *Worker) poll(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Worker: recovered from panic: %v", r)
+		}
+	}()
+
 	job, err := w.queue.Dequeue()
 	if err != nil {
 		log.Printf("Worker: dequeue error: %v", err)
@@ -79,6 +86,16 @@ func (w *Worker) poll(ctx context.Context) {
 			log.Printf("Worker: job #%d reached max iterations (%d)", job.ID, job.MaxIterations)
 			break
 		}
+	}
+
+	// Finalize: commit and create PR
+	success := true
+	if err := w.handler.Finalize(ctx, job, success); err != nil {
+		log.Printf("Worker: job #%d finalize failed: %v", job.ID, err)
+		if fErr := w.queue.Fail(job, fmt.Sprintf("finalize failed: %v", err)); fErr != nil {
+			log.Printf("Worker: failed to mark job #%d as failed: %v", job.ID, fErr)
+		}
+		return
 	}
 
 	if err := w.queue.Complete(job); err != nil {

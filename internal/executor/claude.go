@@ -28,7 +28,15 @@ func NewClaudeExecutor(config *models.ServerConfig) *ClaudeExecutor {
 
 // BuildEnv creates the environment variables for Claude Code based on backend
 func (e *ClaudeExecutor) BuildEnv(backend models.Backend, extra map[string]string) []string {
-	env := os.Environ()
+	// Filter ANTHROPIC_ vars from inherited environment to avoid duplicates
+	// and prevent key leakage between backends
+	raw := os.Environ()
+	env := make([]string, 0, len(raw))
+	for _, e := range raw {
+		if !strings.HasPrefix(e, "ANTHROPIC_") {
+			env = append(env, e)
+		}
+	}
 
 	var backendEnv map[string]string
 
@@ -68,15 +76,6 @@ func (e *ClaudeExecutor) resolveAnthropicKey() string {
 	return e.config.Anthropic.APIKey
 }
 
-// BuildCommand creates the claude command arguments
-func (e *ClaudeExecutor) BuildCommand(prompt string) []string {
-	return []string{
-		"claude",
-		"--print",
-		"--dangerously-skip-permissions",
-	}
-}
-
 // ExecutionResult contains the results of running Claude Code
 type ExecutionResult struct {
 	Output     string
@@ -88,9 +87,16 @@ type ExecutionResult struct {
 // OutputCallback is called for each line of output
 type OutputCallback func(line string)
 
-// Execute runs Claude Code with the given prompt
+// Execute runs Claude Code with the given prompt.
+// For the ollama backend, --dangerously-skip-permissions is enabled by default.
+// For the anthropic backend, it is OFF by default due to the elevated risk of
+// unattended code execution with a frontier model.
 func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, backend models.Backend, env map[string]string, onOutput OutputCallback) (*ExecutionResult, error) {
-	cmd := exec.CommandContext(ctx, "claude", "--print", "--dangerously-skip-permissions")
+	args := []string{"--print"}
+	if backend != models.BackendAnthropic {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = workDir
 	cmd.Env = e.BuildEnv(backend, env)
 
