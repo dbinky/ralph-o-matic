@@ -375,22 +375,14 @@ function Show-Success {
     Write-Host ""
 }
 
-function Install-Plugins {
-    Write-Info "Installing Claude Code plugins..."
+function Install-Skill {
+    Write-Info "Installing Claude Code skill..."
 
     try {
         $null = & claude --version 2>$null
     } catch {
-        Write-Warn "Claude Code not installed, skipping plugins"
+        Write-Warn "Claude Code not installed, skipping skill"
         return
-    }
-
-    # Install ralph-wiggum plugin
-    try {
-        & claude plugins install ralph-wiggum 2>$null
-        Write-Success "ralph-wiggum plugin installed"
-    } catch {
-        Write-Warn "Failed to install ralph-wiggum (may already be installed)"
     }
 
     # Install brainstorm-to-ralph skill
@@ -423,7 +415,7 @@ function Main {
     }
 
     Install-Binaries
-    Install-Plugins
+    Install-Skill
     Set-Configuration
     Show-Success
 }

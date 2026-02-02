@@ -660,19 +660,12 @@ install_binaries() {
     fi
 }
 
-install_plugins() {
-    info "Installing Claude Code plugins..."
+install_skill() {
+    info "Installing Claude Code skill..."
 
     if ! command -v claude &>/dev/null; then
-        warn "Claude Code not installed, skipping plugins"
+        warn "Claude Code not installed, skipping skill"
         return
-    fi
-
-    # Install ralph-wiggum plugin (pipe empty stdin to skip TUI trust dialog)
-    if echo "" | claude plugin install ralph-wiggum 2>/dev/null; then
-        success "ralph-wiggum plugin installed"
-    else
-        warn "Failed to install ralph-wiggum (may already be installed)"
     fi
 
     # Install brainstorm-to-ralph skill
@@ -966,7 +959,7 @@ main() {
         pull_models
     fi
     install_binaries
-    install_plugins
+    install_skill
     configure_ralph
     if [[ "$MODE" != "client" ]]; then
         prompt_start_server

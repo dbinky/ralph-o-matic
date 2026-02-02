@@ -5,11 +5,16 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/git"
 	"github.com/ryan/ralph-o-matic/internal/models"
 )
+
+// DefaultSessionExpiry is the default duration before a session expires.
+const DefaultSessionExpiry = 24 * time.Hour
 
 // RalphHandler implements the ralph loop execution
 type RalphHandler struct {
@@ -19,6 +24,9 @@ type RalphHandler struct {
 	executor    *ClaudeExecutor
 	jobRepo     *db.JobRepo
 	logRepo     *db.LogRepo
+
+	sessionMu sync.Mutex
+	sessions  map[int64]*Session // keyed by job ID
 }
 
 // NewRalphHandler creates a new ralph handler
@@ -30,13 +38,14 @@ func NewRalphHandler(database *db.DB, config *models.ServerConfig, workspaceDir 
 		executor:    NewClaudeExecutor(config),
 		jobRepo:     db.NewJobRepo(database),
 		logRepo:     db.NewLogRepo(database),
+		sessions:    make(map[int64]*Session),
 	}
 }
 
 // Handle executes a single iteration of the ralph loop for a job.
 // The caller (worker) is responsible for iteration counting, looping,
 // and calling Finalize when the job is done.
-func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) error {
+func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) (*ExecutionResult, error) {
 	log.Printf("Starting ralph iteration %d for job %d: %s", job.Iteration, job.ID, job.Branch)
 
 	workDir := h.resolveWorkDir(ctx, job)
@@ -44,7 +53,7 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) error {
 		var err error
 		workDir, err = h.setupWorkDir(ctx, job)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -54,17 +63,25 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) error {
 	// Pre-flight: validate Anthropic API key before running
 	if backend == models.BackendAnthropic {
 		if key := h.executor.resolveAnthropicKey(); key == "" {
-			return fmt.Errorf("anthropic backend requires an API key; set ANTHROPIC_API_KEY env var or configure via API")
+			return nil, fmt.Errorf("anthropic backend requires an API key; set ANTHROPIC_API_KEY env var or configure via API")
 		}
 	}
 
+	// Get session for continuity across iterations
+	session := h.getSession(job.ID)
+
 	// Execute claude with the prompt
-	result, err := h.executor.Execute(ctx, workDir, job.Prompt, backend, job.Env, func(line string) {
+	result, err := h.executor.Execute(ctx, workDir, job.Prompt, backend, job.Env, session, func(line string) {
 		_ = h.logRepo.Append(job.ID, job.Iteration, line)
 	})
 
 	if err != nil {
-		return fmt.Errorf("claude execution failed: %w", err)
+		return nil, fmt.Errorf("claude execution failed: %w", err)
+	}
+
+	// Store session ID for next iteration
+	if result.SessionID != "" {
+		h.setSession(job.ID, NewSession(result.SessionID, DefaultSessionExpiry))
 	}
 
 	// Update iteration from output if claude reports higher
@@ -72,12 +89,44 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) error {
 		h.updateIteration(job, result.Iterations)
 	}
 
-	return nil
+	// Per-iteration commit: save progress to prevent loss on crash
+	hash, commitErr := h.repoManager.Commit(ctx, workDir, fmt.Sprintf("Ralph iteration %d", job.Iteration))
+	if commitErr != nil {
+		log.Printf("Warning: per-iteration commit failed for job %d: %v", job.ID, commitErr)
+	} else if hash != "" {
+		log.Printf("Job %d iteration %d committed: %s", job.ID, job.Iteration, hash)
+	}
+
+	return result, nil
 }
 
 // Finalize commits remaining changes and creates a PR for the job.
 func (h *RalphHandler) Finalize(ctx context.Context, job *models.Job, success bool) error {
+	h.clearSession(job.ID)
 	return h.finalize(ctx, job, success)
+}
+
+func (h *RalphHandler) getSession(jobID int64) *Session {
+	h.sessionMu.Lock()
+	defer h.sessionMu.Unlock()
+	s := h.sessions[jobID]
+	if s != nil && !s.IsValid() {
+		delete(h.sessions, jobID)
+		return nil
+	}
+	return s
+}
+
+func (h *RalphHandler) setSession(jobID int64, s *Session) {
+	h.sessionMu.Lock()
+	defer h.sessionMu.Unlock()
+	h.sessions[jobID] = s
+}
+
+func (h *RalphHandler) clearSession(jobID int64) {
+	h.sessionMu.Lock()
+	defer h.sessionMu.Unlock()
+	delete(h.sessions, jobID)
 }
 
 func (h *RalphHandler) updateIteration(job *models.Job, iteration int) {

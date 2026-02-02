@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":false,"duration_ms":3000,"num_turns":2,"result":"Running tests...\nnpm test\njest --coverage\npytest -v\nAll 42 tests pass.","session_id":"444b2763-1e88-4c07-87b5-465c01876e9a","total_cost_usd":0.10,"usage":{"input_tokens":50,"output_tokens":30},"permission_denials":[]}

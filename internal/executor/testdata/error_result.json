@@ -1,0 +1,1 @@
+{"type":"result","subtype":"error_max_turns","is_error":true,"duration_ms":10000,"num_turns":10,"result":"Error: build failed\ncompilation error in main.go:42\nError: tests failing","session_id":"333b2763-1e88-4c07-87b5-465c01876e9a","total_cost_usd":0.50,"usage":{"input_tokens":500,"output_tokens":200},"permission_denials":[]}

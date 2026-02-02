@@ -79,8 +79,11 @@ func (e *ClaudeExecutor) resolveAnthropicKey() string {
 // ExecutionResult contains the results of running Claude Code
 type ExecutionResult struct {
 	Output     string
+	RawJSON    []byte             // raw JSON from claude --output-format json
 	Iterations int
 	Completed  bool
+	SessionID  string             // extracted from JSON output
+	Metadata   *ResponseMetadata  // parsed response analysis
 	Error      error
 }
 
@@ -91,11 +94,10 @@ type OutputCallback func(line string)
 // For the ollama backend, --dangerously-skip-permissions is enabled by default.
 // For the anthropic backend, it is OFF by default due to the elevated risk of
 // unattended code execution with a frontier model.
-func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, backend models.Backend, env map[string]string, onOutput OutputCallback) (*ExecutionResult, error) {
-	args := []string{"--print"}
-	if backend != models.BackendAnthropic {
-		args = append(args, "--dangerously-skip-permissions")
-	}
+// If session is non-nil and valid, --resume is passed for continuity.
+func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, backend models.Backend, env map[string]string, session *Session, onOutput OutputCallback) (*ExecutionResult, error) {
+	skipPerms := backend != models.BackendAnthropic
+	args := buildClaudeArgs(skipPerms, session)
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = workDir
 	cmd.Env = e.BuildEnv(backend, env)
@@ -153,8 +155,18 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, ba
 
 	result := &ExecutionResult{
 		Output:     output,
+		RawJSON:    outputBuf.Bytes(),
 		Iterations: ParseIterations(output),
 		Completed:  ContainsPromise(output, "COMPLETE") || ContainsPromise(output, "DONE"),
+	}
+
+	// Parse JSON response for metadata
+	if meta, parseErr := ParseResponse(outputBuf.Bytes()); parseErr == nil {
+		result.Metadata = meta
+		result.SessionID = meta.SessionID
+		if meta.Completed || meta.ExitSignal {
+			result.Completed = true
+		}
 	}
 
 	return result, nil
