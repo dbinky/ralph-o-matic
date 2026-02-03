@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -29,7 +30,8 @@ const stateCookieName = "ralph_auth_state"
 func NewAuthRoutes(provider *EntraProvider, store *SessionStore, secure bool) chi.Router {
 	r := chi.NewRouter()
 
-	r.Get("/config", handleAuthConfig(provider))
+	configLimiter := NewRateLimiter(10, 1*time.Minute)
+	r.With(configLimiter.Middleware).Get("/config", handleAuthConfig(provider))
 	r.Get("/login", handleLogin(provider, secure))
 	r.Get("/callback", handleCallback(provider, store, secure))
 	r.Post("/logout", handleLogout(store))
