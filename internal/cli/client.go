@@ -16,14 +16,6 @@ import (
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
-	tokenPath  string
-}
-
-// SetTokenPath sets the path to the cached auth token file.
-// When set, the client will attempt to load and attach a Bearer token
-// to each request if the token is valid and matches the server.
-func (c *Client) SetTokenPath(path string) {
-	c.tokenPath = path
 }
 
 // NewClient creates a new API client
@@ -187,15 +179,6 @@ func (c *Client) request(method, path string, body, result interface{}) error {
 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
-	}
-
-	// Attach bearer token if available, valid, and matching server
-	if c.tokenPath != "" {
-		if token, err := loadToken(c.tokenPath); err == nil && token != nil {
-			if !token.IsExpired() && token.Server == c.baseURL {
-				req.Header.Set("Authorization", "Bearer "+token.AccessToken)
-			}
-		}
 	}
 
 	resp, err := c.httpClient.Do(req)

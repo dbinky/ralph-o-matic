@@ -3,12 +3,9 @@ module github.com/ryan/ralph-o-matic
 go 1.24.12
 
 require (
-	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/go-chi/chi/v5 v5.2.4
-	github.com/go-jose/go-jose/v4 v4.1.3
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/oauth2 v0.34.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.44.3
 )

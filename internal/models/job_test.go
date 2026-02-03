@@ -216,18 +216,6 @@ func TestJob_JSON(t *testing.T) {
 	assert.Equal(t, job.Env, decoded.Env)
 }
 
-func TestNewJob_OwnerFieldsEmpty(t *testing.T) {
-	job := NewJob(
-		"git@github.com:user/repo.git",
-		"feature/test",
-		"Run all tests",
-		50,
-	)
-
-	assert.Empty(t, job.OwnerID)
-	assert.Empty(t, job.OwnerName)
-}
-
 func TestJob_Duration(t *testing.T) {
 	job := NewJob("git@github.com:user/repo.git", "main", "test", 10)
 
