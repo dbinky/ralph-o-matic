@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/ryan/ralph-o-matic/internal/auth"
 	"github.com/ryan/ralph-o-matic/internal/dashboard"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/queue"
@@ -19,16 +20,27 @@ import (
 
 // Server is the HTTP API server
 type Server struct {
-	db        *db.DB
-	queue     *queue.Queue
-	dashboard *dashboard.Dashboard
-	addr      string
-	router    chi.Router
-	server    *http.Server
+	db           *db.DB
+	queue        *queue.Queue
+	dashboard    *dashboard.Dashboard
+	addr         string
+	router       chi.Router
+	server       *http.Server
+	authProvider *auth.EntraProvider
+	sessions     *auth.SessionStore
+	secure       bool
 }
 
-// NewServer creates a new API server
-func NewServer(database *db.DB, q *queue.Queue, addr string) *Server {
+// ServerOptions holds optional configuration for the server.
+// When nil is passed to NewServer, auth is disabled.
+type ServerOptions struct {
+	AuthProvider *auth.EntraProvider
+	Sessions     *auth.SessionStore
+	Secure       bool
+}
+
+// NewServer creates a new API server. Pass nil for opts to disable authentication.
+func NewServer(database *db.DB, q *queue.Queue, addr string, opts *ServerOptions) *Server {
 	templatesFS, err := fs.Sub(web.Templates, "templates")
 	if err != nil {
 		log.Fatalf("failed to load templates: %v", err)
@@ -39,6 +51,12 @@ func NewServer(database *db.DB, q *queue.Queue, addr string) *Server {
 		queue:     q,
 		dashboard: dashboard.New(database, q, templatesFS),
 		addr:      addr,
+	}
+
+	if opts != nil {
+		s.authProvider = opts.AuthProvider
+		s.sessions = opts.Sessions
+		s.secure = opts.Secure
 	}
 
 	s.setupRoutes()
@@ -54,42 +72,50 @@ func (s *Server) setupRoutes() {
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(corsMiddleware)
 
-	// Health check
+	// Health check — always accessible, no auth required
 	r.Get("/health", s.handleHealth)
 
-	// Dashboard
-	r.Get("/", s.dashboard.HandleIndex)
-	r.Get("/config", s.dashboard.HandleConfig)
-	r.Get("/jobs/{jobID}", func(w http.ResponseWriter, r *http.Request) {
-		idStr := chi.URLParam(r, "jobID")
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			http.Error(w, "Invalid job ID", http.StatusBadRequest)
-			return
-		}
-		s.dashboard.HandleJob(w, r, id)
-	})
+	// Auth routes — accessible without auth middleware
+	r.Mount("/auth", auth.NewAuthRoutes(s.authProvider, s.sessions, s.secure))
 
-	// API routes
-	r.Route("/api", func(r chi.Router) {
-		r.Route("/jobs", func(r chi.Router) {
-			r.Post("/", s.handleCreateJob)
-			r.Get("/", s.handleListJobs)
-			r.Put("/order", s.handleReorderJobs)
+	// Protected routes — wrapped in auth middleware
+	r.Group(func(r chi.Router) {
+		r.Use(auth.Middleware(s.authProvider, s.sessions))
 
-			r.Route("/{jobID}", func(r chi.Router) {
-				r.Get("/", s.handleGetJob)
-				r.Delete("/", s.handleCancelJob)
-				r.Patch("/", s.handleUpdateJob)
-				r.Get("/logs", s.handleGetJobLogs)
-				r.Post("/pause", s.handlePauseJob)
-				r.Post("/resume", s.handleResumeJob)
-			})
+		// Dashboard
+		r.Get("/", s.dashboard.HandleIndex)
+		r.Get("/config", s.dashboard.HandleConfig)
+		r.Get("/jobs/{jobID}", func(w http.ResponseWriter, r *http.Request) {
+			idStr := chi.URLParam(r, "jobID")
+			id, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil {
+				http.Error(w, "Invalid job ID", http.StatusBadRequest)
+				return
+			}
+			s.dashboard.HandleJob(w, r, id)
 		})
 
-		r.Route("/config", func(r chi.Router) {
-			r.Get("/", s.handleGetConfig)
-			r.Patch("/", s.handleUpdateConfig)
+		// API routes
+		r.Route("/api", func(r chi.Router) {
+			r.Route("/jobs", func(r chi.Router) {
+				r.Post("/", s.handleCreateJob)
+				r.Get("/", s.handleListJobs)
+				r.Put("/order", s.handleReorderJobs)
+
+				r.Route("/{jobID}", func(r chi.Router) {
+					r.Get("/", s.handleGetJob)
+					r.Delete("/", s.handleCancelJob)
+					r.Patch("/", s.handleUpdateJob)
+					r.Get("/logs", s.handleGetJobLogs)
+					r.Post("/pause", s.handlePauseJob)
+					r.Post("/resume", s.handleResumeJob)
+				})
+			})
+
+			r.Route("/config", func(r chi.Router) {
+				r.Get("/", s.handleGetConfig)
+				r.Patch("/", s.handleUpdateConfig)
+			})
 		})
 	})
 
@@ -151,4 +177,3 @@ func corsMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
