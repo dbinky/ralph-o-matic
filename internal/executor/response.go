@@ -122,7 +122,7 @@ func parseRalphStatus(result string, meta *ResponseMetadata) {
 			exitSignalExplicit = true
 			meta.ExitSignal = strings.EqualFold(val, "true")
 		case "FILES_MODIFIED":
-			fmt.Sscanf(val, "%d", &meta.FilesModified)
+			_, _ = fmt.Sscanf(val, "%d", &meta.FilesModified)
 		case "WORK_TYPE":
 			// informational only
 		}

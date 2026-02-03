@@ -125,7 +125,7 @@ type OutputCallback func(line string)
 func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, backend models.Backend, env map[string]string, session *Session, onOutput OutputCallback) (*ExecutionResult, error) {
 	skipPerms := backend != models.BackendAnthropic
 	args := buildClaudeArgs(skipPerms, session)
-	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd := exec.CommandContext(ctx, "claude", args...) //nolint:gosec // claude is a trusted CLI tool
 	cmd.Dir = workDir
 	cmd.Env = e.BuildEnv(backend, env)
 

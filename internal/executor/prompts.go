@@ -79,7 +79,7 @@ func BootstrapProgressFile(workDir, relPath string, bounded bool) (bool, error) 
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 		return false, fmt.Errorf("create progress dir: %w", err)
 	}
-	if err := os.WriteFile(fullPath, []byte(ProgressSeedContent(bounded)), 0o644); err != nil {
+	if err := os.WriteFile(fullPath, []byte(ProgressSeedContent(bounded)), 0o644); err != nil { //nolint:gosec // markdown file should be readable
 		return false, fmt.Errorf("write progress file: %w", err)
 	}
 	return true, nil
