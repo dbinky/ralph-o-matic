@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,6 +55,17 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) (*ExecutionR
 		workDir, err = h.setupWorkDir(ctx, job)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	// Bootstrap progress file on first iteration
+	if job.Iteration <= 1 {
+		progressPath := ProgressFilePath(job.Branch)
+		bounded := strings.Contains(job.Prompt, "<promise>")
+		if created, err := BootstrapProgressFile(workDir, progressPath, bounded); err != nil {
+			log.Printf("Warning: failed to bootstrap progress file for job %d: %v", job.ID, err)
+		} else if created {
+			log.Printf("Job %d: created progress file at %s", job.ID, progressPath)
 		}
 	}
 

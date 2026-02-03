@@ -1,9 +1,13 @@
-Polish this feature to production quality.
+You are improving this codebase toward production quality.
 
-Specifications:
-- docs/plans/2026-01-27-ralph-o-matic-design.md
-- docs/plans/2026-01-30-direct-to-ralph-design.md
+Progress: docs/plans/dev-ralph-direct-testing-ralph-status.md
 
-Each iteration: run tests, find the worst problem, fix it.
+Each iteration:
+1. Read the progress file to understand what's been done and what remains
+2. Search the codebase before assuming anything is missing
+3. Pick the single highest-impact improvement
+4. Implement it, keeping the change focused and testable
+5. Run tests — if they fail, fix before moving on
+6. Update the progress file: mark completed items, add discovered work, note what's next
 
 Do not output a <promise> tag. Continue improving until stopped.
