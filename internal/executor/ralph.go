@@ -4,11 +4,18 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/git"
 	"github.com/ryan/ralph-o-matic/internal/models"
 )
+
+// DefaultSessionExpiry is the default duration before a session expires.
+const DefaultSessionExpiry = 24 * time.Hour
 
 // RalphHandler implements the ralph loop execution
 type RalphHandler struct {
@@ -18,6 +25,9 @@ type RalphHandler struct {
 	executor    *ClaudeExecutor
 	jobRepo     *db.JobRepo
 	logRepo     *db.LogRepo
+
+	sessionMu sync.Mutex
+	sessions  map[int64]*Session // keyed by job ID
 }
 
 // NewRalphHandler creates a new ralph handler
@@ -29,52 +39,113 @@ func NewRalphHandler(database *db.DB, config *models.ServerConfig, workspaceDir 
 		executor:    NewClaudeExecutor(config),
 		jobRepo:     db.NewJobRepo(database),
 		logRepo:     db.NewLogRepo(database),
+		sessions:    make(map[int64]*Session),
 	}
 }
 
-// Handle executes the ralph loop for a job
-func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) error {
-	log.Printf("Starting ralph loop for job %d: %s", job.ID, job.Branch)
+// Handle executes a single iteration of the ralph loop for a job.
+// The caller (worker) is responsible for iteration counting, looping,
+// and calling Finalize when the job is done.
+func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) (*ExecutionResult, error) {
+	log.Printf("Starting ralph iteration %d for job %d: %s", job.Iteration, job.ID, job.Branch)
 
-	// Setup workspace
-	workDir, err := h.repoManager.Setup(ctx, job.ID, job.RepoURL, job.Branch)
-	if err != nil {
-		return fmt.Errorf("failed to setup workspace: %w", err)
+	workDir := h.resolveWorkDir(job)
+	if workDir == "" {
+		var err error
+		workDir, err = h.setupWorkDir(ctx, job)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Determine working directory
-	if job.WorkingDir != "" {
-		workDir = workDir + "/" + job.WorkingDir
+	// Bootstrap progress file on first iteration
+	if job.Iteration <= 1 {
+		progressPath := ProgressFilePath(job.Branch)
+		bounded := strings.Contains(job.Prompt, "<promise>")
+		if created, err := BootstrapProgressFile(workDir, progressPath, bounded); err != nil {
+			log.Printf("Warning: failed to bootstrap progress file for job %d: %v", job.ID, err)
+		} else if created {
+			log.Printf("Job %d: created progress file at %s", job.ID, progressPath)
+		}
 	}
+
+	// Resolve backend: job > server default > ollama
+	backend := effectiveBackend(job.Backend, h.config.DefaultBackend)
+
+	// Pre-flight: validate Anthropic API key before running
+	if backend == models.BackendAnthropic {
+		if key := h.executor.resolveAnthropicKey(); key == "" {
+			return nil, fmt.Errorf("anthropic backend requires an API key; set ANTHROPIC_API_KEY env var or configure via API")
+		}
+	}
+
+	// Get session for continuity across iterations
+	session := h.getSession(job.ID)
 
 	// Execute claude with the prompt
-	result, err := h.executor.Execute(ctx, workDir, job.Prompt, job.Env, func(line string) {
+	result, err := h.executor.Execute(ctx, workDir, job.Prompt, backend, job.Env, session, func(line string) {
 		_ = h.logRepo.Append(job.ID, job.Iteration, line)
 	})
 
 	if err != nil {
-		return fmt.Errorf("claude execution failed: %w", err)
+		return nil, fmt.Errorf("claude execution failed: %w", err)
 	}
 
-	// Update iteration from output
+	// Store session ID for next iteration
+	if result.SessionID != "" {
+		h.setSession(job.ID, NewSession(result.SessionID, DefaultSessionExpiry))
+	}
+
+	// Update iteration from output if claude reports higher
 	if result.Iterations > job.Iteration {
 		h.updateIteration(job, result.Iterations)
 	}
 
-	// Check completion
-	if result.Completed {
-		log.Printf("Job %d completed successfully after %d iterations", job.ID, job.Iteration)
-		return h.finalize(ctx, job, true)
+	// Per-iteration commit: save progress to prevent loss on crash
+	hash, commitErr := h.repoManager.Commit(ctx, workDir, fmt.Sprintf("Ralph iteration %d", job.Iteration))
+	if commitErr != nil {
+		log.Printf("Warning: per-iteration commit failed for job %d: %v", job.ID, commitErr)
+	} else if hash != "" {
+		log.Printf("Job %d iteration %d committed: %s", job.ID, job.Iteration, hash)
+		// Git diff fallback: if metadata reports no files modified but we committed,
+		// there were actual changes that weren't detected via RALPH_STATUS.
+		// Update FilesModified to indicate progress.
+		if result.Metadata != nil && result.Metadata.FilesModified == 0 {
+			result.Metadata.FilesModified = 1
+			log.Printf("Job %d: git commit detected changes not reported in metadata", job.ID)
+		}
 	}
 
-	// Check max iterations
-	if job.HasReachedMaxIterations() {
-		log.Printf("Job %d reached max iterations (%d)", job.ID, job.MaxIterations)
-		return h.finalize(ctx, job, false)
-	}
+	return result, nil
+}
 
-	// Continue running (scheduler will handle re-execution)
-	return nil
+// Finalize commits remaining changes and creates a PR for the job.
+func (h *RalphHandler) Finalize(ctx context.Context, job *models.Job, success bool) error {
+	h.clearSession(job.ID)
+	return h.finalize(ctx, job, success)
+}
+
+func (h *RalphHandler) getSession(jobID int64) *Session {
+	h.sessionMu.Lock()
+	defer h.sessionMu.Unlock()
+	s := h.sessions[jobID]
+	if s != nil && !s.IsValid() {
+		delete(h.sessions, jobID)
+		return nil
+	}
+	return s
+}
+
+func (h *RalphHandler) setSession(jobID int64, s *Session) {
+	h.sessionMu.Lock()
+	defer h.sessionMu.Unlock()
+	h.sessions[jobID] = s
+}
+
+func (h *RalphHandler) clearSession(jobID int64) {
+	h.sessionMu.Lock()
+	defer h.sessionMu.Unlock()
+	delete(h.sessions, jobID)
 }
 
 func (h *RalphHandler) updateIteration(job *models.Job, iteration int) {
@@ -84,11 +155,52 @@ func (h *RalphHandler) updateIteration(job *models.Job, iteration int) {
 	}
 }
 
-func (h *RalphHandler) finalize(ctx context.Context, job *models.Job, success bool) error {
-	workDir := h.repoManager.WorkspacePath(job.ID)
-	if job.WorkingDir != "" {
-		workDir = workDir + "/" + job.WorkingDir
+// resolveWorkDir returns the working directory for a job. For direct mode
+// (absolute WorkingDir), it returns the path as-is. For standard mode, it
+// returns the workspace path with any relative WorkingDir appended.
+// This does NOT clone; use setupWorkDir for initial setup.
+func (h *RalphHandler) resolveWorkDir(job *models.Job) string {
+	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
+		return job.WorkingDir
 	}
+	base := h.repoManager.WorkspacePath(job.ID)
+	if base == "" {
+		return ""
+	}
+	if job.WorkingDir != "" {
+		// Sanitize: reject path traversal attempts
+		cleanDir := filepath.Clean(job.WorkingDir)
+		if strings.Contains(cleanDir, "..") {
+			log.Printf("Warning: rejecting path traversal attempt in job %d WorkingDir: %s", job.ID, job.WorkingDir)
+			return base
+		}
+		return filepath.Join(base, cleanDir)
+	}
+	return base
+}
+
+// setupWorkDir clones the repo and returns the working directory.
+func (h *RalphHandler) setupWorkDir(ctx context.Context, job *models.Job) (string, error) {
+	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
+		return job.WorkingDir, nil
+	}
+	workDir, err := h.repoManager.Setup(ctx, job.ID, job.RepoURL, job.Branch)
+	if err != nil {
+		return "", fmt.Errorf("failed to setup workspace: %w", err)
+	}
+	if job.WorkingDir != "" {
+		// Sanitize: reject path traversal attempts
+		cleanDir := filepath.Clean(job.WorkingDir)
+		if strings.Contains(cleanDir, "..") {
+			return "", fmt.Errorf("working_dir contains path traversal sequence: %s", job.WorkingDir)
+		}
+		workDir = filepath.Join(workDir, cleanDir)
+	}
+	return workDir, nil
+}
+
+func (h *RalphHandler) finalize(ctx context.Context, job *models.Job, success bool) error {
+	workDir := h.resolveWorkDir(job)
 
 	// Commit any remaining changes
 	hash, err := h.repoManager.Commit(ctx, workDir, fmt.Sprintf("Ralph iteration %d", job.Iteration))
@@ -114,6 +226,14 @@ func (h *RalphHandler) finalize(ctx context.Context, job *models.Job, success bo
 	return nil
 }
 
-func shouldContinue(job *models.Job) bool {
-	return job.Iteration < job.MaxIterations
+// effectiveBackend resolves which backend to use: job > server > ollama
+func effectiveBackend(jobBackend, serverDefault models.Backend) models.Backend {
+	if jobBackend != "" {
+		return jobBackend
+	}
+	if serverDefault != "" {
+		return serverDefault
+	}
+	return models.BackendOllama
 }
+

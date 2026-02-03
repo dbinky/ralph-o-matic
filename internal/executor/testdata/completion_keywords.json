@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":false,"duration_ms":4000,"num_turns":4,"result":"All tasks are complete. The feature is ready for review.","session_id":"555b2763-1e88-4c07-87b5-465c01876e9a","total_cost_usd":0.20,"usage":{"input_tokens":150,"output_tokens":80},"permission_denials":[]}

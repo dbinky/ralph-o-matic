@@ -21,6 +21,7 @@ type Job struct {
 	// Execution config
 	Prompt        string            `json:"prompt"`
 	MaxIterations int               `json:"max_iterations"`
+	Backend       Backend           `json:"backend,omitempty"`
 	Env           map[string]string `json:"env,omitempty"`
 
 	// Progress tracking
@@ -75,6 +76,9 @@ func (j *Job) Validate() error {
 	}
 	if !j.Priority.Valid() {
 		return fmt.Errorf("invalid priority: %q", j.Priority)
+	}
+	if !j.Backend.Valid() {
+		return fmt.Errorf("invalid backend: %q", j.Backend)
 	}
 	return nil
 }

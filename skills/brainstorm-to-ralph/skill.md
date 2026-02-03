@@ -274,34 +274,39 @@ Based on the `--open-ended` flag, generate the appropriate prompt:
 **Standard prompt (bounded):**
 
 ```markdown
-You are completing a feature to production-ready quality.
+You are refining code to meet a specification.
 
-Specification: docs/plans/YYYY-MM-DD-{topic}-design.md
+Spec: docs/plans/YYYY-MM-DD-{topic}-design.md
+Progress: docs/plans/{BRANCH}-ralph-status.md
 
 Each iteration:
-1. Read the spec (every time - don't assume you remember it)
-2. Run tests to see current state
-3. Identify the single highest-impact gap between current state and spec
-4. Fix it
-5. Run tests again to verify
+1. Read the spec and progress file to understand current state
+2. Search the codebase before assuming anything is missing — do not reimplement existing code
+3. Pick the single highest-impact remaining task
+4. Implement it, keeping the change focused and testable
+5. Run tests — if they fail, fix before moving on
+6. Update the progress file: mark completed items, add discovered work, note what's next
 
-The code was drafted by another agent and may be incomplete or have bugs.
-Do not trust it. Verify everything against the spec.
+The code may have been drafted by another agent. Do not trust it. Verify against the spec.
 
-When tests pass AND the spec is fully satisfied, output:
+When all spec requirements are satisfied and tests pass, output:
 <promise>COMPLETE</promise>
-
-If tests don't exist for a requirement, write them first.
 ```
 
 **Open-ended prompt (unbounded):**
 
 ```markdown
-Polish this feature to production quality.
+You are improving this codebase toward production quality.
 
-Specification: docs/plans/YYYY-MM-DD-{topic}-design.md
+Progress: docs/plans/{BRANCH}-ralph-status.md
 
-Each iteration: run tests, find the worst problem, fix it.
+Each iteration:
+1. Read the progress file to understand what's been done and what remains
+2. Search the codebase before assuming anything is missing
+3. Pick the single highest-impact improvement
+4. Implement it, keeping the change focused and testable
+5. Run tests — if they fail, fix before moving on
+6. Update the progress file: mark completed items, add discovered work, note what's next
 
 Do not output a <promise> tag. Continue improving until stopped.
 ```

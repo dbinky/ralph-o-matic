@@ -60,11 +60,17 @@ func (r *ConfigRepo) Save(cfg *models.ServerConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal ollama: %w", err)
 	}
+	anthropicJSON, err := json.Marshal(cfg.Anthropic)
+	if err != nil {
+		return fmt.Errorf("failed to marshal anthropic: %w", err)
+	}
 
 	values := map[string]string{
 		"large_model":            string(largeModelJSON),
 		"small_model":            string(smallModelJSON),
 		"ollama":                 string(ollamaJSON),
+		"default_backend":        string(cfg.DefaultBackend),
+		"anthropic":              string(anthropicJSON),
 		"default_max_iterations": strconv.Itoa(cfg.DefaultMaxIterations),
 		"concurrent_jobs":        strconv.Itoa(cfg.ConcurrentJobs),
 		"workspace_dir":          cfg.WorkspaceDir,
@@ -183,6 +189,14 @@ func applyConfigValue(cfg *models.ServerConfig, key, value string) error {
 			return err
 		}
 		cfg.GitRetryBackoffMs = v
+	case "default_backend":
+		cfg.DefaultBackend = models.Backend(value)
+	case "anthropic":
+		var ac models.AnthropicConfig
+		if err := json.Unmarshal([]byte(value), &ac); err != nil {
+			return err
+		}
+		cfg.Anthropic = ac
 	default:
 		return fmt.Errorf("unknown config key: %s", key)
 	}

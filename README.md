@@ -1,17 +1,17 @@
 # ralph-o-matic
 
-A job queue server that offloads iterative AI coding refinement to local LLMs, freeing up your premium API credits for the creative work.
+A job queue server that runs iterative AI coding refinement loops — locally via [Ollama](https://ollama.com) or against the Anthropic API — so you can queue work, walk away, and review results as PRs.
 
 ## The Problem
 
-The [Ralph Wiggum loop](https://github.com/anthropics/claude-code) technique — iterating on code until tests pass and acceptance criteria are met — produces excellent results but burns through cloud API credits fast. Most of those iterations are mechanical refinement, not creative problem-solving.
+Iterating on code until tests pass and acceptance criteria are met produces excellent results, but doing it manually is tedious and doing it against cloud APIs burns credits fast. Most iterations are mechanical refinement, not creative problem-solving.
 
 ## The Solution
 
-Draft your implementation with Claude Code + Opus 4.5 on your laptop. Then hand off to ralph-o-matic, which runs the refinement loop on a machine with local LLMs via [Ollama](https://ollama.com). Queue multiple jobs, walk away, review results as PRs.
+Draft your implementation with Claude Code + Opus 4.5. Then hand off to ralph-o-matic, which runs the refinement loop with built-in circuit breakers, retry logic, session continuity, and per-iteration commits. Use local models via Ollama to save API credits, or use the Anthropic API with rate limiting when you need cloud-grade quality.
 
 ```
-Your Dev Env (Opus 4.5)            Ralph-o-Matic Server (Ollama)
+Your Dev Env (Opus 4.5)            Ralph-o-Matic Server
 ┌─────────────────┐               ┌─────────────────────────┐
 │ Brainstorm      │  submit job   │ ralph-o-matic-server    │
 │ Plan            │──────────────>│ Queue → Execute loop    │
@@ -23,8 +23,14 @@ Your Dev Env (Opus 4.5)            Ralph-o-Matic Server (Ollama)
 
 ## Features
 
+- **Dual backend** — run loops against local Ollama models or the Anthropic API, with per-backend configuration
 - **Job queue** with priority scheduling (high/normal/low), pause/resume, drag-and-drop reordering
-- **Smart model selection** — detects your hardware (RAM, GPU VRAM, Apple Silicon) and recommends optimal model placement across devices
+- **Circuit breaker** — detects no-progress loops and repeated errors, stops wasting compute
+- **Session continuity** — resumes Claude sessions across iterations for better context
+- **Per-iteration commits** — every successful iteration is committed, so crashes don't lose work
+- **Retry with backoff** — transient errors are retried with exponential backoff
+- **Rate limiting** — configurable per-hour call limits (essential for Anthropic API, disabled for Ollama)
+- **Smart model selection** — detects your hardware (RAM, GPU VRAM, Apple Silicon) and recommends optimal model placement
 - **Split-device inference** — run the large model on CPU/RAM and the small model on GPU, or both on GPU if you have the VRAM
 - **Remote Ollama support** — point at a remote Ollama instance instead of running locally
 - **Web dashboard** with live updates via SSE
@@ -69,6 +75,9 @@ ralph-o-matic submit --prompt "Fix the failing tests in auth.go. Exit criteria: 
 
 # With options
 ralph-o-matic submit --priority high --max-iterations 100 --open-ended
+
+# Use Anthropic API instead of Ollama
+ralph-o-matic submit --backend anthropic --prompt "Refactor the auth module"
 ```
 
 ### Monitor
@@ -184,13 +193,15 @@ internal/
   cli/              CLI client logic
   dashboard/        Web UI (Go templates, SSE)
   db/               SQLite persistence
-  executor/         Claude Code subprocess management
+  executor/         Claude subprocess, response parsing, circuit breaker, session management
   git/              Git/GitHub operations
-  models/           Core data types
+  models/           Core data types, per-backend loop config
+  worker/           Job execution loop, retry, rate limiting
   platform/         Hardware detection, model catalog, Ollama client, selection algorithm
   queue/            Priority job queue with state machine
 scripts/
   install.sh        Interactive installer (macOS/Linux)
+  install.ps1       Interactive installer (Windows)
 skills/
   brainstorm-to-ralph/   Claude Code skill
 web/

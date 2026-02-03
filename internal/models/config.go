@@ -5,6 +5,24 @@ import (
 	"fmt"
 )
 
+// Backend identifies which AI provider to use
+type Backend string
+
+const (
+	BackendOllama    Backend = "ollama"
+	BackendAnthropic Backend = "anthropic"
+)
+
+// Valid returns true for known backends and empty (which means "use default")
+func (b Backend) Valid() bool {
+	switch b {
+	case "", BackendOllama, BackendAnthropic:
+		return true
+	default:
+		return false
+	}
+}
+
 // ModelPlacement describes which model to use and where to run it
 type ModelPlacement struct {
 	Name     string  `json:"name"`
@@ -40,6 +58,24 @@ func (oc *OllamaConfig) Validate() error {
 	return nil
 }
 
+// AnthropicConfig holds settings for the Anthropic API backend
+type AnthropicConfig struct {
+	APIKey     string `json:"api_key,omitempty"`
+	LargeModel string `json:"large_model"`
+	SmallModel string `json:"small_model"`
+}
+
+// Validate checks that model names are set
+func (ac *AnthropicConfig) Validate() error {
+	if ac.LargeModel == "" {
+		return fmt.Errorf("large_model is required")
+	}
+	if ac.SmallModel == "" {
+		return fmt.Errorf("small_model is required")
+	}
+	return nil
+}
+
 // ServerConfig holds server-wide configuration
 type ServerConfig struct {
 	// Ollama connection
@@ -57,6 +93,10 @@ type ServerConfig struct {
 	WorkspaceDir     string `json:"workspace_dir"`
 	JobRetentionDays int    `json:"job_retention_days"`
 
+	// Backend
+	DefaultBackend Backend         `json:"default_backend"`
+	Anthropic      AnthropicConfig `json:"anthropic"`
+
 	// Retry behavior
 	MaxClaudeRetries  int `json:"max_claude_retries"`
 	MaxGitRetries     int `json:"max_git_retries"`
@@ -67,8 +107,13 @@ type ServerConfig struct {
 func DefaultServerConfig() *ServerConfig {
 	return &ServerConfig{
 		Ollama:               OllamaConfig{Host: "http://localhost:11434", IsRemote: false},
-		LargeModel:           ModelPlacement{Name: "qwen3-coder:70b", Device: "cpu", MemoryGB: 42},
-		SmallModel:           ModelPlacement{Name: "qwen2.5-coder:7b", Device: "gpu", MemoryGB: 5},
+		LargeModel:           ModelPlacement{Name: "devstral", Device: "cpu", MemoryGB: 15},
+		SmallModel:           ModelPlacement{Name: "qwen3:8b", Device: "gpu", MemoryGB: 5.2},
+		DefaultBackend: BackendOllama,
+		Anthropic: AnthropicConfig{
+			LargeModel: "claude-opus-4-5-20251101",
+			SmallModel: "claude-haiku-4-5-20251001",
+		},
 		DefaultMaxIterations: 50,
 		ConcurrentJobs:       1,
 		JobRetentionDays:     30,
@@ -97,6 +142,14 @@ func (c *ServerConfig) Validate() error {
 	}
 	if c.JobRetentionDays < 0 {
 		return fmt.Errorf("job_retention_days cannot be negative")
+	}
+	if !c.DefaultBackend.Valid() {
+		return fmt.Errorf("invalid default_backend: %q", c.DefaultBackend)
+	}
+	if c.DefaultBackend == BackendAnthropic {
+		if err := c.Anthropic.Validate(); err != nil {
+			return fmt.Errorf("anthropic: %w", err)
+		}
 	}
 	return nil
 }
@@ -157,6 +210,22 @@ func (c *ServerConfig) Merge(updates *ServerConfig) *ServerConfig {
 		result.GitRetryBackoffMs = updates.GitRetryBackoffMs
 	}
 
+	// DefaultBackend
+	if updates.DefaultBackend != "" {
+		result.DefaultBackend = updates.DefaultBackend
+	}
+
+	// Anthropic: merge individual fields
+	if updates.Anthropic.APIKey != "" {
+		result.Anthropic.APIKey = updates.Anthropic.APIKey
+	}
+	if updates.Anthropic.LargeModel != "" {
+		result.Anthropic.LargeModel = updates.Anthropic.LargeModel
+	}
+	if updates.Anthropic.SmallModel != "" {
+		result.Anthropic.SmallModel = updates.Anthropic.SmallModel
+	}
+
 	return &result
 }
 
@@ -200,6 +269,25 @@ func (c *ServerConfig) MergeJSON(raw json.RawMessage) (*ServerConfig, error) {
 		if err := json.Unmarshal(smRaw, &smMap); err == nil {
 			if _, ok := smMap["memory_gb"]; ok {
 				result.SmallModel.MemoryGB = updates.SmallModel.MemoryGB
+			}
+		}
+	}
+
+	if _, ok := rawMap["default_backend"]; ok {
+		result.DefaultBackend = updates.DefaultBackend
+	}
+
+	if anthropicRaw, ok := rawMap["anthropic"]; ok {
+		var anthropicMap map[string]json.RawMessage
+		if err := json.Unmarshal(anthropicRaw, &anthropicMap); err == nil {
+			if _, ok := anthropicMap["api_key"]; ok {
+				result.Anthropic.APIKey = updates.Anthropic.APIKey
+			}
+			if _, ok := anthropicMap["large_model"]; ok {
+				result.Anthropic.LargeModel = updates.Anthropic.LargeModel
+			}
+			if _, ok := anthropicMap["small_model"]; ok {
+				result.Anthropic.SmallModel = updates.Anthropic.SmallModel
 			}
 		}
 	}

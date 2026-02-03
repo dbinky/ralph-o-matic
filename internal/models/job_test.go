@@ -98,6 +98,31 @@ func TestJob_Validate(t *testing.T) {
 	})
 }
 
+func TestJob_Validate_Backend(t *testing.T) {
+	t.Run("empty backend is valid", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "fix bugs", 10)
+		assert.NoError(t, job.Validate())
+	})
+
+	t.Run("ollama backend is valid", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "fix bugs", 10)
+		job.Backend = BackendOllama
+		assert.NoError(t, job.Validate())
+	})
+
+	t.Run("anthropic backend is valid", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "fix bugs", 10)
+		job.Backend = BackendAnthropic
+		assert.NoError(t, job.Validate())
+	})
+
+	t.Run("unknown backend fails", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "fix bugs", 10)
+		job.Backend = "gpt"
+		assert.Error(t, job.Validate())
+	})
+}
+
 func TestJob_TransitionTo(t *testing.T) {
 	t.Run("valid transition updates status and timestamp", func(t *testing.T) {
 		job := NewJob("git@github.com:user/repo.git", "main", "test", 10)

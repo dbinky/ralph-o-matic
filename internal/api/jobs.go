@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -21,6 +23,7 @@ type CreateJobRequest struct {
 	Priority      string            `json:"priority,omitempty"`
 	WorkingDir    string            `json:"working_dir,omitempty"`
 	Env           map[string]string `json:"env,omitempty"`
+	Backend       string            `json:"backend,omitempty"`
 }
 
 // ListJobsResponse is the response for listing jobs
@@ -37,14 +40,33 @@ type ReorderRequest struct {
 }
 
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
+	// Limit request body to 1 MB to prevent denial of service
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	var req CreateJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
 
+	// Sanitize working_dir to prevent path traversal
+	workingDir := req.WorkingDir
+	if workingDir != "" {
+		workingDir = filepath.Clean(workingDir)
+		if strings.Contains(workingDir, "..") {
+			writeError(w, http.StatusBadRequest, "working_dir cannot contain path traversal sequences")
+			return
+		}
+	}
+
+	// Validate env vars don't contain dangerous prefixes
+	if err := validateEnvVars(req.Env); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	job := models.NewJob(req.RepoURL, req.Branch, req.Prompt, req.MaxIterations)
-	job.WorkingDir = req.WorkingDir
+	job.WorkingDir = workingDir
 	job.Env = req.Env
 
 	if req.Priority != "" {
@@ -54,6 +76,15 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		job.Priority = priority
+	}
+
+	if req.Backend != "" {
+		backend := models.Backend(req.Backend)
+		if !backend.Valid() {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid backend: %q", req.Backend))
+			return
+		}
+		job.Backend = backend
 	}
 
 	if err := s.queue.Enqueue(job); err != nil {
@@ -268,4 +299,29 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"logs": logs})
+}
+
+// envVarDenylist contains environment variable names and prefixes that should
+// not be overridden by job env settings for security reasons.
+var envVarDenylist = []string{
+	"LD_",       // Linux dynamic linker
+	"DYLD_",     // macOS dynamic linker
+	"PATH",      // executable search path
+	"HOME",      // home directory
+	"SHELL",     // shell executable
+	"ANTHROPIC_", // Anthropic API config
+	"CLAUDE_",   // Claude CLI config
+}
+
+// validateEnvVars checks that no env vars match the denylist.
+func validateEnvVars(env map[string]string) error {
+	for key := range env {
+		upperKey := strings.ToUpper(key)
+		for _, denied := range envVarDenylist {
+			if strings.HasPrefix(upperKey, denied) || upperKey == denied {
+				return fmt.Errorf("environment variable %q is not allowed", key)
+			}
+		}
+	}
+	return nil
 }

@@ -83,9 +83,20 @@ func (rm *RepoManager) Commit(ctx context.Context, workDir, message string) (str
 	return hash, nil
 }
 
-// PushAndCreatePR pushes the branch and creates a PR
+// PushAndCreatePR pushes the branch and creates a PR.
+// Returns empty string with no error if there are no changes to push.
 func (rm *RepoManager) PushAndCreatePR(ctx context.Context, workDir, baseBranch string, iterations int, success bool, specPath string) (string, error) {
 	resultBranch := rm.ResultBranch(baseBranch)
+
+	// Check if there are any commits on the result branch beyond the base
+	hasChanges, err := rm.git.HasCommitsAhead(ctx, workDir, baseBranch, resultBranch)
+	if err != nil {
+		// If we can't determine, try pushing anyway
+		hasChanges = true
+	}
+	if !hasChanges {
+		return "", nil
+	}
 
 	// Push the branch
 	if err := rm.git.Push(ctx, workDir, resultBranch); err != nil {

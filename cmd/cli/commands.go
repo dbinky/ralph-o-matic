@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -12,7 +13,7 @@ import (
 )
 
 func submitCmd() *cobra.Command {
-	var prompt, priority, workingDir string
+	var prompt, priority, workingDir, backend string
 	var maxIterations int
 	var openEnded bool
 
@@ -50,6 +51,10 @@ func submitCmd() *cobra.Command {
 				WorkingDir:    workingDir,
 			}
 
+			if backend != "" {
+				req.Backend = backend
+			}
+
 			fmt.Println("Submitting job...")
 			fmt.Printf("  Repository:    %s\n", repoURL)
 			fmt.Printf("  Branch:        %s\n", branch)
@@ -72,6 +77,7 @@ func submitCmd() *cobra.Command {
 	cmd.Flags().IntVar(&maxIterations, "max-iterations", 0, "Max iterations")
 	cmd.Flags().StringVar(&workingDir, "working-dir", "", "Working directory")
 	cmd.Flags().BoolVar(&openEnded, "open-ended", false, "Use open-ended prompt")
+	cmd.Flags().StringVar(&backend, "backend", "", "Backend to use: ollama or anthropic (default: server setting)")
 
 	return cmd
 }
@@ -336,8 +342,23 @@ func serverConfigCmd() *cobra.Command {
 // Helper functions
 
 func getGitInfo() (string, string, error) {
-	// TODO: Implement using git commands
-	return "", "", fmt.Errorf("not implemented")
+	repoURL, err := execGit("remote", "get-url", "origin")
+	if err != nil {
+		return "", "", fmt.Errorf("get remote URL: %w", err)
+	}
+	branch, err := execGit("branch", "--show-current")
+	if err != nil {
+		return "", "", fmt.Errorf("get branch: %w", err)
+	}
+	return strings.TrimSpace(repoURL), strings.TrimSpace(branch), nil
+}
+
+func execGit(args ...string) (string, error) {
+	out, err := exec.Command("git", args...).Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 func readPromptFile(workingDir string) (string, error) {

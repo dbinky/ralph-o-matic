@@ -52,9 +52,12 @@ func (g *GH) CreatePR(ctx context.Context, dir, baseBranch, headBranch, title, b
 	)
 	cmd.Dir = dir
 
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("gh pr create failed: %w", err)
+		return "", fmt.Errorf("gh pr create failed: %w: %s", err, stderr.String())
 	}
 
 	// Output is the PR URL

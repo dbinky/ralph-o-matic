@@ -39,7 +39,7 @@ setup() {
 
     select_models
 
-    [[ "$LARGE_MODEL" == *"70b"* ]] || [[ "$LARGE_MODEL" == *"32b"* ]]
+    [[ "$LARGE_MODEL" == "devstral" ]] || [[ "$LARGE_MODEL" == "qwen3-coder:30b" ]]
     [ -n "$SMALL_MODEL" ]
     [ -n "$INFERENCE_MODE" ]
 }
@@ -58,8 +58,8 @@ setup() {
 
     select_models
 
-    # Should not pick 70b for 8GB machine
-    [[ "$LARGE_MODEL" != *"70b"* ]]
+    # Should pick qwen3:8b for 8GB machine
+    [[ "$LARGE_MODEL" == "qwen3:8b" ]]
     [ -n "$SMALL_MODEL" ]
     [ "$INFERENCE_MODE" = "cpu_only" ]
 }
@@ -68,8 +68,8 @@ setup() {
     OS="linux"
     ARCH="amd64"
     MODE="server"
-    LARGE_MODEL="qwen2.5-coder:14b"
-    SMALL_MODEL="qwen2.5-coder:7b"
+    LARGE_MODEL="qwen3:14b"
+    SMALL_MODEL="qwen3:8b"
     OLLAMA_URL="http://localhost:11434"
     INFERENCE_MODE="cpu_only"
 
@@ -84,7 +84,7 @@ setup() {
 
     # Check config contains model info
     grep -q "large_model" "$config_file"
-    grep -q "qwen2.5-coder:14b" "$config_file"
+    grep -q "qwen3:14b" "$config_file"
 
     # Cleanup
     rm -rf "$HOME"

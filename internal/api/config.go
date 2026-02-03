@@ -3,10 +3,56 @@ package api
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/ryan/ralph-o-matic/internal/db"
+	"github.com/ryan/ralph-o-matic/internal/models"
 )
+
+// anthropicConfigResponse redacts the API key, exposing only whether one is set.
+type anthropicConfigResponse struct {
+	APIKeySet  bool   `json:"api_key_set"`
+	LargeModel string `json:"large_model"`
+	SmallModel string `json:"small_model"`
+}
+
+// configResponse mirrors ServerConfig but redacts sensitive fields.
+type configResponse struct {
+	Ollama               models.OllamaConfig     `json:"ollama"`
+	LargeModel           models.ModelPlacement    `json:"large_model"`
+	SmallModel           models.ModelPlacement    `json:"small_model"`
+	DefaultMaxIterations int                      `json:"default_max_iterations"`
+	ConcurrentJobs       int                      `json:"concurrent_jobs"`
+	WorkspaceDir         string                   `json:"workspace_dir,omitempty"`
+	JobRetentionDays     int                      `json:"job_retention_days"`
+	DefaultBackend       models.Backend           `json:"default_backend"`
+	Anthropic            anthropicConfigResponse   `json:"anthropic"`
+	MaxClaudeRetries     int                      `json:"max_claude_retries"`
+	MaxGitRetries        int                      `json:"max_git_retries"`
+	GitRetryBackoffMs    int                      `json:"git_retry_backoff_ms"`
+}
+
+func newConfigResponse(cfg *models.ServerConfig) *configResponse {
+	return &configResponse{
+		Ollama:               cfg.Ollama,
+		LargeModel:           cfg.LargeModel,
+		SmallModel:           cfg.SmallModel,
+		DefaultMaxIterations: cfg.DefaultMaxIterations,
+		ConcurrentJobs:       cfg.ConcurrentJobs,
+		WorkspaceDir:         cfg.WorkspaceDir,
+		JobRetentionDays:     cfg.JobRetentionDays,
+		DefaultBackend:       cfg.DefaultBackend,
+		Anthropic: anthropicConfigResponse{
+			APIKeySet:  cfg.Anthropic.APIKey != "",
+			LargeModel: cfg.Anthropic.LargeModel,
+			SmallModel: cfg.Anthropic.SmallModel,
+		},
+		MaxClaudeRetries:  cfg.MaxClaudeRetries,
+		MaxGitRetries:     cfg.MaxGitRetries,
+		GitRetryBackoffMs: cfg.GitRetryBackoffMs,
+	}
+}
 
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	configRepo := db.NewConfigRepo(s.db)
@@ -17,11 +63,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, cfg)
+	writeJSON(w, http.StatusOK, newConfigResponse(cfg))
 }
 
 func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	configRepo := db.NewConfigRepo(s.db)
+
+	// Limit request body to 1 MB to prevent denial of service
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	// Get current config
 	current, err := configRepo.Get()
@@ -56,11 +105,23 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Warn if an API key is being persisted to the database
+	if merged.Anthropic.APIKey != "" && merged.Anthropic.APIKey != current.Anthropic.APIKey {
+		log.Printf("Warning: Anthropic API key stored in database. Consider using ANTHROPIC_API_KEY environment variable instead.")
+	}
+
 	// Save
 	if err := configRepo.Save(merged); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, merged)
+	resp := newConfigResponse(merged)
+	writeJSON(w, http.StatusOK, struct {
+		*configResponse
+		Note string `json:"_note,omitempty"`
+	}{
+		configResponse: resp,
+		Note:           "Configuration saved. Some changes may require a server restart to take effect.",
+	})
 }
