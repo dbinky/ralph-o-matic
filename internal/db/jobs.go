@@ -45,16 +45,14 @@ func (r *JobRepo) Create(job *models.Job) error {
 			status, priority, position,
 			repo_url, branch, result_branch, working_dir,
 			prompt, max_iterations, env,
-			owner_id, owner_name,
 			iteration, retry_count,
 			created_at, started_at, paused_at, completed_at,
 			pr_url, error
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		job.Status, job.Priority, job.Position,
 		job.RepoURL, job.Branch, job.ResultBranch, job.WorkingDir,
 		job.Prompt, job.MaxIterations, envJSON,
-		job.OwnerID, job.OwnerName,
 		job.Iteration, job.RetryCount,
 		job.CreatedAt, job.StartedAt, job.PausedAt, job.CompletedAt,
 		job.PRURL, job.Error,
@@ -84,7 +82,6 @@ func (r *JobRepo) Get(id int64) (*models.Job, error) {
 			id, status, priority, position,
 			repo_url, branch, result_branch, working_dir,
 			prompt, max_iterations, env,
-			owner_id, owner_name,
 			iteration, retry_count,
 			created_at, started_at, paused_at, completed_at,
 			pr_url, error
@@ -93,7 +90,6 @@ func (r *JobRepo) Get(id int64) (*models.Job, error) {
 		&job.ID, &job.Status, &job.Priority, &job.Position,
 		&job.RepoURL, &job.Branch, &job.ResultBranch, &workingDir,
 		&job.Prompt, &job.MaxIterations, &envJSON,
-		&job.OwnerID, &job.OwnerName,
 		&job.Iteration, &job.RetryCount,
 		&job.CreatedAt, &startedAt, &pausedAt, &completedAt,
 		&prURL, &errStr,
@@ -149,7 +145,6 @@ func (r *JobRepo) Update(job *models.Job) error {
 			status = ?, priority = ?, position = ?,
 			repo_url = ?, branch = ?, result_branch = ?, working_dir = ?,
 			prompt = ?, max_iterations = ?, env = ?,
-			owner_id = ?, owner_name = ?,
 			iteration = ?, retry_count = ?,
 			started_at = ?, paused_at = ?, completed_at = ?,
 			pr_url = ?, error = ?
@@ -158,7 +153,6 @@ func (r *JobRepo) Update(job *models.Job) error {
 		job.Status, job.Priority, job.Position,
 		job.RepoURL, job.Branch, job.ResultBranch, job.WorkingDir,
 		job.Prompt, job.MaxIterations, envJSON,
-		job.OwnerID, job.OwnerName,
 		job.Iteration, job.RetryCount,
 		job.StartedAt, job.PausedAt, job.CompletedAt,
 		job.PRURL, job.Error,
@@ -183,7 +177,6 @@ func (r *JobRepo) Delete(id int64) error {
 // ListOptions configures List queries
 type ListOptions struct {
 	Statuses []models.JobStatus
-	OwnerID  string
 	Limit    int
 	Offset   int
 }
@@ -200,11 +193,6 @@ func (r *JobRepo) List(opts ListOptions) ([]*models.Job, int, error) {
 			args = append(args, s)
 		}
 		where = append(where, "status IN ("+strings.Join(placeholders, ",")+")")
-	}
-
-	if opts.OwnerID != "" {
-		where = append(where, "owner_id = ?")
-		args = append(args, opts.OwnerID)
 	}
 
 	whereClause := ""

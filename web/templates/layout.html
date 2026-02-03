@@ -152,17 +152,6 @@
         .sortable-ghost {
             opacity: 0.4;
         }
-        .auth-user {
-            color: #888;
-            font-size: 0.875rem;
-        }
-        .auth-user a {
-            color: #60a5fa;
-            text-decoration: none;
-        }
-        .auth-user a:hover {
-            color: #fff;
-        }
     </style>
 </head>
 <body>
@@ -173,9 +162,6 @@
                 <a href="/">Dashboard</a>
                 <a href="/config">Config</a>
                 <span class="badge">Queue: {{.QueueSize}}</span>
-                {{if .AuthUser}}
-                <span class="auth-user">{{.AuthUser.Name}} · <a href="#" onclick="fetch('/auth/logout',{method:'POST'}).then(()=>location.reload())">Logout</a></span>
-                {{end}}
             </div>
         </header>
 
