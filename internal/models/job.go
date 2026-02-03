@@ -24,6 +24,10 @@ type Job struct {
 	Backend       Backend           `json:"backend,omitempty"`
 	Env           map[string]string `json:"env,omitempty"`
 
+	// Ownership (set when auth is enabled, empty when auth is none)
+	OwnerID   string `json:"owner_id,omitempty"`
+	OwnerName string `json:"owner_name,omitempty"`
+
 	// Progress tracking
 	Iteration  int `json:"iteration"`
 	RetryCount int `json:"retry_count"`
