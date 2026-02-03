@@ -11,7 +11,7 @@ Research across the ralph loop ecosystem (Huntley's original, frankbria, Anthrop
 | Cross-iteration memory | Living task list file | Prevents duplicate work and context rot; most proven pattern |
 | RALPH_STATUS block | Optional/best-effort | Don't force structure that weaker models may not follow reliably |
 | Prompt length | Moderate (~12 lines) | 3-4 key guardrails without over-constraining |
-| Progress file location | `docs/plans/{date}-{branch}-ralph-status.md` | Organized with other plan docs, namespaced per branch |
+| Progress file location | `docs/plans/{branch}-ralph-status.md` | Organized with other plan docs, namespaced per branch |
 | Progress file format | Living checklist (Remaining/Completed/Discovered) | Agent maintains it; more useful than append-only log |
 | Committed per iteration | Yes | Survives crashes, provides history, scoped to branch |
 
@@ -25,7 +25,7 @@ Used when the job has a spec and clear completion criteria. The agent exits when
 You are refining code to meet a specification.
 
 Spec: {SPEC_PATH}
-Progress: docs/plans/{DATE}-{BRANCH}-ralph-status.md
+Progress: docs/plans/{BRANCH}-ralph-status.md
 
 Each iteration:
 1. Read the spec and progress file to understand current state
@@ -48,7 +48,7 @@ Used for polish/refinement work that runs until the iteration cap or manual stop
 ```markdown
 You are improving this codebase toward production quality.
 
-Progress: docs/plans/{DATE}-{BRANCH}-ralph-status.md
+Progress: docs/plans/{BRANCH}-ralph-status.md
 
 Each iteration:
 1. Read the progress file to understand what's been done and what remains
@@ -112,7 +112,7 @@ Create `internal/executor/prompts.go` with:
 ### Step 2: Add progress file bootstrap to RalphHandler
 
 In `Handle()`, before the first iteration:
-- Compute progress file path: `docs/plans/{YYYY-MM-DD}-{branch}-ralph-status.md`
+- Compute progress file path: `docs/plans/{branch}-ralph-status.md`
 - If file doesn't exist in the working directory, create the seed content
 - Commit the seed file (uses existing per-iteration commit)
 
