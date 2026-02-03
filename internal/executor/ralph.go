@@ -49,7 +49,7 @@ func NewRalphHandler(database *db.DB, config *models.ServerConfig, workspaceDir 
 func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) (*ExecutionResult, error) {
 	log.Printf("Starting ralph iteration %d for job %d: %s", job.Iteration, job.ID, job.Branch)
 
-	workDir := h.resolveWorkDir(ctx, job)
+	workDir := h.resolveWorkDir(job)
 	if workDir == "" {
 		var err error
 		workDir, err = h.setupWorkDir(ctx, job)
@@ -107,6 +107,13 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) (*ExecutionR
 		log.Printf("Warning: per-iteration commit failed for job %d: %v", job.ID, commitErr)
 	} else if hash != "" {
 		log.Printf("Job %d iteration %d committed: %s", job.ID, job.Iteration, hash)
+		// Git diff fallback: if metadata reports no files modified but we committed,
+		// there were actual changes that weren't detected via RALPH_STATUS.
+		// Update FilesModified to indicate progress.
+		if result.Metadata != nil && result.Metadata.FilesModified == 0 {
+			result.Metadata.FilesModified = 1
+			log.Printf("Job %d: git commit detected changes not reported in metadata", job.ID)
+		}
 	}
 
 	return result, nil
@@ -152,7 +159,7 @@ func (h *RalphHandler) updateIteration(job *models.Job, iteration int) {
 // (absolute WorkingDir), it returns the path as-is. For standard mode, it
 // returns the workspace path with any relative WorkingDir appended.
 // This does NOT clone; use setupWorkDir for initial setup.
-func (h *RalphHandler) resolveWorkDir(ctx context.Context, job *models.Job) string {
+func (h *RalphHandler) resolveWorkDir(job *models.Job) string {
 	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
 		return job.WorkingDir
 	}
@@ -161,7 +168,13 @@ func (h *RalphHandler) resolveWorkDir(ctx context.Context, job *models.Job) stri
 		return ""
 	}
 	if job.WorkingDir != "" {
-		return base + "/" + job.WorkingDir
+		// Sanitize: reject path traversal attempts
+		cleanDir := filepath.Clean(job.WorkingDir)
+		if strings.Contains(cleanDir, "..") {
+			log.Printf("Warning: rejecting path traversal attempt in job %d WorkingDir: %s", job.ID, job.WorkingDir)
+			return base
+		}
+		return filepath.Join(base, cleanDir)
 	}
 	return base
 }
@@ -176,13 +189,18 @@ func (h *RalphHandler) setupWorkDir(ctx context.Context, job *models.Job) (strin
 		return "", fmt.Errorf("failed to setup workspace: %w", err)
 	}
 	if job.WorkingDir != "" {
-		workDir = workDir + "/" + job.WorkingDir
+		// Sanitize: reject path traversal attempts
+		cleanDir := filepath.Clean(job.WorkingDir)
+		if strings.Contains(cleanDir, "..") {
+			return "", fmt.Errorf("working_dir contains path traversal sequence: %s", job.WorkingDir)
+		}
+		workDir = filepath.Join(workDir, cleanDir)
 	}
 	return workDir, nil
 }
 
 func (h *RalphHandler) finalize(ctx context.Context, job *models.Job, success bool) error {
-	workDir := h.resolveWorkDir(ctx, job)
+	workDir := h.resolveWorkDir(job)
 
 	// Commit any remaining changes
 	hash, err := h.repoManager.Commit(ctx, workDir, fmt.Sprintf("Ralph iteration %d", job.Iteration))

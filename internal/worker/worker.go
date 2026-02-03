@@ -10,6 +10,10 @@ import (
 	"github.com/ryan/ralph-o-matic/internal/models"
 )
 
+// DefaultBackend is the default backend when job.Backend is empty.
+// This should match the server's default.
+const DefaultBackend = models.BackendOllama
+
 // JobHandler executes a single iteration of the ralph loop.
 type JobHandler interface {
 	Handle(ctx context.Context, job *models.Job) (*executor.ExecutionResult, error)
@@ -87,11 +91,19 @@ func (w *Worker) poll(ctx context.Context) {
 
 	log.Printf("Worker: picked up job #%d (%s), max iterations: %d", job.ID, job.Branch, job.MaxIterations)
 
-	cb := executor.NewCircuitBreaker(w.circuitBreakerNoProgress, w.circuitBreakerSameError)
+	// Use backend-specific loop config for circuit breaker thresholds
+	backend := job.Backend
+	if backend == "" {
+		backend = DefaultBackend
+	}
+	loopConfig := models.DefaultLoopConfig(backend)
+	cb := executor.NewCircuitBreaker(loopConfig.CircuitBreakerNoProgress, loopConfig.CircuitBreakerSameError)
 
 	for {
 		if ctx.Err() != nil {
 			log.Printf("Worker: context cancelled, stopping job #%d", job.ID)
+			// Clean up session to prevent memory leak (use background context since ctx is cancelled)
+			_ = w.handler.Finalize(context.Background(), job, false)
 			return
 		}
 
@@ -105,6 +117,8 @@ func (w *Worker) poll(ctx context.Context) {
 		result, err := w.executeWithRetry(ctx, job)
 		if err != nil {
 			log.Printf("Worker: job #%d failed at iteration %d: %v", job.ID, job.Iteration, err)
+			// Clean up session to prevent memory leak
+			_ = w.handler.Finalize(ctx, job, false)
 			if fErr := w.queue.Fail(job, err.Error()); fErr != nil {
 				log.Printf("Worker: failed to mark job #%d as failed: %v", job.ID, fErr)
 			}
@@ -123,6 +137,8 @@ func (w *Worker) poll(ctx context.Context) {
 
 		if cbState == executor.CircuitOpen {
 			log.Printf("Worker: job #%d circuit breaker opened after %d iterations", job.ID, job.Iteration)
+			// Clean up session to prevent memory leak
+			_ = w.handler.Finalize(ctx, job, false)
 			if fErr := w.queue.Fail(job, fmt.Sprintf("circuit breaker: no progress after %d iterations", job.Iteration)); fErr != nil {
 				log.Printf("Worker: failed to mark job #%d as failed: %v", job.ID, fErr)
 			}

@@ -154,3 +154,35 @@ func envToMap(env []string) map[string]string {
 	}
 	return m
 }
+
+func TestClaudeExecutor_BuildEnv_DeniedEnvVarsFiltered(t *testing.T) {
+	cfg := models.DefaultServerConfig()
+	exec := NewClaudeExecutor(cfg)
+
+	// These should be filtered out as defense-in-depth
+	extra := map[string]string{
+		"LD_PRELOAD":   "/tmp/evil.so",
+		"DYLD_INSERT_LIBRARIES": "/tmp/evil.dylib",
+		"PATH":         "/tmp/evil",
+		"HOME":         "/tmp/evil",
+		"SHELL":        "/tmp/evil",
+		"ANTHROPIC_API_KEY": "stolen-key",
+		"CLAUDE_CONFIG": "/tmp/evil",
+		"SAFE_VAR":     "allowed",
+	}
+
+	env := exec.BuildEnv(models.BackendOllama, extra)
+	envMap := envToMap(env)
+
+	// Denied vars should not appear with the injected values
+	assert.NotEqual(t, "/tmp/evil.so", envMap["LD_PRELOAD"])
+	assert.NotEqual(t, "/tmp/evil.dylib", envMap["DYLD_INSERT_LIBRARIES"])
+	assert.NotEqual(t, "/tmp/evil", envMap["PATH"])
+	assert.NotEqual(t, "/tmp/evil", envMap["HOME"])
+	assert.NotEqual(t, "/tmp/evil", envMap["SHELL"])
+	assert.NotEqual(t, "stolen-key", envMap["ANTHROPIC_API_KEY"])
+	assert.NotEqual(t, "/tmp/evil", envMap["CLAUDE_CONFIG"])
+
+	// Safe vars should be present
+	assert.Equal(t, "allowed", envMap["SAFE_VAR"])
+}

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -78,12 +79,33 @@ func run() error {
 		}
 	}()
 
-	go w.Run(ctx)
+	// Use WaitGroup to ensure worker completes its current iteration before shutdown
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		w.Run(ctx)
+	}()
 
 	log.Printf("ralph-o-matic-server %s listening on %s", version, addr)
 	<-ctx.Done()
 
 	log.Println("Shutting down...")
+
+	// Wait for worker to complete current iteration (with timeout)
+	workerDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(workerDone)
+	}()
+
+	select {
+	case <-workerDone:
+		log.Println("Worker shutdown complete")
+	case <-time.After(30 * time.Second):
+		log.Println("Warning: worker shutdown timed out after 30s")
+	}
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)

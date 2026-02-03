@@ -269,3 +269,141 @@ func TestAPI_CreateJob_EmptyBackend_UsesDefault(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &job))
 	assert.Equal(t, models.Backend(""), job.Backend)
 }
+
+func TestAPI_CreateJob_PathTraversal_Rejected(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	tests := []struct {
+		name       string
+		workingDir string
+	}{
+		{"simple traversal", "../etc"},
+		{"nested traversal", "foo/../../bar"},
+		{"deep traversal", "a/b/c/../../../.."},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := map[string]interface{}{
+				"repo_url":       "https://github.com/foo/bar",
+				"branch":         "main",
+				"prompt":         "fix bugs",
+				"max_iterations": 10,
+				"working_dir":    tc.workingDir,
+			}
+			body, _ := json.Marshal(payload)
+			req := httptest.NewRequest("POST", "/api/jobs", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			srv.Router().ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "path traversal")
+		})
+	}
+}
+
+func TestAPI_CreateJob_ValidWorkingDir_Accepted(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	tests := []struct {
+		name       string
+		workingDir string
+	}{
+		{"simple subdir", "packages/auth"},
+		{"nested subdir", "src/components/ui"},
+		{"with dots in name", "my.package/src"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := map[string]interface{}{
+				"repo_url":       "https://github.com/foo/bar",
+				"branch":         "main",
+				"prompt":         "fix bugs",
+				"max_iterations": 10,
+				"working_dir":    tc.workingDir,
+			}
+			body, _ := json.Marshal(payload)
+			req := httptest.NewRequest("POST", "/api/jobs", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			srv.Router().ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusCreated, w.Code)
+		})
+	}
+}
+
+func TestAPI_CreateJob_DeniedEnvVars_Rejected(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	tests := []struct {
+		name   string
+		envKey string
+	}{
+		{"LD_PRELOAD", "LD_PRELOAD"},
+		{"LD_LIBRARY_PATH", "LD_LIBRARY_PATH"},
+		{"DYLD_INSERT_LIBRARIES", "DYLD_INSERT_LIBRARIES"},
+		{"PATH", "PATH"},
+		{"HOME", "HOME"},
+		{"SHELL", "SHELL"},
+		{"ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"},
+		{"CLAUDE_CONFIG", "CLAUDE_CONFIG"},
+		{"lowercase path", "path"},
+		{"lowercase ld_preload", "ld_preload"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := map[string]interface{}{
+				"repo_url":       "https://github.com/foo/bar",
+				"branch":         "main",
+				"prompt":         "fix bugs",
+				"max_iterations": 10,
+				"env":            map[string]string{tc.envKey: "malicious"},
+			}
+			body, _ := json.Marshal(payload)
+			req := httptest.NewRequest("POST", "/api/jobs", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			srv.Router().ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "not allowed")
+		})
+	}
+}
+
+func TestAPI_CreateJob_AllowedEnvVars_Accepted(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	tests := []struct {
+		name   string
+		envKey string
+	}{
+		{"NODE_ENV", "NODE_ENV"},
+		{"CUSTOM_VAR", "CUSTOM_VAR"},
+		{"MY_PATH", "MY_PATH"}, // not PATH itself
+		{"DEBUG", "DEBUG"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := map[string]interface{}{
+				"repo_url":       "https://github.com/foo/bar",
+				"branch":         "main",
+				"prompt":         "fix bugs",
+				"max_iterations": 10,
+				"env":            map[string]string{tc.envKey: "value"},
+			}
+			body, _ := json.Marshal(payload)
+			req := httptest.NewRequest("POST", "/api/jobs", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			srv.Router().ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusCreated, w.Code)
+		})
+	}
+}

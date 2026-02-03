@@ -45,6 +45,18 @@ func (cb *CircuitBreaker) RecordIteration(hasProgress bool, errMsg string) Circu
 		return CircuitOpen
 	}
 
+	// Early return: HalfOpen with progress transitions immediately to Closed
+	// This explicit transition ensures we don't re-enter HalfOpen state
+	if cb.state == CircuitHalfOpen && hasProgress {
+		cb.consecutiveNoProgress = 0
+		if errMsg == "" {
+			cb.consecutiveSameError = 0
+			cb.lastError = ""
+		}
+		cb.state = CircuitClosed
+		return CircuitClosed
+	}
+
 	if hasProgress {
 		cb.consecutiveNoProgress = 0
 		// Check same-error before resetting
@@ -82,11 +94,6 @@ func (cb *CircuitBreaker) RecordIteration(hasProgress bool, errMsg string) Circu
 	if cb.noProgressThreshold > 1 && cb.consecutiveNoProgress >= cb.noProgressThreshold-1 {
 		cb.state = CircuitHalfOpen
 		return CircuitHalfOpen
-	}
-
-	// Recovery from HalfOpen
-	if cb.state == CircuitHalfOpen && hasProgress {
-		cb.state = CircuitClosed
 	}
 
 	return cb.state

@@ -57,10 +57,10 @@ func ParseResponse(jsonOutput []byte) (*ResponseMetadata, error) {
 	// Parse RALPH_STATUS block if present
 	parseRalphStatus(cr.Result, meta)
 
-	// Detect completion from keywords if not already set by RALPH_STATUS
-	if !meta.Completed {
-		meta.Completed = detectCompletion(cr.Result)
-	}
+	// Note: We intentionally do NOT use keyword-based completion detection
+	// (e.g., "all tasks complete", "ready for review") because these phrases
+	// can appear in natural language without indicating actual completion.
+	// Completion must be signaled via RALPH_STATUS block or <promise> tags.
 
 	// Detect errors in result text
 	detectErrors(cr.Result, cr.IsError, meta)
@@ -132,23 +132,6 @@ func parseRalphStatus(result string, meta *ResponseMetadata) {
 	if meta.Completed && !exitSignalExplicit {
 		meta.ExitSignal = true
 	}
-}
-
-var completionPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)\ball\s+tasks?\s+(are\s+)?complete`),
-	regexp.MustCompile(`(?i)\bproject\s+complete\b`),
-	regexp.MustCompile(`(?i)\bready\s+for\s+review\b`),
-	regexp.MustCompile(`(?i)\ball\s+done\b`),
-	regexp.MustCompile(`(?i)\bfinished\s+(all|everything)\b`),
-}
-
-func detectCompletion(result string) bool {
-	for _, p := range completionPatterns {
-		if p.MatchString(result) {
-			return true
-		}
-	}
-	return false
 }
 
 var errorLineRe = regexp.MustCompile(`(?m)^(?:Error:|ERROR:|error:)\s*(.+)`)

@@ -62,10 +62,37 @@ func (e *ClaudeExecutor) BuildEnv(backend models.Backend, extra map[string]strin
 	}
 
 	for k, v := range extra {
+		// Defense-in-depth: skip dangerous env var prefixes
+		if isDeniedEnvVar(k) {
+			continue
+		}
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 
 	return env
+}
+
+// envVarDenylist contains environment variable names and prefixes that should
+// not be set by job env for security reasons.
+var envVarDenylist = []string{
+	"LD_",       // Linux dynamic linker
+	"DYLD_",     // macOS dynamic linker
+	"PATH",      // executable search path
+	"HOME",      // home directory
+	"SHELL",     // shell executable
+	"ANTHROPIC_", // Anthropic API config
+	"CLAUDE_",   // Claude CLI config
+}
+
+// isDeniedEnvVar checks if an env var name is on the denylist.
+func isDeniedEnvVar(key string) bool {
+	upperKey := strings.ToUpper(key)
+	for _, denied := range envVarDenylist {
+		if strings.HasPrefix(upperKey, denied) || upperKey == denied {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveAnthropicKey returns the API key, preferring env var over config

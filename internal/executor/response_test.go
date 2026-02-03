@@ -52,12 +52,14 @@ func TestParseResponse_NoSessionID(t *testing.T) {
 
 // --- Completion Detection ---
 
-func TestParseResponse_CompletionKeywords(t *testing.T) {
+func TestParseResponse_CompletionKeywords_NotDetected(t *testing.T) {
+	// Keywords like "all tasks are complete" should NOT trigger completion
+	// by themselves. Completion requires RALPH_STATUS block or <promise> tags.
 	data := loadTestData(t, "completion_keywords.json")
 	meta, err := ParseResponse(data)
 
 	require.NoError(t, err)
-	assert.True(t, meta.Completed, "should detect 'all tasks are complete' keyword")
+	assert.False(t, meta.Completed, "keywords alone should not trigger completion")
 }
 
 func TestParseResponse_NoCompletionSignals(t *testing.T) {
