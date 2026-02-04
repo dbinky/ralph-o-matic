@@ -70,10 +70,14 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("failed to initialize EntraID provider: %w", err)
 		}
+		secure := os.Getenv("RALPH_SECURE") == "true"
+		if os.Getenv("RALPH_SECURE") == "" {
+			log.Println("WARNING: RALPH_SECURE not set — session cookies will not have the Secure flag. Set RALPH_SECURE=true for HTTPS deployments.")
+		}
 		serverOpts = &api.ServerOptions{
 			AuthProvider: provider,
 			Sessions:     auth.NewSessionStore(30 * time.Minute),
-			Secure:       os.Getenv("RALPH_SECURE") == "true",
+			Secure:       secure,
 		}
 		log.Printf("Authentication enabled: EntraID SSO (tenant: %s)", authCfg.Entra.TenantID)
 	} else {

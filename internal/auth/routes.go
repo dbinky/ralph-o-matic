@@ -32,9 +32,10 @@ func NewAuthRoutes(provider *EntraProvider, store *SessionStore, secure bool) ch
 	r := chi.NewRouter()
 
 	configLimiter := NewRateLimiter(10, 1*time.Minute)
+	authFlowLimiter := NewRateLimiter(20, 1*time.Minute)
 	r.With(configLimiter.Middleware).Get("/config", handleAuthConfig(provider))
-	r.Get("/login", handleLogin(provider, secure))
-	r.Get("/callback", handleCallback(provider, store, secure))
+	r.With(authFlowLimiter.Middleware).Get("/login", handleLogin(provider, secure))
+	r.With(authFlowLimiter.Middleware).Get("/callback", handleCallback(provider, store, secure))
 	r.Post("/logout", handleLogout(store))
 
 	return r

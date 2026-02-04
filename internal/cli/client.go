@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/ryan/ralph-o-matic/internal/models"
@@ -14,9 +15,11 @@ import (
 
 // Client communicates with the ralph-o-matic server
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
-	tokenPath  string
+	baseURL     string
+	httpClient  *http.Client
+	tokenPath   string
+	cachedToken *CachedToken // loaded once per CLI invocation
+	tokenLoaded bool         // true after first load attempt
 }
 
 // SetTokenPath sets the path to the cached auth token file.
@@ -24,6 +27,17 @@ type Client struct {
 // to each request if the token is valid and matches the server.
 func (c *Client) SetTokenPath(path string) {
 	c.tokenPath = path
+}
+
+// loadCachedToken returns the cached token, loading it from disk on first call.
+func (c *Client) loadCachedToken() *CachedToken {
+	if !c.tokenLoaded {
+		c.tokenLoaded = true
+		if token, err := loadToken(c.tokenPath); err == nil {
+			c.cachedToken = token
+		}
+	}
+	return c.cachedToken
 }
 
 // NewClient creates a new API client
@@ -189,10 +203,14 @@ func (c *Client) request(method, path string, body, result interface{}) error {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	// Attach bearer token if available, valid, and matching server
+	// Attach bearer token if available, valid, and matching server.
+	// The token is loaded from disk once per CLI invocation and cached.
 	if c.tokenPath != "" {
-		if token, err := loadToken(c.tokenPath); err == nil && token != nil {
-			if !token.IsExpired() && token.Server == c.baseURL {
+		token := c.loadCachedToken()
+		if token != nil {
+			if token.IsExpired() {
+				fmt.Fprintf(os.Stderr, "Warning: auth token expired. Run 'ralph auth login' to re-authenticate.\n")
+			} else if token.Server == c.baseURL {
 				req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 			}
 		}
