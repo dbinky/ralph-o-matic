@@ -94,7 +94,7 @@ ralph-o-matic is a job queue server that runs iterative AI coding refinement loo
 
 **Entry points:**
 - `cmd/server/main.go` — HTTP server on `:9090` (env: `RALPH_ADDR`, `RALPH_DB`)
-- `cmd/cli/main.go` — Cobra CLI (`submit`, `status`, `logs`, `cancel`, `pause`, `resume`, `move`, `config`, `server-config`)
+- `cmd/cli/main.go` — Cobra CLI (`submit`, `status`, `logs`, `cancel`, `pause`, `resume`, `move`, `config`, `server-config`, `test-notify`)
 
 **Job flow:** CLI submits → `POST /api/jobs` → `queue.Enqueue()` → `executor.RalphHandler.Handle()` → clones repo via git/gh → creates result branch → runs `claude --print` subprocess with Ollama env vars → streams logs to DB → commits, pushes, creates PR via `gh pr create`
 
@@ -107,11 +107,14 @@ ralph-o-matic is a job queue server that runs iterative AI coding refinement loo
 - `internal/models` — Domain types: `Job`, `JobStatus`, `Priority`, `ServerConfig`, `ModelPlacement`
 - `internal/platform` — Hardware detection (RAM, GPU/VRAM, Apple Silicon unified memory), model catalog, selection algorithm for optimal (large, small) model pairing
 - `internal/dashboard` — Template-based web UI with SSE live updates. Templates embedded via `web/embed.go`
+- `internal/notify` — Notification dispatcher with SMTP and Teams channels. Reads config from DB per-call. Non-blocking; failure doesn't affect job processing.
+- `internal/auth` — Authentication middleware. Supports `AuthModeNone` (default) and `AuthModeEntra` (Microsoft Entra ID SSO). Role-based access, session management, rate limiting.
+- `internal/worker` — Job polling loop, integrates notifier dispatch on job completion/failure/cancellation.
 - `internal/cli` — HTTP client wrapper for API, config file management (`~/.config/ralph-o-matic/config.yaml`)
 
 **Database:** SQLite with custom migration runner. Tables: `jobs`, `config` (key-value), `job_logs`. Test helper `newTestDB(t)` creates in-memory DBs.
 
-**Install script** (`scripts/install.sh`): Detects hardware, recommends models, installs deps via package managers, pulls Ollama models, installs binaries to `/usr/local/bin`, sets up launchd (macOS) or systemd (Linux) service. Uses `set -euo pipefail`. BATS tests validate model selection logic.
+**Install script** (`scripts/install.sh`): Detects hardware, recommends models, installs deps via package managers, pulls Ollama models, installs binaries to `/usr/local/bin`, sets up launchd (macOS) or systemd (Linux) service, optionally configures SMTP/Teams notifications. Uses `set -euo pipefail`. BATS tests validate model selection and notification config logic.
 
 ## Testing Patterns
 

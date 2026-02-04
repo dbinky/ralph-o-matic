@@ -64,6 +64,44 @@ setup() {
     [ "$INFERENCE_MODE" = "cpu_only" ]
 }
 
+@test "configure_notifications skips with --yes flag" {
+    YES_FLAG=true
+    MODE="server"
+
+    configure_notifications
+
+    [ "$NOTIFY_SMTP_ENABLED" = "false" ]
+    [ "$NOTIFY_TEAMS_ENABLED" = "false" ]
+}
+
+@test "configure_notifications skips in client mode" {
+    YES_FLAG=false
+    MODE="client"
+
+    configure_notifications
+
+    [ "$NOTIFY_SMTP_ENABLED" = "false" ]
+    [ "$NOTIFY_TEAMS_ENABLED" = "false" ]
+}
+
+@test "apply_notification_config skips when nothing configured" {
+    NOTIFY_SMTP_ENABLED=false
+    NOTIFY_TEAMS_ENABLED=false
+
+    # Should return immediately without errors
+    run apply_notification_config
+    [ "$status" -eq 0 ]
+}
+
+@test "test_notifications skips when nothing configured" {
+    NOTIFY_SMTP_ENABLED=false
+    NOTIFY_TEAMS_ENABLED=false
+
+    # Should return immediately without errors
+    run test_notifications
+    [ "$status" -eq 0 ]
+}
+
 @test "configure_ralph writes structured config" {
     OS="linux"
     ARCH="amd64"

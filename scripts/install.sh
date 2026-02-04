@@ -31,16 +31,29 @@ SMALL_MODEL=""
 OLLAMA_URL="http://localhost:11434"
 INFERENCE_MODE=""  # gpu_cpu_split, gpu_only, cpu_only, remote
 
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --yes|-y) YES_FLAG=true; shift ;;
-        --mode=*) MODE="${1#*=}"; MODE_SET=true; shift ;;
-        --server=*) SERVER_URL="${1#*=}"; shift ;;
-        --large-model=*) LARGE_MODEL="${1#*=}"; shift ;;
-        --small-model=*) SMALL_MODEL="${1#*=}"; shift ;;
-        *) error "Unknown option: $1" ;;
-    esac
-done
+# Notification configuration
+NOTIFY_SMTP_ENABLED=false
+NOTIFY_SMTP_HOST=""
+NOTIFY_SMTP_PORT=587
+NOTIFY_SMTP_USERNAME=""
+NOTIFY_SMTP_PASSWORD=""
+NOTIFY_SMTP_FROM=""
+NOTIFY_SMTP_RECIPIENTS=""
+NOTIFY_TEAMS_ENABLED=false
+NOTIFY_TEAMS_WEBHOOK_URL=""
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --yes|-y) YES_FLAG=true; shift ;;
+            --mode=*) MODE="${1#*=}"; MODE_SET=true; shift ;;
+            --server=*) SERVER_URL="${1#*=}"; shift ;;
+            --large-model=*) LARGE_MODEL="${1#*=}"; shift ;;
+            --small-model=*) SMALL_MODEL="${1#*=}"; shift ;;
+            *) error "Unknown option: $1" ;;
+        esac
+    done
+}
 
 # Platform detection
 OS=""
@@ -741,6 +754,139 @@ EOF
     fi
 }
 
+configure_notifications() {
+    # Only configure notifications for server/full mode
+    if [[ "$MODE" == "client" ]]; then
+        return
+    fi
+
+    # --yes flag skips notification setup (notifications are optional)
+    if [[ "$YES_FLAG" == true ]]; then
+        return
+    fi
+
+    echo ""
+    read -p "Would you like to configure notifications? [y/N] " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        return
+    fi
+
+    # SMTP email notifications
+    echo ""
+    read -p "Enable email (SMTP) notifications? [y/N] " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        NOTIFY_SMTP_ENABLED=true
+
+        read -p "SMTP host: " NOTIFY_SMTP_HOST
+        read -p "SMTP port [587]: " NOTIFY_SMTP_PORT
+        NOTIFY_SMTP_PORT="${NOTIFY_SMTP_PORT:-587}"
+        read -p "SMTP username: " NOTIFY_SMTP_USERNAME
+        read -sp "SMTP password: " NOTIFY_SMTP_PASSWORD
+        echo ""
+        read -p "From address: " NOTIFY_SMTP_FROM
+        read -p "Recipient addresses (comma-separated): " NOTIFY_SMTP_RECIPIENTS
+
+        success "SMTP notifications configured"
+    fi
+
+    # Teams webhook notifications
+    echo ""
+    read -p "Enable Teams webhook notifications? [y/N] " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        NOTIFY_TEAMS_ENABLED=true
+
+        read -p "Teams webhook URL: " NOTIFY_TEAMS_WEBHOOK_URL
+
+        success "Teams notifications configured"
+    fi
+}
+
+apply_notification_config() {
+    # Nothing to apply if no notifications configured
+    if [[ "$NOTIFY_SMTP_ENABLED" == false ]] && [[ "$NOTIFY_TEAMS_ENABLED" == false ]]; then
+        return
+    fi
+
+    info "Applying notification configuration..."
+
+    # Wait for server to be ready (up to 15 seconds)
+    local retries=0
+    while ! curl -sf http://localhost:9090/api/config &>/dev/null; do
+        retries=$((retries + 1))
+        if [[ $retries -ge 15 ]]; then
+            warn "Server not responding — skipping notification config"
+            warn "You can set notification config later with: ralph-o-matic server-config set"
+            return
+        fi
+        sleep 1
+    done
+
+    # Push config via CLI (fall back to curl if CLI not in PATH)
+    local set_config
+    if command -v ralph-o-matic &>/dev/null; then
+        set_config() { ralph-o-matic server-config set "$1" "$2"; }
+    else
+        set_config() {
+            curl -sf -X PATCH http://localhost:9090/api/config \
+                -H "Content-Type: application/json" \
+                -d "{\"$1\": \"$2\"}" &>/dev/null
+        }
+    fi
+
+    if [[ "$NOTIFY_SMTP_ENABLED" == true ]]; then
+        set_config "notify.smtp.host" "$NOTIFY_SMTP_HOST"
+        set_config "notify.smtp.port" "$NOTIFY_SMTP_PORT"
+        set_config "notify.smtp.username" "$NOTIFY_SMTP_USERNAME"
+        set_config "notify.smtp.password" "$NOTIFY_SMTP_PASSWORD"
+        set_config "notify.smtp.from" "$NOTIFY_SMTP_FROM"
+        set_config "notify.smtp.recipients" "$NOTIFY_SMTP_RECIPIENTS"
+        success "SMTP config applied"
+    fi
+
+    if [[ "$NOTIFY_TEAMS_ENABLED" == true ]]; then
+        set_config "notify.teams.webhook_url" "$NOTIFY_TEAMS_WEBHOOK_URL"
+        success "Teams config applied"
+    fi
+}
+
+test_notifications() {
+    # Nothing to test if no notifications configured
+    if [[ "$NOTIFY_SMTP_ENABLED" == false ]] && [[ "$NOTIFY_TEAMS_ENABLED" == false ]]; then
+        return
+    fi
+
+    echo ""
+
+    if [[ "$NOTIFY_SMTP_ENABLED" == true ]]; then
+        read -p "Send test email notification? [Y/n] " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            info "Sending test email..."
+            if ralph-o-matic test-notify smtp 2>/dev/null; then
+                success "Test email sent"
+            else
+                warn "Test email failed — check SMTP settings with: ralph-o-matic server-config list"
+            fi
+        fi
+    fi
+
+    if [[ "$NOTIFY_TEAMS_ENABLED" == true ]]; then
+        read -p "Send test Teams notification? [Y/n] " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            info "Sending test Teams notification..."
+            if ralph-o-matic test-notify teams 2>/dev/null; then
+                success "Test Teams notification sent"
+            else
+                warn "Test Teams notification failed — check webhook URL with: ralph-o-matic server-config list"
+            fi
+        fi
+    fi
+}
+
 prompt_start_server() {
     install_service
 
@@ -941,6 +1087,8 @@ print_success() {
 
 # Main installation flow
 main() {
+    parse_args "$@"
+
     # Reopen stdin from terminal so interactive prompts work with curl | bash
     if [[ ! -t 0 ]]; then
         exec 0</dev/tty
@@ -962,7 +1110,10 @@ main() {
     install_skill
     configure_ralph
     if [[ "$MODE" != "client" ]]; then
+        configure_notifications
         prompt_start_server
+        apply_notification_config
+        test_notifications
     fi
     verify_installation
     print_success
