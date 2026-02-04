@@ -148,6 +148,23 @@ func (c *Client) UpdateConfig(updates map[string]interface{}) (*models.ServerCon
 	return &cfg, nil
 }
 
+// TestNotifyResponse is the response from the test-notify endpoint.
+type TestNotifyResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Error   string `json:"error,omitempty"`
+}
+
+// TestNotify sends a test notification via the specified channel.
+func (c *Client) TestNotify(channel string) (*TestNotifyResponse, error) {
+	req := map[string]string{"channel": channel}
+	var resp TestNotifyResponse
+	if err := c.post("/api/config/test-notify", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // GetLogs retrieves logs for a job
 func (c *Client) GetLogs(jobID int64) ([]map[string]interface{}, error) {
 	var resp struct {

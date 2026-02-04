@@ -1,13 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/models"
+	"github.com/ryan/ralph-o-matic/internal/notify"
 )
 
 // anthropicConfigResponse redacts the API key, exposing only whether one is set.
@@ -123,5 +127,74 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}{
 		configResponse: resp,
 		Note:           "Configuration saved. Some changes may require a server restart to take effect.",
+	})
+}
+
+func (s *Server) handleTestNotify(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Channel string `json:"channel"` // "smtp" or "teams"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Channel != "smtp" && req.Channel != "teams" {
+		writeError(w, http.StatusBadRequest, "channel must be 'smtp' or 'teams'")
+		return
+	}
+
+	configRepo := db.NewConfigRepo(s.db)
+	cfg, err := configRepo.Get()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load config: "+err.Error())
+		return
+	}
+
+	// Build a test job for the notification
+	testJob := &models.Job{
+		ID:            0,
+		RepoURL:       "https://github.com/example/test-repo.git",
+		Branch:        "test-branch",
+		OwnerName:     "Test User",
+		Iteration:     3,
+		MaxIterations: 10,
+		PRURL:         "https://github.com/example/test-repo/pull/1",
+	}
+	now := time.Now()
+	started := now.Add(-5 * time.Minute)
+	testJob.StartedAt = &started
+	testJob.CompletedAt = &now
+
+	var notifier notify.Notifier
+	switch req.Channel {
+	case "smtp":
+		if !cfg.Notify.SMTP.Enabled {
+			writeError(w, http.StatusBadRequest, "SMTP notifications are not enabled. Set notify.smtp.enabled to true first.")
+			return
+		}
+		notifier = notify.NewSMTPNotifier(cfg.Notify.SMTP)
+	case "teams":
+		if !cfg.Notify.Teams.Enabled {
+			writeError(w, http.StatusBadRequest, "Teams notifications are not enabled. Set notify.teams.enabled to true first.")
+			return
+		}
+		notifier = notify.NewTeamsNotifier(cfg.Notify.Teams)
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	if err := notifier.Notify(ctx, testJob, notify.EventCompleted); err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("%s notification failed: %v", req.Channel, err),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Test %s notification sent successfully", req.Channel),
 	})
 }
