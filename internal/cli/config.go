@@ -24,24 +24,29 @@ func DefaultConfig() *Config {
 	}
 }
 
-// ConfigPath returns the default config file path
-func ConfigPath() string {
-	var configDir string
+// configDir returns the platform-conventional config directory for ralph-o-matic.
+func configDir() string {
+	var dir string
 
 	switch runtime.GOOS {
 	case "windows":
-		configDir = os.Getenv("APPDATA")
-		if configDir == "" {
-			configDir = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Roaming")
+		dir = os.Getenv("APPDATA")
+		if dir == "" {
+			dir = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Roaming")
 		}
 	default:
-		configDir = os.Getenv("XDG_CONFIG_HOME")
-		if configDir == "" {
-			configDir = filepath.Join(os.Getenv("HOME"), ".config")
+		dir = os.Getenv("XDG_CONFIG_HOME")
+		if dir == "" {
+			dir = filepath.Join(os.Getenv("HOME"), ".config")
 		}
 	}
 
-	return filepath.Join(configDir, "ralph-o-matic", "config.yaml")
+	return filepath.Join(dir, "ralph-o-matic")
+}
+
+// ConfigPath returns the default config file path
+func ConfigPath() string {
+	return filepath.Join(configDir(), "config.yaml")
 }
 
 // LoadConfig loads config from file, returning defaults if not found

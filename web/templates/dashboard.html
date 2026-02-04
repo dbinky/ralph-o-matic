@@ -22,6 +22,7 @@
         <div class="job-meta">
             <span>{{.Prompt | truncate 50}}</span>
             <span>Running {{.Duration | duration}}</span>
+            {{if .OwnerName}}<span>by {{.OwnerName}}</span>{{end}}
         </div>
         <div class="job-actions">
             <button class="btn btn-secondary" onclick="pauseJob({{.ID}})">Pause</button>
@@ -50,6 +51,7 @@
         </div>
         <div class="job-meta">
             <span>Paused {{.PausedAt | timeago}}</span>
+            {{if .OwnerName}}<span>by {{.OwnerName}}</span>{{end}}
         </div>
         <div class="job-actions">
             <button class="btn btn-primary" onclick="resumeJob({{.ID}})">Resume</button>
@@ -79,6 +81,7 @@
             </div>
             <div class="job-meta">
                 <span>0/{{.MaxIterations}}</span>
+                {{if .OwnerName}}<span>by {{.OwnerName}}</span>{{end}}
             </div>
             <div class="job-actions">
                 <button class="btn btn-danger" onclick="cancelJob({{.ID}})">Cancel</button>

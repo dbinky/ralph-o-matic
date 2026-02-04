@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ryan/ralph-o-matic/internal/auth"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/models"
 	"github.com/ryan/ralph-o-matic/internal/queue"
@@ -90,6 +91,7 @@ func New(database *db.DB, q *queue.Queue, templatesFS fs.FS) *Dashboard {
 // IndexData is the data for the dashboard index
 type IndexData struct {
 	QueueSize int
+	AuthUser  *auth.User
 	Running   []*models.Job
 	Paused    []*models.Job
 	Queued    []*models.Job
@@ -110,6 +112,7 @@ func (d *Dashboard) HandleIndex(w http.ResponseWriter, r *http.Request) {
 
 	data := IndexData{
 		QueueSize: len(queued),
+		AuthUser:  auth.UserFromContext(r.Context()),
 		Running:   running,
 		Paused:    paused,
 		Queued:    queued,
@@ -122,6 +125,7 @@ func (d *Dashboard) HandleIndex(w http.ResponseWriter, r *http.Request) {
 // JobData is the data for the job detail page
 type JobData struct {
 	QueueSize int
+	AuthUser  *auth.User
 	Job       *models.Job
 	Logs      []*db.JobLog
 }
@@ -139,6 +143,7 @@ func (d *Dashboard) HandleJob(w http.ResponseWriter, r *http.Request, jobID int6
 
 	data := JobData{
 		QueueSize: d.queue.Size(),
+		AuthUser:  auth.UserFromContext(r.Context()),
 		Job:       job,
 		Logs:      logs,
 	}
@@ -155,6 +160,7 @@ type ConfigSetting struct {
 // ConfigData is the data for the config page
 type ConfigData struct {
 	QueueSize int
+	AuthUser  *auth.User
 	Settings  []ConfigSetting
 }
 
@@ -184,6 +190,7 @@ func (d *Dashboard) HandleConfig(w http.ResponseWriter, r *http.Request) {
 
 	data := ConfigData{
 		QueueSize: d.queue.Size(),
+		AuthUser:  auth.UserFromContext(r.Context()),
 		Settings:  settings,
 	}
 

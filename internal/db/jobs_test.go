@@ -274,6 +274,93 @@ func TestJobRepo_NextPosition(t *testing.T) {
 	assert.Equal(t, 2, pos)
 }
 
+func TestJobRepo_Create_WithOwner(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	job.OwnerID = "user-abc-123"
+	job.OwnerName = "Alice Smith"
+
+	err := repo.Create(job)
+	require.NoError(t, err)
+
+	fetched, err := repo.Get(job.ID)
+	require.NoError(t, err)
+
+	assert.Equal(t, "user-abc-123", fetched.OwnerID)
+	assert.Equal(t, "Alice Smith", fetched.OwnerName)
+}
+
+func TestJobRepo_Create_WithoutOwner(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+
+	err := repo.Create(job)
+	require.NoError(t, err)
+
+	fetched, err := repo.Get(job.ID)
+	require.NoError(t, err)
+
+	assert.Empty(t, fetched.OwnerID)
+	assert.Empty(t, fetched.OwnerName)
+}
+
+func TestJobRepo_List_FilterByOwner(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	// Create jobs for user-a
+	for i := 0; i < 3; i++ {
+		job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+		job.OwnerID = "user-a"
+		job.OwnerName = "Alice"
+		err := repo.Create(job)
+		require.NoError(t, err)
+	}
+
+	// Create jobs for user-b
+	for i := 0; i < 2; i++ {
+		job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+		job.OwnerID = "user-b"
+		job.OwnerName = "Bob"
+		err := repo.Create(job)
+		require.NoError(t, err)
+	}
+
+	// Filter by user-a
+	jobs, total, err := repo.List(ListOptions{OwnerID: "user-a"})
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, total)
+	assert.Len(t, jobs, 3)
+	for _, job := range jobs {
+		assert.Equal(t, "user-a", job.OwnerID)
+	}
+}
+
+func TestJobRepo_List_NoOwnerFilter_ReturnsAll(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	// Create jobs for different owners
+	for _, ownerID := range []string{"user-a", "user-b", ""} {
+		job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+		job.OwnerID = ownerID
+		err := repo.Create(job)
+		require.NoError(t, err)
+	}
+
+	// No filter should return all
+	jobs, total, err := repo.List(ListOptions{})
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, total)
+	assert.Len(t, jobs, 3)
+}
+
 func TestJobRepo_CountByStatus(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewJobRepo(db)

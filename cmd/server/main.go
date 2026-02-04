@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/api"
+	"github.com/ryan/ralph-o-matic/internal/auth"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/executor"
 	"github.com/ryan/ralph-o-matic/internal/queue"
@@ -53,7 +54,37 @@ func run() error {
 	}
 
 	q := queue.New(database)
-	srv := api.NewServer(database, q, addr)
+
+	// Load auth configuration
+	authCfg, err := auth.LoadConfig(os.Getenv, "")
+	if err != nil {
+		return fmt.Errorf("failed to load auth config: %w", err)
+	}
+	if err := authCfg.Validate(); err != nil {
+		return fmt.Errorf("invalid auth config: %w", err)
+	}
+
+	var serverOpts *api.ServerOptions
+	if authCfg.Mode == auth.AuthModeEntra {
+		provider, err := auth.NewEntraProvider(context.Background(), authCfg.Entra, "")
+		if err != nil {
+			return fmt.Errorf("failed to initialize EntraID provider: %w", err)
+		}
+		secure := os.Getenv("RALPH_SECURE") == "true"
+		if os.Getenv("RALPH_SECURE") == "" {
+			log.Println("WARNING: RALPH_SECURE not set — session cookies will not have the Secure flag. Set RALPH_SECURE=true for HTTPS deployments.")
+		}
+		serverOpts = &api.ServerOptions{
+			AuthProvider: provider,
+			Sessions:     auth.NewSessionStore(30 * time.Minute),
+			Secure:       secure,
+		}
+		log.Printf("Authentication enabled: EntraID SSO (tenant: %s)", authCfg.Entra.TenantID)
+	} else {
+		log.Println("WARNING: running without authentication — all endpoints are open")
+	}
+
+	srv := api.NewServer(database, q, addr, serverOpts)
 
 	// Load config for executor
 	configRepo := db.NewConfigRepo(database)

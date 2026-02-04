@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/ryan/ralph-o-matic/internal/auth"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/models"
 )
@@ -69,6 +70,12 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	job.WorkingDir = workingDir
 	job.Env = req.Env
 
+	// Set ownership from authenticated user
+	if user := auth.UserFromContext(r.Context()); user != nil {
+		job.OwnerID = user.ID
+		job.OwnerName = user.Name
+	}
+
 	if req.Priority != "" {
 		priority, err := models.ParsePriority(req.Priority)
 		if err != nil {
@@ -97,6 +104,11 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	opts := db.ListOptions{}
+
+	// Filter by owner for non-admin users
+	if user := auth.UserFromContext(r.Context()); user != nil && !user.IsAdmin() {
+		opts.OwnerID = user.ID
+	}
 
 	// Parse status filter
 	if statusStr := r.URL.Query().Get("status"); statusStr != "" {
@@ -137,13 +149,8 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -157,13 +164,8 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -182,13 +184,8 @@ func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -226,13 +223,8 @@ func (s *Server) handlePauseJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -251,13 +243,8 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -291,6 +278,10 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := s.authorizedJob(w, r, jobID); !ok {
+		return
+	}
+
 	logRepo := db.NewLogRepo(s.db)
 	logs, err := logRepo.GetForJob(jobID)
 	if err != nil {
@@ -299,6 +290,45 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"logs": logs})
+}
+
+// authorizedJob fetches a job by ID and checks access control.
+// It writes the appropriate HTTP error response and returns nil, false if
+// the job is not found, an error occurs, or access is denied.
+func (s *Server) authorizedJob(w http.ResponseWriter, r *http.Request, jobID int64) (*models.Job, bool) {
+	job, err := s.queue.Get(jobID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "job not found")
+			return nil, false
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return nil, false
+	}
+
+	if !canAccessJob(r, job) {
+		writeError(w, http.StatusForbidden, "access denied")
+		return nil, false
+	}
+
+	return job, true
+}
+
+// canAccessJob checks whether the request's user is allowed to access the given job.
+// Returns true when: auth is disabled (no user in context), user is admin,
+// job has no owner (pre-auth job), or user owns the job.
+func canAccessJob(r *http.Request, job *models.Job) bool {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		return true // auth mode none
+	}
+	if user.IsAdmin() {
+		return true
+	}
+	if job.OwnerID == "" {
+		return true // pre-auth job
+	}
+	return job.OwnerID == user.ID
 }
 
 // envVarDenylist contains environment variable names and prefixes that should
