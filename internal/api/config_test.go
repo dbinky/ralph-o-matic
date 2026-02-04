@@ -105,7 +105,7 @@ func TestAPI_ConfigRoundTrip_PartialUpdate_PreservesDefaults(t *testing.T) {
 	var resp configResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "only-name:14b", resp.LargeModel.Name)
-	assert.Equal(t, "cpu", resp.LargeModel.Device) // preserved from default
+	assert.Equal(t, "cpu", resp.LargeModel.Device)  // preserved from default
 	assert.Equal(t, 15.0, resp.LargeModel.MemoryGB) // preserved from default
 }
 
@@ -124,7 +124,7 @@ func TestAPI_ConfigRoundTrip_ExplicitZeroValues(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "test:7b", resp.LargeModel.Name)
 	assert.Equal(t, 0.0, resp.LargeModel.MemoryGB) // explicitly set to 0
-	assert.False(t, resp.Ollama.IsRemote)            // explicitly set to false
+	assert.False(t, resp.Ollama.IsRemote)          // explicitly set to false
 }
 
 func TestAPI_UpdateConfig_InvalidModel(t *testing.T) {

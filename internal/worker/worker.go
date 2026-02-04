@@ -8,6 +8,7 @@ import (
 
 	"github.com/ryan/ralph-o-matic/internal/executor"
 	"github.com/ryan/ralph-o-matic/internal/models"
+	"github.com/ryan/ralph-o-matic/internal/notify"
 )
 
 // DefaultBackend is the default backend when job.Backend is empty.
@@ -28,11 +29,20 @@ type JobQueue interface {
 	Fail(job *models.Job, errMsg string) error
 }
 
+// JobNotifier sends notifications about job events.
+// Satisfied by *notify.Dispatcher.
+type JobNotifier interface {
+	Notify(ctx context.Context, job *models.Job, event notify.Event)
+}
+
 // Worker polls the queue and executes jobs.
 type Worker struct {
 	queue    JobQueue
 	handler  JobHandler
 	interval time.Duration
+
+	// Notifications (nil = disabled)
+	notifier JobNotifier
 
 	// Circuit breaker thresholds (0 = disabled)
 	circuitBreakerNoProgress int
@@ -54,6 +64,24 @@ func New(q JobQueue, handler JobHandler, interval time.Duration) *Worker {
 		maxRetries:               3,
 		retryBaseDelay:           5 * time.Second,
 	}
+}
+
+// SetNotifier sets the notification dispatcher. Nil disables notifications.
+func (w *Worker) SetNotifier(n JobNotifier) {
+	w.notifier = n
+}
+
+// notify sends a notification if a notifier is configured. Never panics.
+func (w *Worker) sendNotification(ctx context.Context, job *models.Job, event notify.Event) {
+	if w.notifier == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Worker: notification panic recovered: %v", r)
+		}
+	}()
+	w.notifier.Notify(ctx, job, event)
 }
 
 // Run polls the queue until ctx is cancelled.
@@ -122,6 +150,7 @@ func (w *Worker) poll(ctx context.Context) {
 			if fErr := w.queue.Fail(job, err.Error()); fErr != nil {
 				log.Printf("Worker: failed to mark job #%d as failed: %v", job.ID, fErr)
 			}
+			w.sendNotification(ctx, job, notify.EventFailed)
 			return
 		}
 
@@ -142,6 +171,7 @@ func (w *Worker) poll(ctx context.Context) {
 			if fErr := w.queue.Fail(job, fmt.Sprintf("circuit breaker: no progress after %d iterations", job.Iteration)); fErr != nil {
 				log.Printf("Worker: failed to mark job #%d as failed: %v", job.ID, fErr)
 			}
+			w.sendNotification(ctx, job, notify.EventFailed)
 			return
 		}
 
@@ -158,6 +188,7 @@ func (w *Worker) poll(ctx context.Context) {
 		if fErr := w.queue.Fail(job, fmt.Sprintf("finalize failed: %v", err)); fErr != nil {
 			log.Printf("Worker: failed to mark job #%d as failed: %v", job.ID, fErr)
 		}
+		w.sendNotification(ctx, job, notify.EventFailed)
 		return
 	}
 
@@ -166,6 +197,7 @@ func (w *Worker) poll(ctx context.Context) {
 	} else {
 		log.Printf("Worker: job #%d completed after %d iterations", job.ID, job.Iteration)
 	}
+	w.sendNotification(ctx, job, notify.EventCompleted)
 }
 
 // executeWithRetry runs Handle with exponential backoff retry on errors.

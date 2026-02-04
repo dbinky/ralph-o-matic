@@ -10,10 +10,13 @@ import (
 	"syscall"
 	"time"
 
+	"log/slog"
+
 	"github.com/ryan/ralph-o-matic/internal/api"
 	"github.com/ryan/ralph-o-matic/internal/auth"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/executor"
+	"github.com/ryan/ralph-o-matic/internal/notify"
 	"github.com/ryan/ralph-o-matic/internal/queue"
 	"github.com/ryan/ralph-o-matic/internal/worker"
 )
@@ -100,6 +103,10 @@ func run() error {
 
 	handler := executor.NewRalphHandler(database, config, workspaceDir)
 	w := worker.New(q, handler, 5*time.Second)
+
+	// Set up notification dispatcher (reads config per-call from DB)
+	dispatcher := notify.NewDispatcher(configRepo, slog.Default())
+	w.SetNotifier(dispatcher)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

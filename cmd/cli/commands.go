@@ -305,6 +305,34 @@ func configCmd() *cobra.Command {
 	return cmd
 }
 
+func testNotifyCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "test-notify <smtp|teams>",
+		Short: "Send a test notification to verify configuration",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			channel := args[0]
+			if channel != "smtp" && channel != "teams" {
+				return fmt.Errorf("channel must be 'smtp' or 'teams'")
+			}
+
+			fmt.Printf("Sending test %s notification...\n", channel)
+
+			resp, err := client.TestNotify(channel)
+			if err != nil {
+				return err
+			}
+
+			if resp.Success {
+				fmt.Println(resp.Message)
+			} else {
+				return fmt.Errorf("%s", resp.Error)
+			}
+			return nil
+		},
+	}
+}
+
 func serverConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server-config [set <key> <value>]",

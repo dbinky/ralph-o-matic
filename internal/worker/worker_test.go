@@ -9,6 +9,7 @@ import (
 
 	"github.com/ryan/ralph-o-matic/internal/executor"
 	"github.com/ryan/ralph-o-matic/internal/models"
+	"github.com/ryan/ralph-o-matic/internal/notify"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -333,4 +334,174 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// --- Notification Integration Tests ---
+
+// mockNotifier records notification calls for testing.
+type mockNotifier struct {
+	mu    sync.Mutex
+	calls []notifyCall
+}
+
+type notifyCall struct {
+	JobID int64
+	Event notify.Event
+}
+
+func (m *mockNotifier) Notify(_ context.Context, job *models.Job, event notify.Event) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, notifyCall{JobID: job.ID, Event: event})
+}
+
+func (m *mockNotifier) getCalls() []notifyCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]notifyCall, len(m.calls))
+	copy(result, m.calls)
+	return result
+}
+
+// panicNotifier panics on every call, for testing recovery.
+type panicNotifier struct{}
+
+func (p *panicNotifier) Notify(_ context.Context, _ *models.Job, _ notify.Event) {
+	panic("notifier panic!")
+}
+
+func TestWorker_Notification_CompletedJob(t *testing.T) {
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: true},
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{newTestJob(10)}}
+	mn := &mockNotifier{}
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.SetNotifier(mn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	require.Len(t, q.completed, 1)
+	calls := mn.getCalls()
+	require.Len(t, calls, 1)
+	assert.Equal(t, notify.EventCompleted, calls[0].Event)
+	assert.Equal(t, int64(1), calls[0].JobID)
+}
+
+func TestWorker_Notification_FailedJob(t *testing.T) {
+	handler := &mockHandler{
+		handleFn: func(_ context.Context, _ *models.Job) (*executor.ExecutionResult, error) {
+			return nil, fmt.Errorf("crash")
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{newTestJob(5)}}
+	mn := &mockNotifier{}
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.SetNotifier(mn)
+	w.maxRetries = 0
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	require.Len(t, q.failed, 1)
+	calls := mn.getCalls()
+	require.Len(t, calls, 1)
+	assert.Equal(t, notify.EventFailed, calls[0].Event)
+}
+
+func TestWorker_Notification_CircuitBreakerFailed(t *testing.T) {
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: false, Metadata: &executor.ResponseMetadata{FilesModified: 0}},
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{newTestJob(20)}}
+	mn := &mockNotifier{}
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.SetNotifier(mn)
+	w.circuitBreakerNoProgress = 3
+	w.circuitBreakerSameError = 5
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	require.Len(t, q.failed, 1)
+	calls := mn.getCalls()
+	require.Len(t, calls, 1)
+	assert.Equal(t, notify.EventFailed, calls[0].Event)
+}
+
+func TestWorker_Notification_NilNotifier_NoPanic(t *testing.T) {
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: true},
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{newTestJob(10)}}
+
+	w := New(q, handler, 50*time.Millisecond)
+	// Do NOT set notifier — it should be nil
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	assert.NotPanics(t, func() {
+		w.poll(ctx)
+	})
+	require.Len(t, q.completed, 1)
+}
+
+func TestWorker_Notification_PanicRecovery(t *testing.T) {
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: true},
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{newTestJob(10)}}
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.SetNotifier(&panicNotifier{})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Should not panic — worker recovers from notifier panic
+	assert.NotPanics(t, func() {
+		w.poll(ctx)
+	})
+	// Job should still be marked as completed regardless of notifier panic
+	require.Len(t, q.completed, 1)
+}
+
+func TestWorker_Notification_OnlyOnTerminalState(t *testing.T) {
+	// Job runs 3 iterations, completes — should get exactly one notification
+	progress := &executor.ResponseMetadata{FilesModified: 1}
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: false, Metadata: progress},
+			{Completed: false, Metadata: progress},
+			{Completed: true, Metadata: progress},
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{newTestJob(10)}}
+	mn := &mockNotifier{}
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.SetNotifier(mn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	require.Len(t, q.completed, 1)
+	calls := mn.getCalls()
+	require.Len(t, calls, 1, "should get exactly one notification on terminal state")
+	assert.Equal(t, notify.EventCompleted, calls[0].Event)
 }

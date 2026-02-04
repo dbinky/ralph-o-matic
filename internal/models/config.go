@@ -26,7 +26,7 @@ func (b Backend) Valid() bool {
 // ModelPlacement describes which model to use and where to run it
 type ModelPlacement struct {
 	Name     string  `json:"name"`
-	Device   string  `json:"device"`    // "gpu", "cpu", or "auto"
+	Device   string  `json:"device"` // "gpu", "cpu", or "auto"
 	MemoryGB float64 `json:"memory_gb"`
 }
 
@@ -76,6 +76,29 @@ func (ac *AnthropicConfig) Validate() error {
 	return nil
 }
 
+// SMTPConfig holds SMTP notification settings
+type SMTPConfig struct {
+	Enabled    bool     `json:"enabled"`
+	Host       string   `json:"host"`
+	Port       int      `json:"port"`
+	Username   string   `json:"username"`
+	Password   string   `json:"password"`
+	From       string   `json:"from"`
+	Recipients []string `json:"recipients"`
+}
+
+// TeamsConfig holds Microsoft Teams webhook notification settings
+type TeamsConfig struct {
+	Enabled    bool   `json:"enabled"`
+	WebhookURL string `json:"webhook_url"`
+}
+
+// NotifyConfig holds notification configuration
+type NotifyConfig struct {
+	SMTP  SMTPConfig  `json:"smtp"`
+	Teams TeamsConfig `json:"teams"`
+}
+
 // ServerConfig holds server-wide configuration
 type ServerConfig struct {
 	// Ollama connection
@@ -101,14 +124,17 @@ type ServerConfig struct {
 	MaxClaudeRetries  int `json:"max_claude_retries"`
 	MaxGitRetries     int `json:"max_git_retries"`
 	GitRetryBackoffMs int `json:"git_retry_backoff_ms"`
+
+	// Notifications
+	Notify NotifyConfig `json:"notify"`
 }
 
 // DefaultServerConfig returns a ServerConfig with sensible defaults
 func DefaultServerConfig() *ServerConfig {
 	return &ServerConfig{
-		Ollama:               OllamaConfig{Host: "http://localhost:11434", IsRemote: false},
-		LargeModel:           ModelPlacement{Name: "devstral", Device: "cpu", MemoryGB: 15},
-		SmallModel:           ModelPlacement{Name: "qwen3:8b", Device: "gpu", MemoryGB: 5.2},
+		Ollama:         OllamaConfig{Host: "http://localhost:11434", IsRemote: false},
+		LargeModel:     ModelPlacement{Name: "devstral", Device: "cpu", MemoryGB: 15},
+		SmallModel:     ModelPlacement{Name: "qwen3:8b", Device: "gpu", MemoryGB: 5.2},
 		DefaultBackend: BackendOllama,
 		Anthropic: AnthropicConfig{
 			LargeModel: "claude-opus-4-5-20251101",
@@ -226,6 +252,35 @@ func (c *ServerConfig) Merge(updates *ServerConfig) *ServerConfig {
 		result.Anthropic.SmallModel = updates.Anthropic.SmallModel
 	}
 
+	// Notify: merge individual fields
+	if updates.Notify.SMTP.Host != "" {
+		result.Notify.SMTP.Host = updates.Notify.SMTP.Host
+	}
+	if updates.Notify.SMTP.Port != 0 {
+		result.Notify.SMTP.Port = updates.Notify.SMTP.Port
+	}
+	if updates.Notify.SMTP.Username != "" {
+		result.Notify.SMTP.Username = updates.Notify.SMTP.Username
+	}
+	if updates.Notify.SMTP.Password != "" {
+		result.Notify.SMTP.Password = updates.Notify.SMTP.Password
+	}
+	if updates.Notify.SMTP.From != "" {
+		result.Notify.SMTP.From = updates.Notify.SMTP.From
+	}
+	if len(updates.Notify.SMTP.Recipients) > 0 {
+		result.Notify.SMTP.Recipients = updates.Notify.SMTP.Recipients
+	}
+	if updates.Notify.SMTP.Enabled {
+		result.Notify.SMTP.Enabled = true
+	}
+	if updates.Notify.Teams.WebhookURL != "" {
+		result.Notify.Teams.WebhookURL = updates.Notify.Teams.WebhookURL
+	}
+	if updates.Notify.Teams.Enabled {
+		result.Notify.Teams.Enabled = true
+	}
+
 	return &result
 }
 
@@ -288,6 +343,31 @@ func (c *ServerConfig) MergeJSON(raw json.RawMessage) (*ServerConfig, error) {
 			}
 			if _, ok := anthropicMap["small_model"]; ok {
 				result.Anthropic.SmallModel = updates.Anthropic.SmallModel
+			}
+		}
+	}
+
+	if notifyRaw, ok := rawMap["notify"]; ok {
+		var notifyMap map[string]json.RawMessage
+		if err := json.Unmarshal(notifyRaw, &notifyMap); err == nil {
+			if smtpRaw, ok := notifyMap["smtp"]; ok {
+				var smtpMap map[string]json.RawMessage
+				if err := json.Unmarshal(smtpRaw, &smtpMap); err == nil {
+					if _, ok := smtpMap["enabled"]; ok {
+						result.Notify.SMTP.Enabled = updates.Notify.SMTP.Enabled
+					}
+					if _, ok := smtpMap["port"]; ok {
+						result.Notify.SMTP.Port = updates.Notify.SMTP.Port
+					}
+				}
+			}
+			if teamsRaw, ok := notifyMap["teams"]; ok {
+				var teamsMap map[string]json.RawMessage
+				if err := json.Unmarshal(teamsRaw, &teamsMap); err == nil {
+					if _, ok := teamsMap["enabled"]; ok {
+						result.Notify.Teams.Enabled = updates.Notify.Teams.Enabled
+					}
+				}
 			}
 		}
 	}

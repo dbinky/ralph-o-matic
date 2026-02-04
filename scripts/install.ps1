@@ -400,6 +400,152 @@ function Install-Skill {
     }
 }
 
+# Notification configuration
+$script:NotifySmtpEnabled = $false
+$script:NotifySmtpHost = ""
+$script:NotifySmtpPort = "587"
+$script:NotifySmtpUsername = ""
+$script:NotifySmtpPassword = ""
+$script:NotifySmtpFrom = ""
+$script:NotifySmtpRecipients = ""
+$script:NotifyTeamsEnabled = $false
+$script:NotifyTeamsWebhookUrl = ""
+
+function Set-NotificationConfig {
+    # Only for server/full mode
+    if ($Mode -eq "client") { return }
+
+    # -Yes flag skips notification setup (notifications are optional)
+    if ($Yes) { return }
+
+    Write-Host ""
+    $response = Read-Host "Would you like to configure notifications? [y/N]"
+    if ($response -notmatch "^[Yy]") { return }
+
+    # SMTP email notifications
+    Write-Host ""
+    $smtpResponse = Read-Host "Enable email (SMTP) notifications? [y/N]"
+    if ($smtpResponse -match "^[Yy]") {
+        $script:NotifySmtpEnabled = $true
+
+        $script:NotifySmtpHost = Read-Host "SMTP host"
+        $port = Read-Host "SMTP port [587]"
+        if ($port) { $script:NotifySmtpPort = $port }
+        $script:NotifySmtpUsername = Read-Host "SMTP username"
+        $securePassword = Read-Host "SMTP password" -AsSecureString
+        $script:NotifySmtpPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+            [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+        )
+        $script:NotifySmtpFrom = Read-Host "From address"
+        $script:NotifySmtpRecipients = Read-Host "Recipient addresses (comma-separated)"
+
+        Write-Success "SMTP notifications configured"
+    }
+
+    # Teams webhook notifications
+    Write-Host ""
+    $teamsResponse = Read-Host "Enable Teams webhook notifications? [y/N]"
+    if ($teamsResponse -match "^[Yy]") {
+        $script:NotifyTeamsEnabled = $true
+
+        $script:NotifyTeamsWebhookUrl = Read-Host "Teams webhook URL"
+
+        Write-Success "Teams notifications configured"
+    }
+}
+
+function Push-NotificationConfig {
+    # Nothing to apply if no notifications configured
+    if (-not $script:NotifySmtpEnabled -and -not $script:NotifyTeamsEnabled) { return }
+
+    Write-Info "Applying notification configuration..."
+
+    # Wait for server to be ready (up to 15 seconds)
+    $retries = 0
+    while ($retries -lt 15) {
+        try {
+            $null = Invoke-RestMethod -Uri "http://localhost:9090/api/config" -TimeoutSec 2
+            break
+        } catch {
+            $retries++
+            Start-Sleep -Seconds 1
+        }
+    }
+    if ($retries -ge 15) {
+        Write-Warn "Server not responding - skipping notification config"
+        Write-Warn "You can set notification config later with: ralph-o-matic server-config set"
+        return
+    }
+
+    # Push config via CLI (fall back to Invoke-RestMethod if CLI not in PATH)
+    $useCli = $null -ne (Get-Command ralph-o-matic -ErrorAction SilentlyContinue)
+
+    function Set-ServerConfig($key, $value) {
+        if ($useCli) {
+            & ralph-o-matic server-config set $key $value
+        } else {
+            $body = @{ $key = $value } | ConvertTo-Json
+            Invoke-RestMethod -Uri "http://localhost:9090/api/config" -Method Patch -ContentType "application/json" -Body $body | Out-Null
+        }
+    }
+
+    if ($script:NotifySmtpEnabled) {
+        Set-ServerConfig "notify.smtp.host" $script:NotifySmtpHost
+        Set-ServerConfig "notify.smtp.port" $script:NotifySmtpPort
+        Set-ServerConfig "notify.smtp.username" $script:NotifySmtpUsername
+        Set-ServerConfig "notify.smtp.password" $script:NotifySmtpPassword
+        Set-ServerConfig "notify.smtp.from" $script:NotifySmtpFrom
+        Set-ServerConfig "notify.smtp.recipients" $script:NotifySmtpRecipients
+        Write-Success "SMTP config applied"
+    }
+
+    if ($script:NotifyTeamsEnabled) {
+        Set-ServerConfig "notify.teams.webhook_url" $script:NotifyTeamsWebhookUrl
+        Write-Success "Teams config applied"
+    }
+}
+
+function Test-NotificationConfig {
+    # Nothing to test if no notifications configured
+    if (-not $script:NotifySmtpEnabled -and -not $script:NotifyTeamsEnabled) { return }
+
+    Write-Host ""
+
+    if ($script:NotifySmtpEnabled) {
+        $response = Read-Host "Send test email notification? [Y/n]"
+        if ($response -notmatch "^[Nn]") {
+            Write-Info "Sending test email..."
+            try {
+                & ralph-o-matic test-notify smtp
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "Test email sent"
+                } else {
+                    Write-Warn "Test email failed - check SMTP settings with: ralph-o-matic server-config list"
+                }
+            } catch {
+                Write-Warn "Test email failed - check SMTP settings with: ralph-o-matic server-config list"
+            }
+        }
+    }
+
+    if ($script:NotifyTeamsEnabled) {
+        $response = Read-Host "Send test Teams notification? [Y/n]"
+        if ($response -notmatch "^[Nn]") {
+            Write-Info "Sending test Teams notification..."
+            try {
+                & ralph-o-matic test-notify teams
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "Test Teams notification sent"
+                } else {
+                    Write-Warn "Test Teams notification failed - check webhook URL with: ralph-o-matic server-config list"
+                }
+            } catch {
+                Write-Warn "Test Teams notification failed - check webhook URL with: ralph-o-matic server-config list"
+            }
+        }
+    }
+}
+
 # Main
 function Main {
     Show-Banner
@@ -417,6 +563,16 @@ function Main {
     Install-Binaries
     Install-Skill
     Set-Configuration
+
+    if ($Mode -ne "client") {
+        Set-NotificationConfig
+        # Note: Push and Test require the server to be running.
+        # On Windows there is no auto-start service in this installer,
+        # so we attempt to push config and warn if the server isn't up.
+        Push-NotificationConfig
+        Test-NotificationConfig
+    }
+
     Show-Success
 }
 
