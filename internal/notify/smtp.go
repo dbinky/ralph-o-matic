@@ -57,7 +57,7 @@ func (s *SMTPNotifier) Notify(ctx context.Context, job *models.Job, event Event)
 
 	// Try STARTTLS
 	if ok, _ := client.Extension("STARTTLS"); ok {
-		tlsCfg := &tls.Config{ServerName: s.config.Host}
+		tlsCfg := &tls.Config{ServerName: s.config.Host, MinVersion: tls.VersionTLS12}
 		if err := client.StartTLS(tlsCfg); err != nil {
 			return fmt.Errorf("smtp: STARTTLS failed: %w", err)
 		}
