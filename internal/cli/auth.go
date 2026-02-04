@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -31,24 +30,8 @@ func (t *CachedToken) IsExpired() bool {
 }
 
 // TokenCachePath returns the path to the token cache file.
-// Uses the same platform logic as ConfigPath.
 func TokenCachePath() string {
-	var configDir string
-
-	switch runtime.GOOS {
-	case "windows":
-		configDir = os.Getenv("APPDATA")
-		if configDir == "" {
-			configDir = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Roaming")
-		}
-	default:
-		configDir = os.Getenv("XDG_CONFIG_HOME")
-		if configDir == "" {
-			configDir = filepath.Join(os.Getenv("HOME"), ".config")
-		}
-	}
-
-	return filepath.Join(configDir, "ralph-o-matic", "token.json")
+	return filepath.Join(configDir(), "token.json")
 }
 
 // loadToken loads a cached token from disk.
@@ -107,8 +90,13 @@ type authConfigResponse struct {
 }
 
 // discoverAuthConfig fetches the auth configuration from the server.
-func discoverAuthConfig(serverURL string) (*authConfigResponse, error) {
-	resp, err := http.Get(strings.TrimSuffix(serverURL, "/") + "/auth/config")
+func discoverAuthConfig(ctx context.Context, client *http.Client, serverURL string) (*authConfigResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimSuffix(serverURL, "/")+"/auth/config", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reach server: %w", err)
 	}
@@ -279,7 +267,8 @@ func (f *BrowserAuthFlow) Run(ctx context.Context) (*CachedToken, error) {
 	}
 	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	tokenResp, err := http.DefaultClient.Do(tokenReq)
+	tokenClient := &http.Client{Timeout: 30 * time.Second}
+	tokenResp, err := tokenClient.Do(tokenReq)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange failed: %w", err)
 	}

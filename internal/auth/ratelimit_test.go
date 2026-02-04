@@ -120,35 +120,28 @@ func TestRateLimiter_WindowReset(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestRateLimiter_XForwardedFor(t *testing.T) {
+func TestRateLimiter_XForwardedForIgnored(t *testing.T) {
 	rl := NewRateLimiter(2, 1*time.Minute)
 	handler := rl.Middleware(okHandler)
 
-	// Use X-Forwarded-For header — rate limiting should be based on that IP, not RemoteAddr
+	// X-Forwarded-For should be ignored; rate limiting uses RemoteAddr only.
+	// All requests come from the same RemoteAddr, so XFF should not matter.
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest("GET", "/config", nil)
-		req.RemoteAddr = "127.0.0.1:12345" // proxy address
-		req.Header.Set("X-Forwarded-For", "203.0.113.50, 70.41.3.18")
+		req.RemoteAddr = "127.0.0.1:12345"
+		req.Header.Set("X-Forwarded-For", "203.0.113.50")
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusOK, w.Code)
 	}
 
-	// Third request from same X-Forwarded-For client IP should be blocked
+	// Third request should be blocked based on RemoteAddr, not XFF
 	req := httptest.NewRequest("GET", "/config", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
-	req.Header.Set("X-Forwarded-For", "203.0.113.50, 70.41.3.18")
+	req.Header.Set("X-Forwarded-For", "203.0.113.99") // different XFF should not help
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusTooManyRequests, w.Code)
-
-	// Request from a different X-Forwarded-For IP should still work
-	req = httptest.NewRequest("GET", "/config", nil)
-	req.RemoteAddr = "127.0.0.1:12345"
-	req.Header.Set("X-Forwarded-For", "203.0.113.99")
-	w = httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestRateLimiter_ConcurrentAccess(t *testing.T) {

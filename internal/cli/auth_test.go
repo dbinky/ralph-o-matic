@@ -119,7 +119,7 @@ func TestDiscoverAuthConfig_ModeNone(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg, err := discoverAuthConfig(server.URL)
+	cfg, err := discoverAuthConfig(context.Background(), &http.Client{Timeout: 5 * time.Second}, server.URL)
 	require.NoError(t, err)
 	assert.Equal(t, "none", cfg.Mode)
 	assert.Empty(t, cfg.ClientID)
@@ -137,7 +137,7 @@ func TestDiscoverAuthConfig_ModeEntra(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg, err := discoverAuthConfig(server.URL)
+	cfg, err := discoverAuthConfig(context.Background(), &http.Client{Timeout: 5 * time.Second}, server.URL)
 	require.NoError(t, err)
 	assert.Equal(t, "entra", cfg.Mode)
 	assert.Equal(t, "test-client-id", cfg.ClientID)
@@ -146,7 +146,7 @@ func TestDiscoverAuthConfig_ModeEntra(t *testing.T) {
 
 func TestDiscoverAuthConfig_ServerUnreachable(t *testing.T) {
 	// Port 1 should not be listening
-	_, err := discoverAuthConfig("http://127.0.0.1:1")
+	_, err := discoverAuthConfig(context.Background(), &http.Client{Timeout: 2 * time.Second}, "http://127.0.0.1:1")
 	assert.Error(t, err)
 }
 
@@ -156,7 +156,7 @@ func TestDiscoverAuthConfig_ServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := discoverAuthConfig(server.URL)
+	_, err := discoverAuthConfig(context.Background(), &http.Client{Timeout: 5 * time.Second}, server.URL)
 	assert.Error(t, err)
 }
 
@@ -166,7 +166,7 @@ func TestDiscoverAuthConfig_RateLimited(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := discoverAuthConfig(server.URL)
+	_, err := discoverAuthConfig(context.Background(), &http.Client{Timeout: 5 * time.Second}, server.URL)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "rate limit")
 }
@@ -416,7 +416,7 @@ func TestDiscoverAuthConfig_InvalidJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := discoverAuthConfig(server.URL)
+	_, err := discoverAuthConfig(context.Background(), &http.Client{Timeout: 5 * time.Second}, server.URL)
 	assert.Error(t, err)
 }
 

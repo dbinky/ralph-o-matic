@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
@@ -41,6 +40,16 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		now := time.Now()
 
 		rl.mu.Lock()
+
+		// Lazy eviction: if the bucket map has grown too large, purge expired entries.
+		if len(rl.buckets) > 1000 {
+			for k, b := range rl.buckets {
+				if now.After(b.windowEnd) {
+					delete(rl.buckets, k)
+				}
+			}
+		}
+
 		bucket, ok := rl.buckets[ip]
 		if !ok || now.After(bucket.windowEnd) {
 			// No bucket or window expired: start a new window.
@@ -66,20 +75,10 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// clientIP extracts the client IP address from the request.
-// It checks X-Forwarded-For first (taking the first IP before any comma),
-// then falls back to the remote address from r.RemoteAddr.
+// clientIP extracts the client IP address from r.RemoteAddr, stripping the port.
+// Does not trust X-Forwarded-For since this is a self-hosted internal tool
+// and trusting XFF without a known proxy is a spoofing risk.
 func clientIP(r *http.Request) string {
-	// Check X-Forwarded-For header (proxy scenario)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP (the original client)
-		if idx := strings.IndexByte(xff, ','); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-
-	// Fall back to RemoteAddr, stripping the port
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		// RemoteAddr might not have a port (unlikely in practice)
