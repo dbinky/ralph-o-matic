@@ -149,18 +149,8 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if !canAccessJob(r, job) {
-		writeError(w, http.StatusForbidden, "access denied")
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -174,18 +164,8 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if !canAccessJob(r, job) {
-		writeError(w, http.StatusForbidden, "access denied")
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -204,18 +184,8 @@ func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if !canAccessJob(r, job) {
-		writeError(w, http.StatusForbidden, "access denied")
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -253,18 +223,8 @@ func (s *Server) handlePauseJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if !canAccessJob(r, job) {
-		writeError(w, http.StatusForbidden, "access denied")
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -283,18 +243,8 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if !canAccessJob(r, job) {
-		writeError(w, http.StatusForbidden, "access denied")
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -328,6 +278,10 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := s.authorizedJob(w, r, jobID); !ok {
+		return
+	}
+
 	logRepo := db.NewLogRepo(s.db)
 	logs, err := logRepo.GetForJob(jobID)
 	if err != nil {
@@ -336,6 +290,28 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"logs": logs})
+}
+
+// authorizedJob fetches a job by ID and checks access control.
+// It writes the appropriate HTTP error response and returns nil, false if
+// the job is not found, an error occurs, or access is denied.
+func (s *Server) authorizedJob(w http.ResponseWriter, r *http.Request, jobID int64) (*models.Job, bool) {
+	job, err := s.queue.Get(jobID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "job not found")
+			return nil, false
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return nil, false
+	}
+
+	if !canAccessJob(r, job) {
+		writeError(w, http.StatusForbidden, "access denied")
+		return nil, false
+	}
+
+	return job, true
 }
 
 // canAccessJob checks whether the request's user is allowed to access the given job.

@@ -157,7 +157,8 @@ func TestMiddleware_SessionCookie_Valid(t *testing.T) {
 		},
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
-	sessionID := store.Create(session)
+	sessionID, err := store.Create(session)
+	require.NoError(t, err)
 
 	var capturedUser *User
 	handler := Middleware(provider, store)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +191,8 @@ func TestMiddleware_BearerTakesPrecedenceOverCookie(t *testing.T) {
 		},
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
-	sessionID := store.Create(session)
+	sessionID, err := store.Create(session)
+	require.NoError(t, err)
 
 	// Create a token with a different user
 	claims := map[string]interface{}{

@@ -75,7 +75,8 @@ func TestAuthRoutes_Logout_DeletesSessionAndClearsCookie(t *testing.T) {
 		},
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
-	sessionID := store.Create(session)
+	sessionID, err := store.Create(session)
+	require.NoError(t, err)
 	require.Equal(t, 1, store.Len())
 
 	router := NewAuthRoutes(provider, store, false)

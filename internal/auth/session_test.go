@@ -27,7 +27,8 @@ func TestSessionStore_CreateAndGet(t *testing.T) {
 		ExpiresAt:    time.Now().Add(time.Hour),
 	}
 
-	id := store.Create(session)
+	id, err := store.Create(session)
+	require.NoError(t, err)
 	assert.Len(t, id, 64) // 32 bytes = 64 hex chars
 
 	got := store.Get(id)
@@ -46,7 +47,8 @@ func TestSessionStore_CreateReturnsUniqueIDs(t *testing.T) {
 
 	ids := make(map[string]struct{})
 	for i := 0; i < 100; i++ {
-		id := store.Create(session)
+		id, err := store.Create(session)
+		require.NoError(t, err)
 		_, exists := ids[id]
 		assert.False(t, exists, "duplicate session ID generated")
 		ids[id] = struct{}{}
@@ -72,7 +74,8 @@ func TestSessionStore_GetEmptyID(t *testing.T) {
 func TestSessionStore_Delete(t *testing.T) {
 	store := NewSessionStore(time.Hour)
 	session := &Session{User: User{ID: "oid-del"}}
-	id := store.Create(session)
+	id, err := store.Create(session)
+	require.NoError(t, err)
 
 	// Confirm it exists
 	require.NotNil(t, store.Get(id))
@@ -92,7 +95,8 @@ func TestSessionStore_DeleteNonexistent(t *testing.T) {
 func TestSessionStore_ExpiredSessionReturnsNil(t *testing.T) {
 	store := NewSessionStore(1 * time.Millisecond)
 	session := &Session{User: User{ID: "oid-exp"}}
-	id := store.Create(session)
+	id, err := store.Create(session)
+	require.NoError(t, err)
 
 	// Wait for expiry
 	time.Sleep(10 * time.Millisecond)
@@ -109,8 +113,10 @@ func TestSessionStore_MultipleUsersIsolated(t *testing.T) {
 	s1 := &Session{User: User{ID: "oid-1", Name: "Alice"}}
 	s2 := &Session{User: User{ID: "oid-2", Name: "Bob"}}
 
-	id1 := store.Create(s1)
-	id2 := store.Create(s2)
+	id1, err := store.Create(s1)
+	require.NoError(t, err)
+	id2, err := store.Create(s2)
+	require.NoError(t, err)
 
 	got1 := store.Get(id1)
 	got2 := store.Get(id2)
@@ -127,8 +133,10 @@ func TestSessionStore_SameUserMultipleSessions(t *testing.T) {
 	s1 := &Session{User: User{ID: "oid-1"}, AccessToken: "token-a"}
 	s2 := &Session{User: User{ID: "oid-1"}, AccessToken: "token-b"}
 
-	id1 := store.Create(s1)
-	id2 := store.Create(s2)
+	id1, err := store.Create(s1)
+	require.NoError(t, err)
+	id2, err := store.Create(s2)
+	require.NoError(t, err)
 
 	assert.NotEqual(t, id1, id2)
 
@@ -149,7 +157,8 @@ func TestSessionStore_Update(t *testing.T) {
 		User:        User{ID: "oid-upd", Name: "Alice"},
 		AccessToken: "old-token",
 	}
-	id := store.Create(session)
+	id, err := store.Create(session)
+	require.NoError(t, err)
 
 	updated := &Session{
 		User:        User{ID: "oid-upd", Name: "Alice Updated"},
@@ -177,8 +186,10 @@ func TestSessionStore_Cleanup(t *testing.T) {
 
 	s1 := &Session{User: User{ID: "oid-1"}}
 	s2 := &Session{User: User{ID: "oid-2"}}
-	store.Create(s1)
-	store.Create(s2)
+	_, err := store.Create(s1)
+	require.NoError(t, err)
+	_, err = store.Create(s2)
+	require.NoError(t, err)
 
 	// Wait for expiry
 	time.Sleep(10 * time.Millisecond)
@@ -186,7 +197,8 @@ func TestSessionStore_Cleanup(t *testing.T) {
 	// Add one more that's still valid (new store TTL won't help, so we create a new store)
 	store2 := NewSessionStore(time.Hour)
 	s3 := &Session{User: User{ID: "oid-3"}}
-	store2.Create(s3)
+	_, err = store2.Create(s3)
+	require.NoError(t, err)
 
 	removed := store.Cleanup()
 	assert.Equal(t, 2, removed)
@@ -196,7 +208,8 @@ func TestSessionStore_Cleanup(t *testing.T) {
 func TestSessionStore_CleanupKeepsValid(t *testing.T) {
 	store := NewSessionStore(time.Hour)
 	s1 := &Session{User: User{ID: "oid-1"}}
-	store.Create(s1)
+	_, err := store.Create(s1)
+	require.NoError(t, err)
 
 	removed := store.Cleanup()
 	assert.Equal(t, 0, removed)
@@ -209,10 +222,12 @@ func TestSessionStore_Len(t *testing.T) {
 	store := NewSessionStore(time.Hour)
 	assert.Equal(t, 0, store.Len())
 
-	store.Create(&Session{User: User{ID: "oid-1"}})
+	_, err := store.Create(&Session{User: User{ID: "oid-1"}})
+	require.NoError(t, err)
 	assert.Equal(t, 1, store.Len())
 
-	store.Create(&Session{User: User{ID: "oid-2"}})
+	_, err = store.Create(&Session{User: User{ID: "oid-2"}})
+	require.NoError(t, err)
 	assert.Equal(t, 2, store.Len())
 }
 
@@ -231,7 +246,9 @@ func TestSessionStore_ConcurrentAccess(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			s := &Session{User: User{ID: "oid", Name: "User"}}
-			ids[idx] = store.Create(s)
+			id, err := store.Create(s)
+			assert.NoError(t, err)
+			ids[idx] = id
 		}(i)
 	}
 	wg.Wait()
@@ -273,7 +290,8 @@ func TestSessionStore_ConcurrentMixed(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			s := &Session{User: User{ID: "oid"}}
-			id := store.Create(s)
+			id, err := store.Create(s)
+			assert.NoError(t, err)
 			store.Get(id)
 			store.Update(id, &Session{User: User{ID: "oid-updated"}})
 			store.Get(id)

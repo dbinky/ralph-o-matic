@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -149,7 +150,12 @@ func handleCallback(provider *EntraProvider, store *SessionStore, secure bool) h
 			RefreshToken: oauth2Token.RefreshToken,
 			ExpiresAt:    oauth2Token.Expiry,
 		}
-		sessionID := store.Create(session)
+		sessionID, err := store.Create(session)
+		if err != nil {
+			log.Printf("auth: failed to create session: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, "failed to create session")
+			return
+		}
 
 		// Set session cookie
 		SetSessionCookie(w, sessionID, secure)
@@ -164,7 +170,7 @@ func handleCallback(provider *EntraProvider, store *SessionStore, secure bool) h
 
 		// Redirect to the original URL or "/"
 		redirect := r.URL.Query().Get("redirect")
-		if redirect == "" {
+		if !isValidRedirect(redirect) {
 			redirect = "/"
 		}
 		http.Redirect(w, r, redirect, http.StatusFound)
@@ -183,6 +189,22 @@ func handleLogout(store *SessionStore) http.HandlerFunc {
 		ClearSessionCookie(w)
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+// isValidRedirect checks that a redirect URL is a safe relative path.
+// It must start with "/" and must not start with "//" (protocol-relative URL)
+// to prevent open redirect attacks.
+func isValidRedirect(redirect string) bool {
+	if redirect == "" {
+		return false
+	}
+	if !strings.HasPrefix(redirect, "/") {
+		return false
+	}
+	if strings.HasPrefix(redirect, "//") {
+		return false
+	}
+	return true
 }
 
 // schemeHost returns the scheme and host for constructing redirect URLs.

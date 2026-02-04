@@ -100,7 +100,7 @@ func (s *Server) setupRoutes() {
 			r.Route("/jobs", func(r chi.Router) {
 				r.Post("/", s.handleCreateJob)
 				r.Get("/", s.handleListJobs)
-				r.Put("/order", s.handleReorderJobs)
+				r.Put("/order", auth.RequireRole("Admin", s.handleReorderJobs))
 
 				r.Route("/{jobID}", func(r chi.Router) {
 					r.Get("/", s.handleGetJob)
@@ -114,7 +114,7 @@ func (s *Server) setupRoutes() {
 
 			r.Route("/config", func(r chi.Router) {
 				r.Get("/", s.handleGetConfig)
-				r.Patch("/", s.handleUpdateConfig)
+				r.Patch("/", auth.RequireRole("Admin", s.handleUpdateConfig))
 			})
 		})
 	})

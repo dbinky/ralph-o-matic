@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -38,10 +39,10 @@ func NewSessionStore(ttl time.Duration) *SessionStore {
 }
 
 // Create stores a session and returns a random hex session ID (32 bytes, 64 hex chars).
-func (s *SessionStore) Create(session *Session) string {
+func (s *SessionStore) Create(session *Session) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		panic("auth: failed to generate session ID: " + err.Error())
+		return "", fmt.Errorf("generate session ID: %w", err)
 	}
 	id := hex.EncodeToString(b)
 
@@ -52,7 +53,7 @@ func (s *SessionStore) Create(session *Session) string {
 		session:   session,
 		expiresAt: time.Now().Add(s.ttl),
 	}
-	return id
+	return id, nil
 }
 
 // Get returns the session for the given ID, or nil if not found, empty, or expired.
