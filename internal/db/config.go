@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/ryan/ralph-o-matic/internal/models"
 )
@@ -78,6 +79,15 @@ func (r *ConfigRepo) Save(cfg *models.ServerConfig) error {
 		"max_claude_retries":     strconv.Itoa(cfg.MaxClaudeRetries),
 		"max_git_retries":        strconv.Itoa(cfg.MaxGitRetries),
 		"git_retry_backoff_ms":   strconv.Itoa(cfg.GitRetryBackoffMs),
+		"notify.smtp.enabled":    strconv.FormatBool(cfg.Notify.SMTP.Enabled),
+		"notify.smtp.host":       cfg.Notify.SMTP.Host,
+		"notify.smtp.port":       strconv.Itoa(cfg.Notify.SMTP.Port),
+		"notify.smtp.username":   cfg.Notify.SMTP.Username,
+		"notify.smtp.password":   cfg.Notify.SMTP.Password,
+		"notify.smtp.from":       cfg.Notify.SMTP.From,
+		"notify.smtp.recipients": strings.Join(cfg.Notify.SMTP.Recipients, ","),
+		"notify.teams.enabled":     strconv.FormatBool(cfg.Notify.Teams.Enabled),
+		"notify.teams.webhook_url": cfg.Notify.Teams.WebhookURL,
 	}
 
 	tx, err := r.db.conn.Begin()
@@ -197,6 +207,28 @@ func applyConfigValue(cfg *models.ServerConfig, key, value string) error {
 			return err
 		}
 		cfg.Anthropic = ac
+	case "notify.smtp.enabled":
+		cfg.Notify.SMTP.Enabled = value == "true"
+	case "notify.smtp.host":
+		cfg.Notify.SMTP.Host = value
+	case "notify.smtp.port":
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		cfg.Notify.SMTP.Port = v
+	case "notify.smtp.username":
+		cfg.Notify.SMTP.Username = value
+	case "notify.smtp.password":
+		cfg.Notify.SMTP.Password = value
+	case "notify.smtp.from":
+		cfg.Notify.SMTP.From = value
+	case "notify.smtp.recipients":
+		cfg.Notify.SMTP.Recipients = strings.Split(value, ",")
+	case "notify.teams.enabled":
+		cfg.Notify.Teams.Enabled = value == "true"
+	case "notify.teams.webhook_url":
+		cfg.Notify.Teams.WebhookURL = value
 	default:
 		return fmt.Errorf("unknown config key: %s", key)
 	}
