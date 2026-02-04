@@ -26,7 +26,7 @@ func (b Backend) Valid() bool {
 // ModelPlacement describes which model to use and where to run it
 type ModelPlacement struct {
 	Name     string  `json:"name"`
-	Device   string  `json:"device"`    // "gpu", "cpu", or "auto"
+	Device   string  `json:"device"` // "gpu", "cpu", or "auto"
 	MemoryGB float64 `json:"memory_gb"`
 }
 
@@ -132,9 +132,9 @@ type ServerConfig struct {
 // DefaultServerConfig returns a ServerConfig with sensible defaults
 func DefaultServerConfig() *ServerConfig {
 	return &ServerConfig{
-		Ollama:               OllamaConfig{Host: "http://localhost:11434", IsRemote: false},
-		LargeModel:           ModelPlacement{Name: "devstral", Device: "cpu", MemoryGB: 15},
-		SmallModel:           ModelPlacement{Name: "qwen3:8b", Device: "gpu", MemoryGB: 5.2},
+		Ollama:         OllamaConfig{Host: "http://localhost:11434", IsRemote: false},
+		LargeModel:     ModelPlacement{Name: "devstral", Device: "cpu", MemoryGB: 15},
+		SmallModel:     ModelPlacement{Name: "qwen3:8b", Device: "gpu", MemoryGB: 5.2},
 		DefaultBackend: BackendOllama,
 		Anthropic: AnthropicConfig{
 			LargeModel: "claude-opus-4-5-20251101",

@@ -24,17 +24,17 @@ type anthropicConfigResponse struct {
 // configResponse mirrors ServerConfig but redacts sensitive fields.
 type configResponse struct {
 	Ollama               models.OllamaConfig     `json:"ollama"`
-	LargeModel           models.ModelPlacement    `json:"large_model"`
-	SmallModel           models.ModelPlacement    `json:"small_model"`
-	DefaultMaxIterations int                      `json:"default_max_iterations"`
-	ConcurrentJobs       int                      `json:"concurrent_jobs"`
-	WorkspaceDir         string                   `json:"workspace_dir,omitempty"`
-	JobRetentionDays     int                      `json:"job_retention_days"`
-	DefaultBackend       models.Backend           `json:"default_backend"`
-	Anthropic            anthropicConfigResponse   `json:"anthropic"`
-	MaxClaudeRetries     int                      `json:"max_claude_retries"`
-	MaxGitRetries        int                      `json:"max_git_retries"`
-	GitRetryBackoffMs    int                      `json:"git_retry_backoff_ms"`
+	LargeModel           models.ModelPlacement   `json:"large_model"`
+	SmallModel           models.ModelPlacement   `json:"small_model"`
+	DefaultMaxIterations int                     `json:"default_max_iterations"`
+	ConcurrentJobs       int                     `json:"concurrent_jobs"`
+	WorkspaceDir         string                  `json:"workspace_dir,omitempty"`
+	JobRetentionDays     int                     `json:"job_retention_days"`
+	DefaultBackend       models.Backend          `json:"default_backend"`
+	Anthropic            anthropicConfigResponse `json:"anthropic"`
+	MaxClaudeRetries     int                     `json:"max_claude_retries"`
+	MaxGitRetries        int                     `json:"max_git_retries"`
+	GitRetryBackoffMs    int                     `json:"git_retry_backoff_ms"`
 }
 
 func newConfigResponse(cfg *models.ServerConfig) *configResponse {

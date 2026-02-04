@@ -69,7 +69,7 @@ func (t *TeamsNotifier) Notify(ctx context.Context, job *models.Job, event Event
 
 func (t *TeamsNotifier) buildCard(job *models.Job, event Event) map[string]interface{} {
 	color := t.eventColor(event)
-	title := fmt.Sprintf("Job #%d %s", job.ID, strings.Title(string(event)))
+	title := fmt.Sprintf("Job #%d %s", job.ID, capitalizeFirst(string(event)))
 
 	// Build facts
 	facts := []map[string]string{
@@ -133,4 +133,12 @@ func (t *TeamsNotifier) eventColor(event Event) string {
 	default:
 		return "808080" // gray
 	}
+}
+
+// capitalizeFirst returns s with the first character uppercased.
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

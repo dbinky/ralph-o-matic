@@ -326,7 +326,7 @@ func testNotifyCmd() *cobra.Command {
 			if resp.Success {
 				fmt.Println(resp.Message)
 			} else {
-				return fmt.Errorf(resp.Error)
+				return fmt.Errorf("%s", resp.Error)
 			}
 			return nil
 		},

@@ -334,13 +334,13 @@ func canAccessJob(r *http.Request, job *models.Job) bool {
 // envVarDenylist contains environment variable names and prefixes that should
 // not be overridden by job env settings for security reasons.
 var envVarDenylist = []string{
-	"LD_",       // Linux dynamic linker
-	"DYLD_",     // macOS dynamic linker
-	"PATH",      // executable search path
-	"HOME",      // home directory
-	"SHELL",     // shell executable
+	"LD_",        // Linux dynamic linker
+	"DYLD_",      // macOS dynamic linker
+	"PATH",       // executable search path
+	"HOME",       // home directory
+	"SHELL",      // shell executable
 	"ANTHROPIC_", // Anthropic API config
-	"CLAUDE_",   // Claude CLI config
+	"CLAUDE_",    // Claude CLI config
 }
 
 // validateEnvVars checks that no env vars match the denylist.

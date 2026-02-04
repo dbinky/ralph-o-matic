@@ -15,17 +15,17 @@ import (
 
 // fakeSMTPServer is a minimal SMTP server for testing.
 type fakeSMTPServer struct {
-	addr     string
-	listener net.Listener
-	messages []fakeSMTPMessage
+	addr       string
+	listener   net.Listener
+	messages   []fakeSMTPMessage
 	rejectRcpt bool
 	authFail   bool
 }
 
 type fakeSMTPMessage struct {
-	From       string
-	To         []string
-	Data       string
+	From string
+	To   []string
+	Data string
 }
 
 func newFakeSMTPServer(t *testing.T) *fakeSMTPServer {
