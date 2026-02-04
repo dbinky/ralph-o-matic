@@ -61,9 +61,11 @@ or planning, you MUST engage extended thinking. Default to thinking through prob
 step by step. Only skip extended thinking for purely trivial responses (single-fact
 answers, yes/no confirmations).
 
-**Never use Haiku models.** When spawning sub-agents or selecting models for any
-task, always use Sonnet as the minimum model. Never downgrade to Haiku regardless
-of perceived task simplicity — the quality tradeoff is not worth it in this codebase.
+**Always use Opus 4.5 for code implementation.** When spawning sub-agents for any
+task involving writing code, implementing features, fixing bugs, or executing plans,
+always use Opus 4.5 (`model: "opus"`). Never use Sonnet or Haiku for code
+implementation — the quality tradeoff is not acceptable in this codebase. Sonnet may
+only be used for pure research/exploration tasks that do not write code.
 
 ## Build & Test Commands
 
