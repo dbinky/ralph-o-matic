@@ -62,6 +62,15 @@ func run() error {
 	b := broadcast.New()
 	q.SetBroadcaster(b)
 
+	// Recover jobs orphaned by a previous server crash/restart
+	recovered, err := q.RecoverOrphaned()
+	if err != nil {
+		return fmt.Errorf("failed to recover orphaned jobs: %w", err)
+	}
+	if recovered > 0 {
+		slog.Info("recovered orphaned jobs", "count", recovered)
+	}
+
 	// Load auth configuration
 	authCfg, err := auth.LoadConfig(os.Getenv, "")
 	if err != nil {
