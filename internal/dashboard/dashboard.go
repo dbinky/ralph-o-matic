@@ -183,7 +183,6 @@ func (d *Dashboard) HandleConfig(w http.ResponseWriter, r *http.Request) {
 		{"small_model.device", cfg.SmallModel.Device},
 		{"small_model.memory_gb", fmt.Sprintf("%.0f", cfg.SmallModel.MemoryGB)},
 		{"default_max_iterations", fmt.Sprintf("%d", cfg.DefaultMaxIterations)},
-		{"concurrent_jobs", fmt.Sprintf("%d", cfg.ConcurrentJobs)},
 		{"workspace_dir", cfg.WorkspaceDir},
 		{"job_retention_days", fmt.Sprintf("%d", cfg.JobRetentionDays)},
 	}

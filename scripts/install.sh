@@ -740,7 +740,6 @@ large_model:
 small_model:
   name: $SMALL_MODEL
 default_max_iterations: 50
-concurrent_jobs: 1
 bind_address: $lan_ip
 port: 9090
 workspace_dir: $config_dir/workspace
