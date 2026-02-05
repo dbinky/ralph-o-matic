@@ -1,8 +1,11 @@
 package db
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/ryan/ralph-o-matic/internal/broadcast"
 )
 
 // JobLog represents a single log entry
@@ -16,12 +19,18 @@ type JobLog struct {
 
 // LogRepo handles job log persistence
 type LogRepo struct {
-	db *DB
+	db          *DB
+	broadcaster *broadcast.Broadcaster
 }
 
 // NewLogRepo creates a new log repository
 func NewLogRepo(db *DB) *LogRepo {
 	return &LogRepo{db: db}
+}
+
+// SetBroadcaster sets the broadcaster for publishing log events.
+func (r *LogRepo) SetBroadcaster(b *broadcast.Broadcaster) {
+	r.broadcaster = b
 }
 
 // Append adds a log entry for a job
@@ -33,6 +42,13 @@ func (r *LogRepo) Append(jobID int64, iteration int, message string) error {
 	if err != nil {
 		return fmt.Errorf("failed to append log: %w", err)
 	}
+
+	if r.broadcaster != nil {
+		msgJSON, _ := json.Marshal(message)
+		payload := fmt.Sprintf(`{"type":"log","iteration":%d,"message":%s}`, iteration, msgJSON)
+		r.broadcaster.Publish(fmt.Sprintf("job:%d", jobID), []byte(payload))
+	}
+
 	return nil
 }
 
