@@ -259,6 +259,46 @@ func TestServerConfig_Merge_Backend(t *testing.T) {
 	})
 }
 
+func TestDefaultServerConfig_NoConcurrentJobs(t *testing.T) {
+	cfg := DefaultServerConfig()
+
+	// ConcurrentJobs field should not exist — verify via JSON serialization
+	data, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &raw))
+	_, hasConcurrentJobs := raw["concurrent_jobs"]
+	assert.False(t, hasConcurrentJobs, "concurrent_jobs should not be in serialized config")
+}
+
+func TestServerConfig_Validate_NoConcurrentJobsCheck(t *testing.T) {
+	cfg := DefaultServerConfig()
+	// Default config should validate without any concurrent_jobs logic
+	assert.NoError(t, cfg.Validate())
+
+	// Verify there's no ConcurrentJobs field by checking JSON round-trip
+	data, _ := json.Marshal(cfg)
+	var raw map[string]interface{}
+	json.Unmarshal(data, &raw)
+	_, exists := raw["concurrent_jobs"]
+	assert.False(t, exists, "concurrent_jobs field should not exist on ServerConfig")
+}
+
+func TestServerConfig_Merge_NoConcurrentJobs(t *testing.T) {
+	base := DefaultServerConfig()
+	updates := &ServerConfig{DefaultMaxIterations: 100}
+	merged := base.Merge(updates)
+
+	// Verify merged config has no concurrent_jobs in JSON
+	data, _ := json.Marshal(merged)
+	var raw map[string]interface{}
+	json.Unmarshal(data, &raw)
+	_, exists := raw["concurrent_jobs"]
+	assert.False(t, exists, "concurrent_jobs should not appear in merged config")
+	assert.Equal(t, 100, merged.DefaultMaxIterations)
+}
+
 func TestServerConfig_JSON(t *testing.T) {
 	cfg := DefaultServerConfig()
 	cfg.LargeModel.Name = "test-model"
