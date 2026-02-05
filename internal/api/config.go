@@ -27,7 +27,6 @@ type configResponse struct {
 	LargeModel           models.ModelPlacement   `json:"large_model"`
 	SmallModel           models.ModelPlacement   `json:"small_model"`
 	DefaultMaxIterations int                     `json:"default_max_iterations"`
-	ConcurrentJobs       int                     `json:"concurrent_jobs"`
 	WorkspaceDir         string                  `json:"workspace_dir,omitempty"`
 	JobRetentionDays     int                     `json:"job_retention_days"`
 	DefaultBackend       models.Backend          `json:"default_backend"`
@@ -43,7 +42,6 @@ func newConfigResponse(cfg *models.ServerConfig) *configResponse {
 		LargeModel:           cfg.LargeModel,
 		SmallModel:           cfg.SmallModel,
 		DefaultMaxIterations: cfg.DefaultMaxIterations,
-		ConcurrentJobs:       cfg.ConcurrentJobs,
 		WorkspaceDir:         cfg.WorkspaceDir,
 		JobRetentionDays:     cfg.JobRetentionDays,
 		DefaultBackend:       cfg.DefaultBackend,

@@ -37,8 +37,7 @@ func TestAPI_UpdateConfig(t *testing.T) {
 	srv, _ := newTestServer(t)
 
 	payload := models.ServerConfig{
-		LargeModel:     models.ModelPlacement{Name: "custom-model:latest"},
-		ConcurrentJobs: 3,
+		LargeModel: models.ModelPlacement{Name: "custom-model:latest"},
 	}
 
 	body, _ := json.Marshal(payload)
@@ -55,7 +54,6 @@ func TestAPI_UpdateConfig(t *testing.T) {
 
 	assert.Equal(t, "custom-model:latest", resp.LargeModel.Name)
 	assert.Equal(t, "cpu", resp.LargeModel.Device) // Preserved from default
-	assert.Equal(t, 3, resp.ConcurrentJobs)
 }
 
 func TestAPI_ConfigRoundTrip_FullModelPlacement(t *testing.T) {
