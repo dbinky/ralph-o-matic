@@ -247,6 +247,59 @@ func TestConfigRepo_DefaultBackend_Defaults(t *testing.T) {
 	assert.Equal(t, models.BackendOllama, cfg.DefaultBackend)
 }
 
+func TestConfigRepo_SaveLoad_NoConcurrentJobs(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewConfigRepo(db)
+
+	cfg := models.DefaultServerConfig()
+	err := repo.Save(cfg)
+	require.NoError(t, err)
+
+	// Verify concurrent_jobs key is NOT in the database
+	_, err = repo.GetKey("concurrent_jobs")
+	assert.ErrorIs(t, err, ErrNotFound, "concurrent_jobs should not be stored in DB")
+
+	// Load should work fine without it
+	loaded, err := repo.Get()
+	require.NoError(t, err)
+	assert.Equal(t, "devstral", loaded.LargeModel.Name)
+}
+
+func TestConfigRepo_UnknownKey_ConcurrentJobs_Ignored(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewConfigRepo(db)
+
+	// Simulate pre-migration DB with orphaned concurrent_jobs key
+	err := repo.Update("concurrent_jobs", "5")
+	require.NoError(t, err)
+
+	// Loading config should succeed (unknown keys are skipped)
+	cfg, err := repo.Get()
+	require.NoError(t, err)
+	assert.Equal(t, "devstral", cfg.LargeModel.Name)
+}
+
+func TestConfigRepo_FullRoundTrip_NoConcurrentJobs(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewConfigRepo(db)
+
+	cfg := models.DefaultServerConfig()
+	cfg.LargeModel = models.ModelPlacement{Name: "custom:70b", Device: "gpu", MemoryGB: 42}
+	cfg.DefaultMaxIterations = 100
+	cfg.WorkspaceDir = "/tmp/test"
+	cfg.JobRetentionDays = 7
+
+	err := repo.Save(cfg)
+	require.NoError(t, err)
+
+	fetched, err := repo.Get()
+	require.NoError(t, err)
+	assert.Equal(t, "custom:70b", fetched.LargeModel.Name)
+	assert.Equal(t, 100, fetched.DefaultMaxIterations)
+	assert.Equal(t, "/tmp/test", fetched.WorkspaceDir)
+	assert.Equal(t, 7, fetched.JobRetentionDays)
+}
+
 func TestConfigRepo_SaveThenSave_Overwrites(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewConfigRepo(db)
