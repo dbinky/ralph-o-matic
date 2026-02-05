@@ -2,7 +2,9 @@ package queue
 
 import (
 	"testing"
+	"time"
 
+	"github.com/ryan/ralph-o-matic/internal/broadcast"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -252,4 +254,47 @@ func TestRecoverOrphaned_MaxIterationJob(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusQueued, recovered.Status)
 	assert.Equal(t, 5, recovered.Iteration)
+}
+
+func TestRecoverOrphaned_PublishesBroadcast(t *testing.T) {
+	q, _ := newTestQueue(t)
+	b := broadcast.New()
+	q.SetBroadcaster(b)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, q.Enqueue(job))
+	_, err := q.Dequeue()
+	require.NoError(t, err)
+
+	_, ch := b.Subscribe("global")
+
+	count, err := q.RecoverOrphaned()
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	select {
+	case msg := <-ch:
+		assert.Equal(t, []byte("{}"), msg)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for broadcast after recovery")
+	}
+}
+
+func TestRecoverOrphaned_NoBroadcastWhenNothingRecovered(t *testing.T) {
+	q, _ := newTestQueue(t)
+	b := broadcast.New()
+	q.SetBroadcaster(b)
+
+	_, ch := b.Subscribe("global")
+
+	count, err := q.RecoverOrphaned()
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+
+	select {
+	case <-ch:
+		t.Fatal("should not broadcast when nothing was recovered")
+	default:
+		// Good — no broadcast
+	}
 }
