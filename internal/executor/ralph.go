@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ryan/ralph-o-matic/internal/broadcast"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/git"
 	"github.com/ryan/ralph-o-matic/internal/models"
@@ -41,6 +42,11 @@ func NewRalphHandler(database *db.DB, config *models.ServerConfig, workspaceDir 
 		logRepo:     db.NewLogRepo(database),
 		sessions:    make(map[int64]*Session),
 	}
+}
+
+// SetLogBroadcaster sets the broadcaster on the handler's LogRepo for live log streaming.
+func (h *RalphHandler) SetLogBroadcaster(b *broadcast.Broadcaster) {
+	h.logRepo.SetBroadcaster(b)
 }
 
 // Handle executes a single iteration of the ralph loop for a job.

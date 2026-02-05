@@ -14,6 +14,7 @@ import (
 
 	"github.com/ryan/ralph-o-matic/internal/api"
 	"github.com/ryan/ralph-o-matic/internal/auth"
+	"github.com/ryan/ralph-o-matic/internal/broadcast"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/executor"
 	"github.com/ryan/ralph-o-matic/internal/notify"
@@ -58,6 +59,9 @@ func run() error {
 
 	q := queue.New(database)
 
+	b := broadcast.New()
+	q.SetBroadcaster(b)
+
 	// Load auth configuration
 	authCfg, err := auth.LoadConfig(os.Getenv, "")
 	if err != nil {
@@ -87,6 +91,11 @@ func run() error {
 		log.Println("WARNING: running without authentication — all endpoints are open")
 	}
 
+	if serverOpts == nil {
+		serverOpts = &api.ServerOptions{}
+	}
+	serverOpts.Broadcaster = b
+
 	srv := api.NewServer(database, q, addr, serverOpts)
 
 	// Load config for executor
@@ -102,6 +111,7 @@ func run() error {
 	}
 
 	handler := executor.NewRalphHandler(database, config, workspaceDir)
+	handler.SetLogBroadcaster(b)
 	w := worker.New(q, handler, 5*time.Second)
 
 	// Set up notification dispatcher (reads config per-call from DB)
