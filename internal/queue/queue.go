@@ -2,6 +2,7 @@ package queue
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/ryan/ralph-o-matic/internal/broadcast"
@@ -230,4 +231,52 @@ func (q *Queue) Update(job *models.Job) error {
 	defer q.mu.Unlock()
 
 	return q.jobRepo.Update(job)
+}
+
+// RecoverOrphaned finds jobs stuck in "running" status (orphaned after server
+// crash) and re-queues them. Returns the count of recovered jobs.
+// This bypasses the state machine intentionally — running→queued is not a
+// normal transition and should only happen during startup recovery.
+func (q *Queue) RecoverOrphaned() (int, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	logRepo := db.NewLogRepo(q.db)
+
+	// Find all orphaned running jobs
+	jobs, _, err := q.jobRepo.List(db.ListOptions{
+		Statuses: []models.JobStatus{models.StatusRunning},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list running jobs: %w", err)
+	}
+
+	if len(jobs) == 0 {
+		return 0, nil
+	}
+
+	recovered := 0
+	for _, job := range jobs {
+		// Bypass state machine: set status directly
+		job.Status = models.StatusQueued
+		job.StartedAt = nil
+
+		if err := q.jobRepo.Update(job); err != nil {
+			return recovered, fmt.Errorf("failed to re-queue job %d: %w", job.ID, err)
+		}
+
+		// Best-effort log entry
+		msg := fmt.Sprintf("[RECOVERY] Server restarted while job was running (iteration %d/%d). Job re-queued and will resume automatically.", job.Iteration, job.MaxIterations)
+		if err := logRepo.Append(job.ID, job.Iteration, msg); err != nil {
+			slog.Warn("failed to append recovery log entry", "job_id", job.ID, "error", err)
+		}
+
+		recovered++
+	}
+
+	if recovered > 0 {
+		q.publish()
+	}
+
+	return recovered, nil
 }
