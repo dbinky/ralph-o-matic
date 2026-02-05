@@ -417,6 +417,139 @@ func TestJobRepo_ListTerminal_NoTerminalJobs(t *testing.T) {
 	assert.Empty(t, jobs)
 }
 
+func TestJobRepo_ListExpired_ReturnsOldTerminalJobs(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	now := time.Now()
+	old := now.Add(-48 * time.Hour)
+
+	// Old completed job (should be returned)
+	job1 := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	job1.Status = models.StatusCompleted
+	job1.CompletedAt = &old
+	err := repo.Create(job1)
+	require.NoError(t, err)
+	err = repo.Update(job1)
+	require.NoError(t, err)
+
+	// Recent completed job (should NOT be returned)
+	recent := now.Add(-1 * time.Hour)
+	job2 := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	job2.Status = models.StatusCompleted
+	job2.CompletedAt = &recent
+	err = repo.Create(job2)
+	require.NoError(t, err)
+	err = repo.Update(job2)
+	require.NoError(t, err)
+
+	cutoff := now.Add(-24 * time.Hour)
+	jobs, err := repo.ListExpired(cutoff)
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.Equal(t, job1.ID, jobs[0].ID)
+}
+
+func TestJobRepo_ListExpired_IncludesFailedAndCancelled(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	now := time.Now()
+	old := now.Add(-48 * time.Hour)
+	cutoff := now.Add(-24 * time.Hour)
+
+	for _, status := range []models.JobStatus{models.StatusCompleted, models.StatusFailed, models.StatusCancelled} {
+		job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+		job.Status = status
+		job.CompletedAt = &old
+		err := repo.Create(job)
+		require.NoError(t, err)
+		err = repo.Update(job)
+		require.NoError(t, err)
+	}
+
+	jobs, err := repo.ListExpired(cutoff)
+	require.NoError(t, err)
+	assert.Len(t, jobs, 3)
+}
+
+func TestJobRepo_ListExpired_ExcludesQueuedAndRunning(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	now := time.Now()
+	old := now.Add(-48 * time.Hour)
+	cutoff := now.Add(-24 * time.Hour)
+
+	// Old queued job (should NOT be returned even though it's old)
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	job.Status = models.StatusQueued
+	job.CreatedAt = old
+	err := repo.Create(job)
+	require.NoError(t, err)
+
+	// Old running job
+	job2 := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	job2.Status = models.StatusRunning
+	job2.StartedAt = &old
+	err = repo.Create(job2)
+	require.NoError(t, err)
+
+	jobs, err := repo.ListExpired(cutoff)
+	require.NoError(t, err)
+	assert.Empty(t, jobs)
+}
+
+func TestJobRepo_ListExpired_BoundaryNotIncluded(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	// Job completed exactly at cutoff — should NOT be expired
+	cutoff := time.Now()
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	job.Status = models.StatusCompleted
+	job.CompletedAt = &cutoff
+	err := repo.Create(job)
+	require.NoError(t, err)
+	err = repo.Update(job)
+	require.NoError(t, err)
+
+	jobs, err := repo.ListExpired(cutoff)
+	require.NoError(t, err)
+	assert.Empty(t, jobs)
+}
+
+func TestJobRepo_ListExpired_EmptyDB(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	jobs, err := repo.ListExpired(time.Now())
+	require.NoError(t, err)
+	assert.Empty(t, jobs)
+}
+
+func TestJobRepo_ListExpired_FallsBackToCreatedAt(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	now := time.Now()
+	old := now.Add(-48 * time.Hour)
+	cutoff := now.Add(-24 * time.Hour)
+
+	// Failed job with no completed_at (old data scenario)
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	job.Status = models.StatusFailed
+	job.CreatedAt = old
+	// CompletedAt is nil — should fall back to created_at
+	err := repo.Create(job)
+	require.NoError(t, err)
+
+	jobs, err := repo.ListExpired(cutoff)
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.Equal(t, job.ID, jobs[0].ID)
+}
+
 func TestJobRepo_CountByStatus(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewJobRepo(db)
