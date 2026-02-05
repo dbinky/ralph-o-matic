@@ -17,6 +17,7 @@ import (
 	"github.com/ryan/ralph-o-matic/internal/broadcast"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/executor"
+	"github.com/ryan/ralph-o-matic/internal/git"
 	"github.com/ryan/ralph-o-matic/internal/notify"
 	"github.com/ryan/ralph-o-matic/internal/queue"
 	"github.com/ryan/ralph-o-matic/internal/worker"
@@ -123,6 +124,10 @@ func run() error {
 	handler.SetLogBroadcaster(b)
 	w := worker.New(q, handler, 5*time.Second)
 
+	// Set up workspace and job retention cleaner
+	repoMgr := git.NewRepoManager(workspaceDir)
+	cleaner := worker.NewCleaner(db.NewJobRepo(database), configRepo, repoMgr, worker.NewGitChecker())
+
 	// Set up notification dispatcher (reads config per-call from DB)
 	dispatcher := notify.NewDispatcher(configRepo, slog.Default())
 	w.SetNotifier(dispatcher)
@@ -136,12 +141,16 @@ func run() error {
 		}
 	}()
 
-	// Use WaitGroup to ensure worker completes its current iteration before shutdown
+	// Use WaitGroup to ensure worker and cleaner complete before shutdown
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		w.Run(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		cleaner.Run(ctx)
 	}()
 
 	log.Printf("ralph-o-matic-server %s listening on %s", version, addr)
