@@ -81,7 +81,6 @@ func TestDefaultServerConfig(t *testing.T) {
 
 	// Existing fields
 	assert.Equal(t, 50, cfg.DefaultMaxIterations)
-	assert.Equal(t, 1, cfg.ConcurrentJobs)
 	assert.Equal(t, 30, cfg.JobRetentionDays)
 	assert.Equal(t, 3, cfg.MaxClaudeRetries)
 	assert.Equal(t, 3, cfg.MaxGitRetries)
@@ -153,12 +152,6 @@ func TestServerConfig_Validate(t *testing.T) {
 	t.Run("zero iterations fails", func(t *testing.T) {
 		cfg := validConfig()
 		cfg.DefaultMaxIterations = 0
-		assert.Error(t, cfg.Validate())
-	})
-
-	t.Run("zero jobs fails", func(t *testing.T) {
-		cfg := validConfig()
-		cfg.ConcurrentJobs = 0
 		assert.Error(t, cfg.Validate())
 	})
 

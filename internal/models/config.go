@@ -110,7 +110,6 @@ type ServerConfig struct {
 
 	// Execution
 	DefaultMaxIterations int `json:"default_max_iterations"`
-	ConcurrentJobs       int `json:"concurrent_jobs"`
 
 	// Storage
 	WorkspaceDir     string `json:"workspace_dir"`
@@ -141,7 +140,6 @@ func DefaultServerConfig() *ServerConfig {
 			SmallModel: "claude-haiku-4-5-20251001",
 		},
 		DefaultMaxIterations: 50,
-		ConcurrentJobs:       1,
 		JobRetentionDays:     30,
 		MaxClaudeRetries:     3,
 		MaxGitRetries:        3,
@@ -162,9 +160,6 @@ func (c *ServerConfig) Validate() error {
 	}
 	if c.DefaultMaxIterations <= 0 {
 		return fmt.Errorf("default_max_iterations must be positive")
-	}
-	if c.ConcurrentJobs <= 0 {
-		return fmt.Errorf("concurrent_jobs must be positive")
 	}
 	if c.JobRetentionDays < 0 {
 		return fmt.Errorf("job_retention_days cannot be negative")
@@ -216,9 +211,6 @@ func (c *ServerConfig) Merge(updates *ServerConfig) *ServerConfig {
 
 	if updates.DefaultMaxIterations > 0 {
 		result.DefaultMaxIterations = updates.DefaultMaxIterations
-	}
-	if updates.ConcurrentJobs > 0 {
-		result.ConcurrentJobs = updates.ConcurrentJobs
 	}
 	if updates.WorkspaceDir != "" {
 		result.WorkspaceDir = updates.WorkspaceDir
