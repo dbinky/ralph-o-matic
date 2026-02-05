@@ -400,6 +400,9 @@ func (r *JobRepo) ListTerminal() ([]*models.Job, error) {
 		ids = append(ids, id)
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate terminal jobs: %w", err)
+	}
 
 	var jobs []*models.Job
 	for _, id := range ids {
@@ -436,6 +439,9 @@ func (r *JobRepo) ListExpired(cutoff time.Time) ([]*models.Job, error) {
 		ids = append(ids, id)
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate expired jobs: %w", err)
+	}
 
 	var jobs []*models.Job
 	for _, id := range ids {

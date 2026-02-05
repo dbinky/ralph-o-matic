@@ -123,7 +123,7 @@ func (r *JobRepo) ListExpired(cutoff time.Time) ([]*models.Job, error)
 
 ### Job Retention — Edge Cases
 
-- Job has no `completed_at` timestamp (old data) — uses `updated_at` as fallback
+- Job has no `completed_at` timestamp (old data) — uses `created_at` as fallback
 - Retention runs with empty database — no-op, no errors
 - Large batch of expired jobs — processes all without OOM or timeout
 
