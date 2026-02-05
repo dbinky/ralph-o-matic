@@ -413,3 +413,116 @@ func TestCleaner_Retention_EmptyDB(t *testing.T) {
 	c := env.newCleaner()
 	c.purgeExpiredJobs(context.Background())
 }
+
+// --- Integration Tests: Both Phases Together ---
+
+func TestCleaner_FullTick_WorkspaceCleanedThenJobPurged(t *testing.T) {
+	env := newCleanerTestEnv(t)
+	env.gitChecker.uncommitted = false
+	env.gitChecker.unpushed = false
+
+	cfg := models.DefaultServerConfig()
+	cfg.JobRetentionDays = 7
+	err := env.configRepo.Save(cfg)
+	require.NoError(t, err)
+
+	// Expired completed job with workspace
+	job := env.createJob(t, models.StatusCompleted, 10*24*time.Hour, true)
+
+	c := env.newCleaner()
+	c.tick(context.Background())
+
+	// Both workspace and DB record should be gone
+	assert.False(t, env.workspaceExists(job.ID), "workspace should be deleted")
+	_, err = env.jobRepo.Get(job.ID)
+	assert.ErrorIs(t, err, db.ErrNotFound, "job should be purged from DB")
+}
+
+func TestCleaner_FullTick_RecentJobWorkspaceCleanedNotPurged(t *testing.T) {
+	env := newCleanerTestEnv(t)
+	env.gitChecker.uncommitted = false
+	env.gitChecker.unpushed = false
+
+	cfg := models.DefaultServerConfig()
+	cfg.JobRetentionDays = 30
+	err := env.configRepo.Save(cfg)
+	require.NoError(t, err)
+
+	// Recent completed job with workspace
+	job := env.createJob(t, models.StatusCompleted, 1*time.Hour, true)
+
+	c := env.newCleaner()
+	c.tick(context.Background())
+
+	// Workspace deleted, but job record retained
+	assert.False(t, env.workspaceExists(job.ID), "workspace should be deleted")
+	_, err = env.jobRepo.Get(job.ID)
+	assert.NoError(t, err, "recent job should still exist in DB")
+}
+
+func TestCleaner_FullTick_RetentionCleansSkippedWorkspace(t *testing.T) {
+	env := newCleanerTestEnv(t)
+	// Git check says NOT safe — workspace cleanup will skip
+	env.gitChecker.uncommitted = true
+	env.gitChecker.unpushed = false
+
+	cfg := models.DefaultServerConfig()
+	cfg.JobRetentionDays = 7
+	err := env.configRepo.Save(cfg)
+	require.NoError(t, err)
+
+	// Expired completed job with workspace that has uncommitted changes
+	job := env.createJob(t, models.StatusCompleted, 10*24*time.Hour, true)
+
+	c := env.newCleaner()
+	c.tick(context.Background())
+
+	// Workspace cleanup skipped it, but retention should clean it defensively
+	assert.False(t, env.workspaceExists(job.ID), "retention should clean workspace defensively")
+	_, err = env.jobRepo.Get(job.ID)
+	assert.ErrorIs(t, err, db.ErrNotFound, "expired job should be purged")
+}
+
+func TestCleaner_FullTick_MixedJobs(t *testing.T) {
+	env := newCleanerTestEnv(t)
+	env.gitChecker.uncommitted = false
+	env.gitChecker.unpushed = false
+
+	cfg := models.DefaultServerConfig()
+	cfg.JobRetentionDays = 7
+	err := env.configRepo.Save(cfg)
+	require.NoError(t, err)
+
+	// Mix of jobs:
+	// 1. Running (should be untouched)
+	jobRunning := env.createJob(t, models.StatusRunning, 0, true)
+	// 2. Recently completed (workspace cleaned, record kept)
+	jobRecent := env.createJob(t, models.StatusCompleted, 1*time.Hour, true)
+	// 3. Expired completed (both cleaned)
+	jobExpired := env.createJob(t, models.StatusCompleted, 10*24*time.Hour, true)
+	// 4. Queued (untouched)
+	jobQueued := env.createJob(t, models.StatusQueued, 0, true)
+
+	c := env.newCleaner()
+	c.tick(context.Background())
+
+	// Running: untouched
+	assert.True(t, env.workspaceExists(jobRunning.ID))
+	_, err = env.jobRepo.Get(jobRunning.ID)
+	assert.NoError(t, err)
+
+	// Recent completed: workspace deleted, record kept
+	assert.False(t, env.workspaceExists(jobRecent.ID))
+	_, err = env.jobRepo.Get(jobRecent.ID)
+	assert.NoError(t, err)
+
+	// Expired: both deleted
+	assert.False(t, env.workspaceExists(jobExpired.ID))
+	_, err = env.jobRepo.Get(jobExpired.ID)
+	assert.ErrorIs(t, err, db.ErrNotFound)
+
+	// Queued: untouched
+	assert.True(t, env.workspaceExists(jobQueued.ID))
+	_, err = env.jobRepo.Get(jobQueued.ID)
+	assert.NoError(t, err)
+}
