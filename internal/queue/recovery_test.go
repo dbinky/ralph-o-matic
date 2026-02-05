@@ -134,3 +134,122 @@ func TestRecoverOrphaned_OnlyRunningJobsTouched(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.StatusCompleted, completedJob.Status)
 }
+
+func TestRecoverOrphaned_PreservesFields(t *testing.T) {
+	q, _ := newTestQueue(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "feature-branch", "do stuff", 10)
+	job.Priority = models.PriorityHigh
+	require.NoError(t, q.Enqueue(job))
+	dequeued, err := q.Dequeue()
+	require.NoError(t, err)
+
+	// Set some fields that should survive recovery
+	dequeued.Iteration = 7
+	dequeued.ResultBranch = "ralph/feature-branch-result"
+	dequeued.RetryCount = 2
+	require.NoError(t, q.Update(dequeued))
+
+	count, err := q.RecoverOrphaned()
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	recovered, err := q.Get(dequeued.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusQueued, recovered.Status)
+	assert.Nil(t, recovered.StartedAt)
+	assert.Equal(t, 7, recovered.Iteration)
+	assert.Equal(t, "ralph/feature-branch-result", recovered.ResultBranch)
+	assert.Equal(t, models.PriorityHigh, recovered.Priority)
+	assert.Equal(t, "feature-branch", recovered.Branch)
+	assert.Equal(t, "do stuff", recovered.Prompt)
+	assert.Equal(t, 2, recovered.RetryCount)
+	assert.Equal(t, 10, recovered.MaxIterations)
+}
+
+func TestRecoverOrphaned_RecoveredJobPickedUpByDequeue(t *testing.T) {
+	q, _ := newTestQueue(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, q.Enqueue(job))
+	dequeued, err := q.Dequeue()
+	require.NoError(t, err)
+
+	// Recover
+	count, err := q.RecoverOrphaned()
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	// Dequeue should pick it back up
+	redequeued, err := q.Dequeue()
+	require.NoError(t, err)
+	require.NotNil(t, redequeued)
+	assert.Equal(t, dequeued.ID, redequeued.ID)
+	assert.Equal(t, models.StatusRunning, redequeued.Status)
+}
+
+func TestRecoverOrphaned_IdempotentSecondCall(t *testing.T) {
+	q, _ := newTestQueue(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, q.Enqueue(job))
+	_, err := q.Dequeue()
+	require.NoError(t, err)
+
+	// First recovery
+	count, err := q.RecoverOrphaned()
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	// Second recovery — nothing to do
+	count, err = q.RecoverOrphaned()
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+}
+
+func TestRecoverOrphaned_ZeroIterationJob(t *testing.T) {
+	q, database := newTestQueue(t)
+	logRepo := db.NewLogRepo(database)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, q.Enqueue(job))
+	dequeued, err := q.Dequeue()
+	require.NoError(t, err)
+	// Iteration is 0 — crashed before any work done
+
+	count, err := q.RecoverOrphaned()
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	recovered, err := q.Get(dequeued.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusQueued, recovered.Status)
+	assert.Equal(t, 0, recovered.Iteration)
+
+	logs, err := logRepo.GetForJob(dequeued.ID)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	assert.Contains(t, logs[0].Message, "iteration 0/10")
+}
+
+func TestRecoverOrphaned_MaxIterationJob(t *testing.T) {
+	q, _ := newTestQueue(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 5)
+	require.NoError(t, q.Enqueue(job))
+	dequeued, err := q.Dequeue()
+	require.NoError(t, err)
+
+	dequeued.Iteration = 5 // At max
+	require.NoError(t, q.Update(dequeued))
+
+	count, err := q.RecoverOrphaned()
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	// Re-queued even at max — worker handles the max-iteration check
+	recovered, err := q.Get(dequeued.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusQueued, recovered.Status)
+	assert.Equal(t, 5, recovered.Iteration)
+}
