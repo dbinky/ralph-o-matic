@@ -226,6 +226,71 @@ func TestAPI_GetConfig_IncludesAnthropicDefaults(t *testing.T) {
 	assert.False(t, resp.Anthropic.APIKeySet)
 }
 
+func TestAPI_GetConfig_NoConcurrentJobsField(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &raw))
+	_, hasConcurrentJobs := raw["concurrent_jobs"]
+	assert.False(t, hasConcurrentJobs, "GET /api/config should not include concurrent_jobs")
+}
+
+func TestAPI_UpdateConfig_ConcurrentJobsIgnored(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	// Send a PATCH with concurrent_jobs — it should be silently ignored
+	body := []byte(`{"concurrent_jobs": 5, "default_max_iterations": 75}`)
+	req := httptest.NewRequest("PATCH", "/api/config", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &raw))
+	_, hasConcurrentJobs := raw["concurrent_jobs"]
+	assert.False(t, hasConcurrentJobs, "PATCH response should not include concurrent_jobs")
+
+	// Verify the valid field was applied
+	assert.Equal(t, float64(75), raw["default_max_iterations"])
+}
+
+func TestAPI_GetConfig_ResponseSchema_NoConcurrentJobs(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	// Verify all expected fields exist, concurrent_jobs does not
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &raw))
+
+	expectedKeys := []string{
+		"ollama", "large_model", "small_model",
+		"default_max_iterations", "job_retention_days",
+		"default_backend", "anthropic",
+		"max_claude_retries", "max_git_retries", "git_retry_backoff_ms",
+	}
+	for _, key := range expectedKeys {
+		assert.Contains(t, raw, key, "expected key %s in response", key)
+	}
+
+	unexpectedKeys := []string{"concurrent_jobs"}
+	for _, key := range unexpectedKeys {
+		assert.NotContains(t, raw, key, "unexpected key %s in response", key)
+	}
+}
+
 func TestAPI_GetConfig_ResponseStructure(t *testing.T) {
 	srv, _ := newTestServer(t)
 
