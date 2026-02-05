@@ -32,7 +32,6 @@ func TestConfigRepo_Save(t *testing.T) {
 	cfg.LargeModel.Name = "custom-model:latest"
 	cfg.LargeModel.Device = "gpu"
 	cfg.LargeModel.MemoryGB = 20
-	cfg.ConcurrentJobs = 5
 
 	err := repo.Save(cfg)
 	require.NoError(t, err)
@@ -44,7 +43,6 @@ func TestConfigRepo_Save(t *testing.T) {
 	assert.Equal(t, "custom-model:latest", fetched.LargeModel.Name)
 	assert.Equal(t, "gpu", fetched.LargeModel.Device)
 	assert.Equal(t, 20.0, fetched.LargeModel.MemoryGB)
-	assert.Equal(t, 5, fetched.ConcurrentJobs)
 }
 
 func TestConfigRepo_SaveOllama(t *testing.T) {
@@ -130,7 +128,6 @@ func TestConfigRepo_FullRoundTrip_AllStructuredFields(t *testing.T) {
 	cfg.Ollama.IsRemote = true
 	cfg.LargeModel = models.ModelPlacement{Name: "custom-large:70b", Device: "gpu", MemoryGB: 42}
 	cfg.SmallModel = models.ModelPlacement{Name: "custom-small:1.5b", Device: "cpu", MemoryGB: 1.5}
-	cfg.ConcurrentJobs = 4
 	cfg.DefaultMaxIterations = 100
 	cfg.WorkspaceDir = "/tmp/test-workspace"
 	cfg.JobRetentionDays = 7
@@ -152,7 +149,6 @@ func TestConfigRepo_FullRoundTrip_AllStructuredFields(t *testing.T) {
 	assert.Equal(t, "custom-small:1.5b", fetched.SmallModel.Name)
 	assert.Equal(t, "cpu", fetched.SmallModel.Device)
 	assert.Equal(t, 1.5, fetched.SmallModel.MemoryGB)
-	assert.Equal(t, 4, fetched.ConcurrentJobs)
 	assert.Equal(t, 100, fetched.DefaultMaxIterations)
 	assert.Equal(t, "/tmp/test-workspace", fetched.WorkspaceDir)
 	assert.Equal(t, 7, fetched.JobRetentionDays)
@@ -171,12 +167,12 @@ func TestConfigRepo_UpdateScalar_PreservesStructured(t *testing.T) {
 	require.NoError(t, err)
 
 	// Update a scalar field
-	err = repo.Update("concurrent_jobs", "5")
+	err = repo.Update("default_max_iterations", "100")
 	require.NoError(t, err)
 
 	fetched, err := repo.Get()
 	require.NoError(t, err)
-	assert.Equal(t, 5, fetched.ConcurrentJobs)
+	assert.Equal(t, 100, fetched.DefaultMaxIterations)
 	assert.Equal(t, "keep-this:70b", fetched.LargeModel.Name)
 	assert.Equal(t, "gpu", fetched.LargeModel.Device)
 	assert.Equal(t, 42.0, fetched.LargeModel.MemoryGB)
@@ -306,18 +302,15 @@ func TestConfigRepo_SaveThenSave_Overwrites(t *testing.T) {
 
 	cfg1 := models.DefaultServerConfig()
 	cfg1.LargeModel.Name = "first-model"
-	cfg1.ConcurrentJobs = 2
 	err := repo.Save(cfg1)
 	require.NoError(t, err)
 
 	cfg2 := models.DefaultServerConfig()
 	cfg2.LargeModel.Name = "second-model"
-	cfg2.ConcurrentJobs = 8
 	err = repo.Save(cfg2)
 	require.NoError(t, err)
 
 	fetched, err := repo.Get()
 	require.NoError(t, err)
 	assert.Equal(t, "second-model", fetched.LargeModel.Name)
-	assert.Equal(t, 8, fetched.ConcurrentJobs)
 }

@@ -73,7 +73,6 @@ func (r *ConfigRepo) Save(cfg *models.ServerConfig) error {
 		"default_backend":          string(cfg.DefaultBackend),
 		"anthropic":                string(anthropicJSON),
 		"default_max_iterations":   strconv.Itoa(cfg.DefaultMaxIterations),
-		"concurrent_jobs":          strconv.Itoa(cfg.ConcurrentJobs),
 		"workspace_dir":            cfg.WorkspaceDir,
 		"job_retention_days":       strconv.Itoa(cfg.JobRetentionDays),
 		"max_claude_retries":       strconv.Itoa(cfg.MaxClaudeRetries),
@@ -167,12 +166,6 @@ func applyConfigValue(cfg *models.ServerConfig, key, value string) error {
 			return err
 		}
 		cfg.DefaultMaxIterations = v
-	case "concurrent_jobs":
-		v, err := strconv.Atoi(value)
-		if err != nil {
-			return err
-		}
-		cfg.ConcurrentJobs = v
 	case "workspace_dir":
 		cfg.WorkspaceDir = value
 	case "job_retention_days":
