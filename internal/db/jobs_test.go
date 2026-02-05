@@ -361,6 +361,62 @@ func TestJobRepo_List_NoOwnerFilter_ReturnsAll(t *testing.T) {
 	assert.Len(t, jobs, 3)
 }
 
+func TestJobRepo_ListTerminal(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	// Create jobs in various states
+	statuses := []models.JobStatus{
+		models.StatusQueued,
+		models.StatusRunning,
+		models.StatusCompleted,
+		models.StatusFailed,
+		models.StatusCancelled,
+	}
+	for _, status := range statuses {
+		job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+		job.Status = status
+		err := repo.Create(job)
+		require.NoError(t, err)
+	}
+
+	jobs, err := repo.ListTerminal()
+	require.NoError(t, err)
+	assert.Len(t, jobs, 3)
+
+	for _, job := range jobs {
+		assert.Contains(t, []models.JobStatus{
+			models.StatusCompleted, models.StatusFailed, models.StatusCancelled,
+		}, job.Status)
+	}
+}
+
+func TestJobRepo_ListTerminal_Empty(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	jobs, err := repo.ListTerminal()
+	require.NoError(t, err)
+	assert.Empty(t, jobs)
+}
+
+func TestJobRepo_ListTerminal_NoTerminalJobs(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	// Only non-terminal jobs
+	for _, status := range []models.JobStatus{models.StatusQueued, models.StatusRunning} {
+		job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+		job.Status = status
+		err := repo.Create(job)
+		require.NoError(t, err)
+	}
+
+	jobs, err := repo.ListTerminal()
+	require.NoError(t, err)
+	assert.Empty(t, jobs)
+}
+
 func TestJobRepo_CountByStatus(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewJobRepo(db)
