@@ -51,6 +51,9 @@ type Worker struct {
 	// Retry settings
 	maxRetries     int
 	retryBaseDelay time.Duration
+
+	// Rate limiting (recreated per job based on backend)
+	rateLimiter *RateLimiter
 }
 
 // New creates a worker that polls the queue at the given interval.
@@ -126,6 +129,7 @@ func (w *Worker) poll(ctx context.Context) {
 	}
 	loopConfig := models.DefaultLoopConfig(backend)
 	cb := executor.NewCircuitBreaker(loopConfig.CircuitBreakerNoProgress, loopConfig.CircuitBreakerSameError)
+	w.rateLimiter = NewRateLimiter(loopConfig.MaxCallsPerHour)
 
 	for {
 		if ctx.Err() != nil {
@@ -140,6 +144,11 @@ func (w *Worker) poll(ctx context.Context) {
 
 		if err := w.queue.Update(job); err != nil {
 			log.Printf("Worker: failed to update job #%d iteration: %v", job.ID, err)
+		}
+
+		if err := w.waitForRateLimit(ctx, job); err != nil {
+			_ = w.handler.Finalize(context.Background(), job, false)
+			return
 		}
 
 		result, err := w.executeWithRetry(ctx, job)
@@ -198,6 +207,19 @@ func (w *Worker) poll(ctx context.Context) {
 		log.Printf("Worker: job #%d completed after %d iterations", job.ID, job.Iteration)
 	}
 	w.sendNotification(ctx, job, notify.EventCompleted)
+}
+
+// waitForRateLimit blocks until the rate limiter allows a call.
+func (w *Worker) waitForRateLimit(ctx context.Context, job *models.Job) error {
+	if w.rateLimiter == nil || w.rateLimiter.maxPerHour <= 0 {
+		return nil
+	}
+	log.Printf("Worker: job #%d rate limit check (%d calls/hour)", job.ID, w.rateLimiter.maxPerHour)
+	if err := w.rateLimiter.Wait(ctx); err != nil {
+		log.Printf("Worker: job #%d rate limit wait cancelled: %v", job.ID, err)
+		return err
+	}
+	return nil
 }
 
 // executeWithRetry runs Handle with exponential backoff retry on errors.

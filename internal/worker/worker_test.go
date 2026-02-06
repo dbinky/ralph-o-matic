@@ -505,3 +505,147 @@ func TestWorker_Notification_OnlyOnTerminalState(t *testing.T) {
 	require.Len(t, calls, 1, "should get exactly one notification on terminal state")
 	assert.Equal(t, notify.EventCompleted, calls[0].Event)
 }
+
+// --- Rate Limiter Integration Tests ---
+
+func TestWorker_RateLimiter_OllamaJobUnlimited(t *testing.T) {
+	// Ollama backend should create an unlimited rate limiter (maxPerHour=0)
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: true},
+		},
+	}
+	job := newTestJob(10)
+	job.Backend = models.BackendOllama
+	q := &mockQueue{jobs: []*models.Job{job}}
+
+	w := New(q, handler, 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	require.Len(t, q.completed, 1)
+	assert.NotNil(t, w.rateLimiter, "rate limiter should be set")
+	assert.Equal(t, 0, w.rateLimiter.maxPerHour, "Ollama should have unlimited rate limiter")
+}
+
+func TestWorker_RateLimiter_AnthropicJobLimited(t *testing.T) {
+	// Anthropic backend should create a rate limiter with MaxCallsPerHour from config
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: true},
+		},
+	}
+	job := newTestJob(10)
+	job.Backend = models.BackendAnthropic
+	q := &mockQueue{jobs: []*models.Job{job}}
+
+	w := New(q, handler, 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	require.Len(t, q.completed, 1)
+	assert.NotNil(t, w.rateLimiter)
+	expected := models.DefaultLoopConfig(models.BackendAnthropic).MaxCallsPerHour
+	assert.Equal(t, expected, w.rateLimiter.maxPerHour, "Anthropic should have configured rate limit")
+}
+
+func TestWorker_RateLimiter_BlocksWhenExceeded(t *testing.T) {
+	// After handler exhausts the rate limiter on the 2nd call,
+	// the 3rd iteration's waitForRateLimit blocks and context timeout stops the job.
+	progress := &executor.ResponseMetadata{FilesModified: 1}
+	callCount := 0
+	var w *Worker
+
+	handler := &mockHandler{
+		handleFn: func(ctx context.Context, job *models.Job) (*executor.ExecutionResult, error) {
+			callCount++
+			if callCount >= 2 {
+				// Exhaust rate limiter so next waitForRateLimit blocks
+				w.rateLimiter.mu.Lock()
+				w.rateLimiter.count = w.rateLimiter.maxPerHour
+				w.rateLimiter.mu.Unlock()
+			}
+			return &executor.ExecutionResult{Completed: false, Metadata: progress}, nil
+		},
+	}
+	job := newTestJob(10)
+	job.Backend = models.BackendAnthropic
+	q := &mockQueue{jobs: []*models.Job{job}}
+
+	w = New(q, handler, 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	w.poll(ctx)
+
+	// Should have run exactly 2 iterations (rate limit blocks 3rd, context times out)
+	assert.Equal(t, 2, callCount, "should have run exactly 2 iterations before rate limit blocked")
+}
+
+func TestWorker_RateLimiter_ContextCancelDuringWait(t *testing.T) {
+	// If context is cancelled while waiting for rate limit, job should stop.
+	// Handler exhausts rate limiter on first call; second iteration blocks; cancel fires.
+	progress := &executor.ResponseMetadata{FilesModified: 1}
+	var w *Worker
+
+	handler := &mockHandler{
+		handleFn: func(ctx context.Context, job *models.Job) (*executor.ExecutionResult, error) {
+			// Exhaust rate limiter so next waitForRateLimit blocks
+			w.rateLimiter.mu.Lock()
+			w.rateLimiter.count = w.rateLimiter.maxPerHour
+			w.rateLimiter.mu.Unlock()
+			return &executor.ExecutionResult{Completed: false, Metadata: progress}, nil
+		},
+	}
+	job := newTestJob(10)
+	job.Backend = models.BackendAnthropic
+	q := &mockQueue{jobs: []*models.Job{job}}
+
+	w = New(q, handler, 50*time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel after a short delay (long enough for 1 iteration)
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	w.poll(ctx)
+
+	// Should have run 1 iteration, then been blocked by rate limit, then context cancelled
+	assert.Equal(t, 1, handler.callCount(), "should have run 1 iteration before rate limit + cancel")
+}
+
+func TestWorker_RateLimiter_RecreatedPerJob(t *testing.T) {
+	// First job: Anthropic (limited), second job: Ollama (unlimited)
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: true},
+		},
+	}
+
+	job1 := newTestJob(10)
+	job1.Backend = models.BackendAnthropic
+	job2 := newTestJob(10)
+	job2.ID = 2
+	job2.Backend = models.BackendOllama
+
+	q := &mockQueue{jobs: []*models.Job{job1, job2}}
+
+	w := New(q, handler, 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// First poll — Anthropic job
+	w.poll(ctx)
+	assert.Equal(t, models.DefaultLoopConfig(models.BackendAnthropic).MaxCallsPerHour, w.rateLimiter.maxPerHour)
+
+	// Second poll — Ollama job
+	w.poll(ctx)
+	assert.Equal(t, 0, w.rateLimiter.maxPerHour, "rate limiter should be recreated for Ollama job")
+}
