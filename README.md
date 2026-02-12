@@ -220,6 +220,10 @@ The server exposes a REST API at `http://<host>:9090/api/`:
 | `POST` | `/api/config/test-notify` | Send test notification (admin only) |
 | `GET` | `/health` | Health check |
 
+## Deploying for a Team
+
+See the [Operations & Deployment Guide](docs/ops-guide.md) for reverse proxy setup, TLS termination, backup, monitoring, and production hardening.
+
 ## Development
 
 Requires Go 1.24+.
