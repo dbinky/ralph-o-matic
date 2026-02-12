@@ -125,6 +125,66 @@ func TestDashboard_Index_AdminSeesAllJobs(t *testing.T) {
 	assert.Contains(t, body, "Bob")
 }
 
+func TestDashboard_Job_UserCanAccessOwnJob(t *testing.T) {
+	d, _ := newTestDashboard(t)
+	job := createDashboardJob(t, d.db, "user-a", "Alice")
+
+	req := httptest.NewRequest("GET", "/jobs/1", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{
+		ID: "user-a", Name: "Alice", Roles: []string{"User"},
+	}))
+	w := httptest.NewRecorder()
+
+	d.HandleJob(w, req, job.ID)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestDashboard_Job_UserCannotAccessOtherJob(t *testing.T) {
+	d, _ := newTestDashboard(t)
+	job := createDashboardJob(t, d.db, "user-b", "Bob")
+
+	req := httptest.NewRequest("GET", "/jobs/1", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{
+		ID: "user-a", Name: "Alice", Roles: []string{"User"},
+	}))
+	w := httptest.NewRecorder()
+
+	d.HandleJob(w, req, job.ID)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestDashboard_Job_AdminCanAccessAnyJob(t *testing.T) {
+	d, _ := newTestDashboard(t)
+	job := createDashboardJob(t, d.db, "user-b", "Bob")
+
+	req := httptest.NewRequest("GET", "/jobs/1", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{
+		ID: "admin-1", Name: "Admin", Roles: []string{"Admin"},
+	}))
+	w := httptest.NewRecorder()
+
+	d.HandleJob(w, req, job.ID)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestDashboard_Job_PreAuthJob_AccessibleByAll(t *testing.T) {
+	d, _ := newTestDashboard(t)
+	job := createDashboardJob(t, d.db, "", "")
+
+	req := httptest.NewRequest("GET", "/jobs/1", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{
+		ID: "user-a", Name: "Alice", Roles: []string{"User"},
+	}))
+	w := httptest.NewRecorder()
+
+	d.HandleJob(w, req, job.ID)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
 func TestDashboard_Index_NoAuth_SeesAllJobs(t *testing.T) {
 	d, _ := newTestDashboard(t)
 	database := d.db

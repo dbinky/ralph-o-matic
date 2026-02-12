@@ -145,6 +145,11 @@ func (d *Dashboard) HandleJob(w http.ResponseWriter, r *http.Request, jobID int6
 		return
 	}
 
+	if !auth.CanAccessJob(r, job.OwnerID) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	logRepo := db.NewLogRepo(d.db)
 	logs, _ := logRepo.GetForJob(jobID)
 
