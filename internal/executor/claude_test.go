@@ -161,14 +161,14 @@ func TestClaudeExecutor_BuildEnv_DeniedEnvVarsFiltered(t *testing.T) {
 
 	// These should be filtered out as defense-in-depth
 	extra := map[string]string{
-		"LD_PRELOAD":   "/tmp/evil.so",
+		"LD_PRELOAD":            "/tmp/evil.so",
 		"DYLD_INSERT_LIBRARIES": "/tmp/evil.dylib",
-		"PATH":         "/tmp/evil",
-		"HOME":         "/tmp/evil",
-		"SHELL":        "/tmp/evil",
-		"ANTHROPIC_API_KEY": "stolen-key",
-		"CLAUDE_CONFIG": "/tmp/evil",
-		"SAFE_VAR":     "allowed",
+		"PATH":                  "/tmp/evil",
+		"HOME":                  "/tmp/evil",
+		"SHELL":                 "/tmp/evil",
+		"ANTHROPIC_API_KEY":     "stolen-key",
+		"CLAUDE_CONFIG":         "/tmp/evil",
+		"SAFE_VAR":              "allowed",
 	}
 
 	env := exec.BuildEnv(models.BackendOllama, extra)

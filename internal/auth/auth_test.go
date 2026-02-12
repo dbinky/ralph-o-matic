@@ -19,7 +19,7 @@ func TestAuthMode_Valid(t *testing.T) {
 	}{
 		{AuthModeNone, true},
 		{AuthModeEntra, true},
-		{AuthMode(""), true},        // empty defaults to none
+		{AuthMode(""), true},         // empty defaults to none
 		{AuthMode("unknown"), false}, // unrecognized
 	}
 
@@ -207,9 +207,9 @@ func TestLoadConfig_DefaultsWhenNothingSet(t *testing.T) {
 
 func TestLoadConfig_EnvVarsFullySet(t *testing.T) {
 	envVars := map[string]string{
-		"RALPH_AUTH_MODE":          "entra",
-		"RALPH_ENTRA_TENANT_ID":   "env-tenant",
-		"RALPH_ENTRA_CLIENT_ID":   "env-client",
+		"RALPH_AUTH_MODE":           "entra",
+		"RALPH_ENTRA_TENANT_ID":     "env-tenant",
+		"RALPH_ENTRA_CLIENT_ID":     "env-client",
 		"RALPH_ENTRA_CLIENT_SECRET": "env-secret",
 	}
 	cfg, err := LoadConfig(
@@ -239,7 +239,7 @@ func TestLoadConfig_EnvVarsOverrideFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(settingsPath, []byte(content), 0600))
 
 	envVars := map[string]string{
-		"RALPH_AUTH_MODE":        "entra",
+		"RALPH_AUTH_MODE":       "entra",
 		"RALPH_ENTRA_TENANT_ID": "env-tenant",
 		"RALPH_CONFIG_FILE":     settingsPath,
 	}

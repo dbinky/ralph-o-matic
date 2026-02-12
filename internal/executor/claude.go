@@ -75,13 +75,13 @@ func (e *ClaudeExecutor) BuildEnv(backend models.Backend, extra map[string]strin
 // envVarDenylist contains environment variable names and prefixes that should
 // not be set by job env for security reasons.
 var envVarDenylist = []string{
-	"LD_",       // Linux dynamic linker
-	"DYLD_",     // macOS dynamic linker
-	"PATH",      // executable search path
-	"HOME",      // home directory
-	"SHELL",     // shell executable
+	"LD_",        // Linux dynamic linker
+	"DYLD_",      // macOS dynamic linker
+	"PATH",       // executable search path
+	"HOME",       // home directory
+	"SHELL",      // shell executable
 	"ANTHROPIC_", // Anthropic API config
-	"CLAUDE_",   // Claude CLI config
+	"CLAUDE_",    // Claude CLI config
 }
 
 // isDeniedEnvVar checks if an env var name is on the denylist.
@@ -106,11 +106,11 @@ func (e *ClaudeExecutor) resolveAnthropicKey() string {
 // ExecutionResult contains the results of running Claude Code
 type ExecutionResult struct {
 	Output     string
-	RawJSON    []byte             // raw JSON from claude --output-format json
+	RawJSON    []byte // raw JSON from claude --output-format json
 	Iterations int
 	Completed  bool
-	SessionID  string             // extracted from JSON output
-	Metadata   *ResponseMetadata  // parsed response analysis
+	SessionID  string            // extracted from JSON output
+	Metadata   *ResponseMetadata // parsed response analysis
 	Error      error
 }
 

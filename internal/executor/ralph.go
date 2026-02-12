@@ -242,4 +242,3 @@ func effectiveBackend(jobBackend, serverDefault models.Backend) models.Backend {
 	}
 	return models.BackendOllama
 }
-
