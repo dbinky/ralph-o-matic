@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/db"
+	"github.com/ryan/ralph-o-matic/internal/models"
 	"github.com/ryan/ralph-o-matic/internal/platform"
 )
 
@@ -49,7 +50,7 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		checks["config"] = err.Error()
 		healthy = false
-	} else if cfg.DefaultBackend == "" || cfg.DefaultBackend == "ollama" {
+	} else if cfg.DefaultBackend == "" || cfg.DefaultBackend == models.BackendOllama {
 		client := platform.NewOllamaClient(cfg.Ollama.Host)
 		if err := client.Ping(ctx); err != nil {
 			checks["ollama"] = err.Error()

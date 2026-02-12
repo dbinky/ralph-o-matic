@@ -63,7 +63,7 @@ func TestServer_Readiness_OllamaDown(t *testing.T) {
 	configRepo := db.NewConfigRepo(database)
 	cfg, err := configRepo.Get()
 	require.NoError(t, err)
-	cfg.DefaultBackend = "ollama"
+	cfg.DefaultBackend = models.BackendOllama
 	cfg.Ollama.Host = "http://127.0.0.1:1" // nothing listening
 	require.NoError(t, configRepo.Save(cfg))
 
@@ -95,7 +95,7 @@ func TestServer_Readiness_OllamaHealthy(t *testing.T) {
 	configRepo := db.NewConfigRepo(database)
 	cfg, err := configRepo.Get()
 	require.NoError(t, err)
-	cfg.DefaultBackend = "ollama"
+	cfg.DefaultBackend = models.BackendOllama
 	cfg.Ollama.Host = fakeSrv.URL
 	require.NoError(t, configRepo.Save(cfg))
 
@@ -119,7 +119,7 @@ func TestServer_Readiness_AnthropicBackend_SkipsOllama(t *testing.T) {
 	configRepo := db.NewConfigRepo(database)
 	cfg, err := configRepo.Get()
 	require.NoError(t, err)
-	cfg.DefaultBackend = "anthropic"
+	cfg.DefaultBackend = models.BackendAnthropic
 	cfg.Anthropic.LargeModel = "claude-opus-4-5-20251101"
 	cfg.Anthropic.SmallModel = "claude-haiku-4-5-20251001"
 	require.NoError(t, configRepo.Save(cfg))
