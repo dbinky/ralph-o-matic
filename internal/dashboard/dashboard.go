@@ -102,11 +102,18 @@ type IndexData struct {
 func (d *Dashboard) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	jobRepo := db.NewJobRepo(d.db)
 
-	running, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusRunning}})
-	paused, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusPaused}})
-	queued, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusQueued}})
+	// Filter by owner for non-admin users
+	var ownerID string
+	if user := auth.UserFromContext(r.Context()); user != nil && !user.IsAdmin() {
+		ownerID = user.ID
+	}
+
+	running, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusRunning}, OwnerID: ownerID})
+	paused, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusPaused}, OwnerID: ownerID})
+	queued, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusQueued}, OwnerID: ownerID})
 	completed, _, _ := jobRepo.List(db.ListOptions{
 		Statuses: []models.JobStatus{models.StatusCompleted, models.StatusFailed},
+		OwnerID:  ownerID,
 		Limit:    10,
 	})
 

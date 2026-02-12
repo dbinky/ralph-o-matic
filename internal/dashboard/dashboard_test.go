@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/ryan/ralph-o-matic/internal/auth"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/models"
 	"github.com/ryan/ralph-o-matic/internal/queue"
@@ -69,4 +70,75 @@ func TestDashboard_JobNotFound(t *testing.T) {
 	d.HandleJob(w, req, 999)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func createDashboardJob(t *testing.T, database *db.DB, ownerID, ownerName string) *models.Job {
+	t.Helper()
+	repo := db.NewJobRepo(database)
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	job.OwnerID = ownerID
+	job.OwnerName = ownerName
+	err := repo.Create(job)
+	require.NoError(t, err)
+	return job
+}
+
+func TestDashboard_Index_UserSeesOnlyOwnJobs(t *testing.T) {
+	d, _ := newTestDashboard(t)
+	database := d.db
+
+	createDashboardJob(t, database, "user-a", "Alice")
+	createDashboardJob(t, database, "user-b", "Bob")
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{
+		ID: "user-a", Name: "Alice", Roles: []string{"User"},
+	}))
+	w := httptest.NewRecorder()
+
+	d.HandleIndex(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "Alice")
+	assert.NotContains(t, body, "Bob")
+}
+
+func TestDashboard_Index_AdminSeesAllJobs(t *testing.T) {
+	d, _ := newTestDashboard(t)
+	database := d.db
+
+	createDashboardJob(t, database, "user-a", "Alice")
+	createDashboardJob(t, database, "user-b", "Bob")
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{
+		ID: "admin-1", Name: "Admin", Roles: []string{"Admin"},
+	}))
+	w := httptest.NewRecorder()
+
+	d.HandleIndex(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "Alice")
+	assert.Contains(t, body, "Bob")
+}
+
+func TestDashboard_Index_NoAuth_SeesAllJobs(t *testing.T) {
+	d, _ := newTestDashboard(t)
+	database := d.db
+
+	createDashboardJob(t, database, "user-a", "Alice")
+	createDashboardJob(t, database, "user-b", "Bob")
+
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+
+	d.HandleIndex(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "Alice")
+	assert.Contains(t, body, "Bob")
 }
