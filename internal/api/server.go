@@ -88,7 +88,7 @@ func (s *Server) setupRoutes() {
 		r.Use(auth.Middleware(s.authProvider, s.sessions))
 
 		// SSE routes — no timeout (long-lived connections)
-		r.Get("/api/events", s.handleSSEGlobal)
+		r.Get("/api/events", auth.RequireRole("Admin", s.handleSSEGlobal))
 		r.Get("/api/jobs/{jobID}/events", s.handleSSEJob)
 
 		// All other routes — with timeout
@@ -208,13 +208,23 @@ func (s *Server) handleSSEGlobal(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSSEJob(w http.ResponseWriter, r *http.Request) {
+	// Check job access before subscribing
+	jobIDStr := chi.URLParam(r, "jobID")
+	jobID, err := strconv.ParseInt(jobIDStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid job ID")
+		return
+	}
+
+	if _, ok := s.authorizedJob(w, r, jobID); !ok {
+		return
+	}
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
-
-	jobID := chi.URLParam(r, "jobID")
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -222,7 +232,7 @@ func (s *Server) handleSSEJob(w http.ResponseWriter, r *http.Request) {
 
 	// Subscribe before flushing headers so the client is registered
 	// by the time the caller receives the response.
-	topic := "job:" + jobID
+	topic := "job:" + jobIDStr
 	clientID, ch := s.broadcaster.Subscribe(topic)
 	defer s.broadcaster.Unsubscribe(topic, clientID)
 
