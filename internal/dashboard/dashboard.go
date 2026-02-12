@@ -178,6 +178,12 @@ type ConfigData struct {
 
 // HandleConfig renders the config page
 func (d *Dashboard) HandleConfig(w http.ResponseWriter, r *http.Request) {
+	// Config is admin-only when auth is enabled
+	if user := auth.UserFromContext(r.Context()); user != nil && !user.IsAdmin() {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	configRepo := db.NewConfigRepo(d.db)
 	cfg, err := configRepo.Get()
 	if err != nil {

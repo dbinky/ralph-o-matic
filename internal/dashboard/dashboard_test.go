@@ -185,6 +185,46 @@ func TestDashboard_Job_PreAuthJob_AccessibleByAll(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestDashboard_Config_NonAdminGetsForbidden(t *testing.T) {
+	d, _ := newTestDashboard(t)
+
+	req := httptest.NewRequest("GET", "/config", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{
+		ID: "user-a", Name: "Alice", Roles: []string{"User"},
+	}))
+	w := httptest.NewRecorder()
+
+	d.HandleConfig(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestDashboard_Config_AdminCanAccess(t *testing.T) {
+	d, _ := newTestDashboard(t)
+
+	req := httptest.NewRequest("GET", "/config", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{
+		ID: "admin-1", Name: "Admin", Roles: []string{"Admin"},
+	}))
+	w := httptest.NewRecorder()
+
+	d.HandleConfig(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestDashboard_Config_NoAuth_CanAccess(t *testing.T) {
+	d, _ := newTestDashboard(t)
+
+	req := httptest.NewRequest("GET", "/config", nil)
+	// No auth context — auth mode none
+	w := httptest.NewRecorder()
+
+	d.HandleConfig(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
 func TestDashboard_Index_NoAuth_SeesAllJobs(t *testing.T) {
 	d, _ := newTestDashboard(t)
 	database := d.db
