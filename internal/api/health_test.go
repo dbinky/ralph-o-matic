@@ -36,3 +36,22 @@ func TestServer_Readiness_Healthy(t *testing.T) {
 	assert.Equal(t, "ok", checks["database"])
 	assert.Equal(t, "ok", checks["disk"])
 }
+
+func TestServer_Readiness_DBClosed(t *testing.T) {
+	srv, database := newTestServer(t)
+	database.Close()
+
+	req := httptest.NewRequest("GET", "/readiness", nil)
+	w := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "unhealthy", resp["status"])
+
+	checks := resp["checks"].(map[string]interface{})
+	assert.NotEqual(t, "ok", checks["database"])
+}
