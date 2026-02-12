@@ -55,3 +55,87 @@ func TestServer_Readiness_DBClosed(t *testing.T) {
 	checks := resp["checks"].(map[string]interface{})
 	assert.NotEqual(t, "ok", checks["database"])
 }
+
+func TestServer_Readiness_OllamaDown(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	// Configure Ollama backend pointing to a closed server
+	configRepo := db.NewConfigRepo(database)
+	cfg, err := configRepo.Get()
+	require.NoError(t, err)
+	cfg.DefaultBackend = "ollama"
+	cfg.Ollama.Host = "http://127.0.0.1:1" // nothing listening
+	require.NoError(t, configRepo.Save(cfg))
+
+	req := httptest.NewRequest("GET", "/readiness", nil)
+	w := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "unhealthy", resp["status"])
+
+	checks := resp["checks"].(map[string]interface{})
+	assert.NotEqual(t, "ok", checks["ollama"])
+}
+
+func TestServer_Readiness_OllamaHealthy(t *testing.T) {
+	// Fake Ollama server
+	fakeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"models":[]}`))
+	}))
+	defer fakeSrv.Close()
+
+	srv, database := newTestServer(t)
+
+	configRepo := db.NewConfigRepo(database)
+	cfg, err := configRepo.Get()
+	require.NoError(t, err)
+	cfg.DefaultBackend = "ollama"
+	cfg.Ollama.Host = fakeSrv.URL
+	require.NoError(t, configRepo.Save(cfg))
+
+	req := httptest.NewRequest("GET", "/readiness", nil)
+	w := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "ok", resp["status"])
+	checks := resp["checks"].(map[string]interface{})
+	assert.Equal(t, "ok", checks["ollama"])
+}
+
+func TestServer_Readiness_AnthropicBackend_SkipsOllama(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	configRepo := db.NewConfigRepo(database)
+	cfg, err := configRepo.Get()
+	require.NoError(t, err)
+	cfg.DefaultBackend = "anthropic"
+	cfg.Anthropic.LargeModel = "claude-opus-4-5-20251101"
+	cfg.Anthropic.SmallModel = "claude-haiku-4-5-20251001"
+	require.NoError(t, configRepo.Save(cfg))
+
+	req := httptest.NewRequest("GET", "/readiness", nil)
+	w := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "ok", resp["status"])
+
+	checks := resp["checks"].(map[string]interface{})
+	_, hasOllama := checks["ollama"]
+	assert.False(t, hasOllama, "ollama check should be skipped for anthropic backend")
+}
