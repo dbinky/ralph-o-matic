@@ -251,20 +251,44 @@ Migrations run automatically on startup, so restoring an older backup is safe �
 
 ## Monitoring
 
-### Health Check
+### Health & Readiness
+
+**Liveness** — confirms the process is running. Use for restart-on-hang detection:
 
 ```bash
 curl -sf http://127.0.0.1:9090/health
 # {"status":"ok"}
 ```
 
-The `/health` endpoint is always accessible (no auth required). Use it for load balancer checks or uptime monitoring.
+**Readiness** — confirms DB, Ollama (if used), and disk are healthy. Use for
+load balancer routing and monitoring alerts:
+
+```bash
+curl -sf http://127.0.0.1:9090/readiness
+# {"status":"ok","checks":{"database":"ok","disk":"ok","ollama":"ok"}}
+```
+
+Returns HTTP 200 when all checks pass, 503 when any check fails. Individual
+check messages describe the failure:
+
+```json
+{"status":"unhealthy","checks":{"database":"ok","disk":"ok","ollama":"failed to connect to Ollama at http://localhost:11434: ..."}}
+```
+
+Both endpoints are always accessible (no auth required).
+
+**Kubernetes / systemd probe guidance:**
+
+| Probe     | Endpoint     | Interval | Timeout | Failure threshold |
+|-----------|-------------|----------|---------|-------------------|
+| Liveness  | `/health`    | 10s      | 1s      | 3                 |
+| Readiness | `/readiness` | 15s      | 6s      | 2                 |
 
 Example systemd watchdog integration:
 
 ```ini
 # Add to [Service] section
-ExecStartPost=/bin/sh -c 'for i in $(seq 1 30); do curl -sf http://127.0.0.1:9090/health && exit 0; sleep 1; done; exit 1'
+ExecStartPost=/bin/sh -c 'for i in $(seq 1 30); do curl -sf http://127.0.0.1:9090/readiness && exit 0; sleep 1; done; exit 1'
 ```
 
 ### Log Management
