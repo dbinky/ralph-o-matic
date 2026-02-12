@@ -78,6 +78,7 @@ func (s *Server) setupRoutes() {
 
 	// Health check — always accessible, no auth required
 	r.Get("/health", s.handleHealth)
+	r.Get("/readiness", s.handleReadiness)
 
 	// Auth routes — accessible without auth middleware
 	r.Mount("/auth", auth.NewAuthRoutes(s.authProvider, s.sessions, s.secure))

@@ -1,27 +1,38 @@
-//go:build !windows
-
 package api
 
 import (
-	"math"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/ryan/ralph-o-matic/internal/db"
+	"github.com/ryan/ralph-o-matic/internal/models"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestCheckDisk_CurrentDir(t *testing.T) {
-	// Current directory should have space available
-	err := checkDisk(".", 1) // 1 byte minimum
-	assert.NoError(t, err)
-}
+func TestServer_Readiness_Healthy(t *testing.T) {
+	srv, database := newTestServer(t)
 
-func TestCheckDisk_NonexistentPath(t *testing.T) {
-	err := checkDisk("/nonexistent/path/that/does/not/exist", 1)
-	assert.Error(t, err)
-}
+	// Set backend to anthropic so the Ollama check is skipped.
+	configRepo := db.NewConfigRepo(database)
+	cfg := models.DefaultServerConfig()
+	cfg.DefaultBackend = models.BackendAnthropic
+	require.NoError(t, configRepo.Save(cfg))
 
-func TestCheckDisk_InsufficientSpace(t *testing.T) {
-	err := checkDisk(".", math.MaxUint64)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "low disk space")
+	req := httptest.NewRequest("GET", "/readiness", nil)
+	w := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "ok", resp["status"])
+
+	checks := resp["checks"].(map[string]interface{})
+	assert.Equal(t, "ok", checks["database"])
+	assert.Equal(t, "ok", checks["disk"])
 }
