@@ -156,7 +156,10 @@ func (c *Cleaner) purgeExpiredJobs(ctx context.Context) {
 			return
 		}
 
-		// Defensive: clean up workspace if still present
+		// Defensive: clean up workspace if still present.
+		// Git safety checks (uncommitted/unpushed) are intentionally skipped here.
+		// These are expired records past retention — any workspace remnants are stale
+		// and safe to remove unconditionally.
 		wsPath := c.repoMgr.WorkspacePath(job.ID)
 		if _, err := os.Stat(wsPath); err == nil {
 			if rmErr := c.repoMgr.Cleanup(job.ID); rmErr != nil {

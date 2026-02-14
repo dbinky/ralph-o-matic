@@ -109,14 +109,13 @@ func TestBroadcaster_Unsubscribe(t *testing.T) {
 	id, ch := b.Subscribe("global")
 
 	b.Unsubscribe("global", id)
-	b.Publish("global", []byte("{}"))
 
-	select {
-	case <-ch:
-		t.Fatal("should not receive after unsubscribe")
-	case <-time.After(50 * time.Millisecond):
-		// Expected
-	}
+	// Channel should be closed after unsubscribe
+	_, open := <-ch
+	assert.False(t, open, "channel should be closed after unsubscribe")
+
+	// Publish after unsubscribe should not panic
+	b.Publish("global", []byte("{}"))
 }
 
 func TestBroadcaster_UnsubscribeTwice(t *testing.T) {

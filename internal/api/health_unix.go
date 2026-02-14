@@ -8,6 +8,9 @@ import (
 )
 
 // checkDisk verifies that the filesystem at path has at least minBytes free.
+// NOTE: The caller passes "." (CWD), which may be a different mount than the
+// DB path or workspace directory. On split-mount deployments, this check may
+// not reflect the free space available to those volumes.
 func checkDisk(path string, minBytes uint64) error {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(path, &stat); err != nil {

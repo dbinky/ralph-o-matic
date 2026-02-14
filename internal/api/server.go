@@ -76,7 +76,10 @@ func (s *Server) setupRoutes() {
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware)
 
-	// Health check — always accessible, no auth required
+	// Health and readiness — always accessible, no auth required.
+	// /readiness is intentionally unauthenticated so load balancers and
+	// monitoring probes can reach it without credentials. Bind to localhost
+	// or restrict via reverse proxy to prevent information leakage.
 	r.Get("/health", s.handleHealth)
 	r.Get("/readiness", s.handleReadiness)
 
@@ -178,36 +181,15 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 func (s *Server) handleSSEGlobal(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	// Subscribe before flushing headers so the client is registered
-	// by the time the caller receives the response.
-	clientID, ch := s.broadcaster.Subscribe("global")
-	defer s.broadcaster.Unsubscribe("global", clientID)
-
-	// Flush headers to unblock the HTTP client.
-	flusher.Flush()
-
-	for {
-		select {
-		case msg := <-ch:
-			fmt.Fprintf(w, "data: %s\n\n", msg)
-			flusher.Flush()
-		case <-r.Context().Done():
-			return
-		}
-	}
+	s.serveSSE(w, r, "global")
 }
 
 func (s *Server) handleSSEJob(w http.ResponseWriter, r *http.Request) {
+	if s.broadcaster == nil {
+		writeError(w, http.StatusServiceUnavailable, "SSE not configured")
+		return
+	}
+
 	// Check job access before subscribing
 	jobIDStr := chi.URLParam(r, "jobID")
 	jobID, err := strconv.ParseInt(jobIDStr, 10, 64)
@@ -220,6 +202,17 @@ func (s *Server) handleSSEJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.serveSSE(w, r, "job:"+jobIDStr)
+}
+
+// serveSSE subscribes to a broadcaster topic and streams events to the client
+// until the request context is cancelled.
+func (s *Server) serveSSE(w http.ResponseWriter, r *http.Request, topic string) {
+	if s.broadcaster == nil {
+		writeError(w, http.StatusServiceUnavailable, "SSE not configured")
+		return
+	}
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -232,7 +225,6 @@ func (s *Server) handleSSEJob(w http.ResponseWriter, r *http.Request) {
 
 	// Subscribe before flushing headers so the client is registered
 	// by the time the caller receives the response.
-	topic := "job:" + jobIDStr
 	clientID, ch := s.broadcaster.Subscribe(topic)
 	defer s.broadcaster.Unsubscribe(topic, clientID)
 

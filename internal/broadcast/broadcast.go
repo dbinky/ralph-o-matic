@@ -46,7 +46,10 @@ func (b *Broadcaster) Unsubscribe(topic string, clientID uint64) {
 		return
 	}
 
-	delete(clients, clientID)
+	if ch, exists := clients[clientID]; exists {
+		close(ch)
+		delete(clients, clientID)
+	}
 	if len(clients) == 0 {
 		delete(b.subscribers, topic)
 	}

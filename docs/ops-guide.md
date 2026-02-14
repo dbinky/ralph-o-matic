@@ -190,6 +190,8 @@ ralph-o-matic uses Server-Sent Events (SSE) for live dashboard updates. Your rev
 
 If the dashboard shows stale data or doesn't update, check proxy buffering settings first.
 
+**Rate limiting:** The SSE endpoints (`/api/events`, `/api/jobs/{id}/events`) have no built-in subscriber cap. In production, use your reverse proxy to limit concurrent SSE connections per client IP to prevent resource exhaustion.
+
 ### Enabling Secure Cookies
 
 When serving over HTTPS, set `RALPH_SECURE=true` so session cookies include the `Secure` flag:
@@ -275,7 +277,10 @@ check messages describe the failure:
 {"status":"unhealthy","checks":{"database":"ok","disk":"ok","ollama":"failed to connect to Ollama at http://localhost:11434: ..."}}
 ```
 
-Both endpoints are always accessible (no auth required).
+Both endpoints are always accessible (no auth required). The `/readiness` endpoint
+reports component status which may reveal infrastructure details (e.g., Ollama host,
+disk space). In production, bind to localhost (`RALPH_ADDR=127.0.0.1:9090`) or
+restrict access via reverse proxy rules to prevent information leakage.
 
 **Kubernetes / systemd probe guidance:**
 

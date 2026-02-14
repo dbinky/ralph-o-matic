@@ -44,9 +44,12 @@ func (r *LogRepo) Append(jobID int64, iteration int, message string) error {
 	}
 
 	if r.broadcaster != nil {
-		msgJSON, _ := json.Marshal(message)
-		payload := fmt.Sprintf(`{"type":"log","iteration":%d,"message":%s}`, iteration, msgJSON)
-		r.broadcaster.Publish(fmt.Sprintf("job:%d", jobID), []byte(payload))
+		payload, _ := json.Marshal(map[string]interface{}{
+			"type":      "log",
+			"iteration": iteration,
+			"message":   message,
+		})
+		r.broadcaster.Publish(fmt.Sprintf("job:%d", jobID), payload)
 	}
 
 	return nil
@@ -90,6 +93,9 @@ func (r *LogRepo) queryLogs(query string, args ...interface{}) ([]*JobLog, error
 			return nil, fmt.Errorf("failed to scan log: %w", err)
 		}
 		logs = append(logs, log)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate logs: %w", err)
 	}
 
 	return logs, nil
