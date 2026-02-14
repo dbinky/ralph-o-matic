@@ -16,7 +16,11 @@ func checkDisk(path string, minBytes uint64) error {
 	if err := syscall.Statfs(path, &stat); err != nil {
 		return fmt.Errorf("stat %s: %w", path, err)
 	}
-	free := stat.Bavail * uint64(stat.Bsize)
+	var bsize uint64
+	if stat.Bsize > 0 {
+		bsize = uint64(stat.Bsize)
+	}
+	free := stat.Bavail * bsize
 	if free < minBytes {
 		return fmt.Errorf("low disk space: %d MB free, need %d MB", free/(1024*1024), minBytes/(1024*1024))
 	}
