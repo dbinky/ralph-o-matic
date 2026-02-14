@@ -102,11 +102,18 @@ type IndexData struct {
 func (d *Dashboard) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	jobRepo := db.NewJobRepo(d.db)
 
-	running, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusRunning}})
-	paused, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusPaused}})
-	queued, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusQueued}})
+	// Filter by owner for non-admin users
+	var ownerID string
+	if user := auth.UserFromContext(r.Context()); user != nil && !user.IsAdmin() {
+		ownerID = user.ID
+	}
+
+	running, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusRunning}, OwnerID: ownerID})
+	paused, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusPaused}, OwnerID: ownerID})
+	queued, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusQueued}, OwnerID: ownerID})
 	completed, _, _ := jobRepo.List(db.ListOptions{
 		Statuses: []models.JobStatus{models.StatusCompleted, models.StatusFailed},
+		OwnerID:  ownerID,
 		Limit:    10,
 	})
 
@@ -138,6 +145,11 @@ func (d *Dashboard) HandleJob(w http.ResponseWriter, r *http.Request, jobID int6
 		return
 	}
 
+	if !auth.CanAccessJob(r, job.OwnerID) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	logRepo := db.NewLogRepo(d.db)
 	logs, _ := logRepo.GetForJob(jobID)
 
@@ -166,6 +178,12 @@ type ConfigData struct {
 
 // HandleConfig renders the config page
 func (d *Dashboard) HandleConfig(w http.ResponseWriter, r *http.Request) {
+	// Config is admin-only when auth is enabled
+	if user := auth.UserFromContext(r.Context()); user != nil && !user.IsAdmin() {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	configRepo := db.NewConfigRepo(d.db)
 	cfg, err := configRepo.Get()
 	if err != nil {
@@ -183,7 +201,6 @@ func (d *Dashboard) HandleConfig(w http.ResponseWriter, r *http.Request) {
 		{"small_model.device", cfg.SmallModel.Device},
 		{"small_model.memory_gb", fmt.Sprintf("%.0f", cfg.SmallModel.MemoryGB)},
 		{"default_max_iterations", fmt.Sprintf("%d", cfg.DefaultMaxIterations)},
-		{"concurrent_jobs", fmt.Sprintf("%d", cfg.ConcurrentJobs)},
 		{"workspace_dir", cfg.WorkspaceDir},
 		{"job_retention_days", fmt.Sprintf("%d", cfg.JobRetentionDays)},
 	}

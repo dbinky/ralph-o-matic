@@ -315,20 +315,8 @@ func (s *Server) authorizedJob(w http.ResponseWriter, r *http.Request, jobID int
 }
 
 // canAccessJob checks whether the request's user is allowed to access the given job.
-// Returns true when: auth is disabled (no user in context), user is admin,
-// job has no owner (pre-auth job), or user owns the job.
 func canAccessJob(r *http.Request, job *models.Job) bool {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		return true // auth mode none
-	}
-	if user.IsAdmin() {
-		return true
-	}
-	if job.OwnerID == "" {
-		return true // pre-auth job
-	}
-	return job.OwnerID == user.ID
+	return auth.CanAccessJob(r, job.OwnerID)
 }
 
 // envVarDenylist contains environment variable names and prefixes that should

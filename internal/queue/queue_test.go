@@ -2,7 +2,9 @@ package queue
 
 import (
 	"testing"
+	"time"
 
+	"github.com/ryan/ralph-o-matic/internal/broadcast"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -260,4 +262,137 @@ func TestQueue_GetPaused(t *testing.T) {
 
 	paused := q.GetPaused()
 	assert.Len(t, paused, 1)
+}
+
+func TestQueue_Enqueue_PublishesBroadcast(t *testing.T) {
+	q, _ := newTestQueue(t)
+	b := broadcast.New()
+	q.SetBroadcaster(b)
+
+	_, ch := b.Subscribe("global")
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, q.Enqueue(job))
+
+	select {
+	case msg := <-ch:
+		assert.Equal(t, []byte("{}"), msg)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for broadcast")
+	}
+}
+
+func TestQueue_Dequeue_PublishesBroadcast(t *testing.T) {
+	q, _ := newTestQueue(t)
+	b := broadcast.New()
+	q.SetBroadcaster(b)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, q.Enqueue(job))
+
+	_, ch := b.Subscribe("global")
+	_, err := q.Dequeue()
+	require.NoError(t, err)
+
+	select {
+	case msg := <-ch:
+		assert.Equal(t, []byte("{}"), msg)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for broadcast")
+	}
+}
+
+func TestQueue_StateChanges_PublishBroadcast(t *testing.T) {
+	tests := []struct {
+		name   string
+		action func(q *Queue, job *models.Job) error
+		setup  func(q *Queue, job *models.Job)
+	}{
+		{
+			name:   "Pause",
+			setup:  func(q *Queue, job *models.Job) { dequeued, _ := q.Dequeue(); *job = *dequeued },
+			action: func(q *Queue, job *models.Job) error { return q.Pause(job) },
+		},
+		{
+			name: "Resume",
+			setup: func(q *Queue, job *models.Job) {
+				dequeued, _ := q.Dequeue()
+				q.Pause(dequeued)
+				*job = *dequeued
+			},
+			action: func(q *Queue, job *models.Job) error { return q.Resume(job) },
+		},
+		{
+			name:   "Complete",
+			setup:  func(q *Queue, job *models.Job) { dequeued, _ := q.Dequeue(); *job = *dequeued },
+			action: func(q *Queue, job *models.Job) error { return q.Complete(job) },
+		},
+		{
+			name:   "Fail",
+			setup:  func(q *Queue, job *models.Job) { dequeued, _ := q.Dequeue(); *job = *dequeued },
+			action: func(q *Queue, job *models.Job) error { return q.Fail(job, "error") },
+		},
+		{
+			name:   "Cancel",
+			action: func(q *Queue, job *models.Job) error { return q.Cancel(job) },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, _ := newTestQueue(t)
+			b := broadcast.New()
+			q.SetBroadcaster(b)
+
+			job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+			require.NoError(t, q.Enqueue(job))
+
+			if tt.setup != nil {
+				tt.setup(q, job)
+			}
+
+			_, ch := b.Subscribe("global")
+			require.NoError(t, tt.action(q, job))
+
+			select {
+			case msg := <-ch:
+				assert.Equal(t, []byte("{}"), msg)
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for broadcast")
+			}
+		})
+	}
+}
+
+func TestQueue_Reorder_PublishesBroadcast(t *testing.T) {
+	q, _ := newTestQueue(t)
+	b := broadcast.New()
+	q.SetBroadcaster(b)
+
+	job1 := models.NewJob("git@github.com:user/repo.git", "main", "test1", 10)
+	job2 := models.NewJob("git@github.com:user/repo.git", "main", "test2", 10)
+	require.NoError(t, q.Enqueue(job1))
+	require.NoError(t, q.Enqueue(job2))
+
+	_, ch := b.Subscribe("global")
+	require.NoError(t, q.Reorder([]int64{job2.ID, job1.ID}))
+
+	select {
+	case msg := <-ch:
+		assert.Equal(t, []byte("{}"), msg)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for broadcast")
+	}
+}
+
+func TestQueue_NilBroadcaster(t *testing.T) {
+	q, _ := newTestQueue(t)
+	// No broadcaster set — should work without panic
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, q.Enqueue(job))
+
+	dequeued, err := q.Dequeue()
+	require.NoError(t, err)
+	require.NoError(t, q.Complete(dequeued))
 }

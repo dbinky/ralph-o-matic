@@ -348,7 +348,7 @@ func serverConfigCmd() *cobra.Command {
 				fmt.Printf("large_model: %s (device: %s, %.1fGB)\n", serverCfg.LargeModel.Name, serverCfg.LargeModel.Device, serverCfg.LargeModel.MemoryGB)
 				fmt.Printf("small_model: %s (device: %s, %.1fGB)\n", serverCfg.SmallModel.Name, serverCfg.SmallModel.Device, serverCfg.SmallModel.MemoryGB)
 				fmt.Printf("default_max_iterations: %d\n", serverCfg.DefaultMaxIterations)
-				fmt.Printf("concurrent_jobs: %d\n", serverCfg.ConcurrentJobs)
+
 				return nil
 			}
 

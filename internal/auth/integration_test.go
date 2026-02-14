@@ -27,14 +27,14 @@ import (
 
 // testEnv holds all infrastructure needed for integration tests.
 type testEnv struct {
-	rsaKey       *rsa.PrivateKey
-	oidcServer   *httptest.Server
-	provider     *auth.EntraProvider
-	sessions     *auth.SessionStore
-	database     *db.DB
-	queue        *queue.Queue
-	apiServer    *httptest.Server
-	clientID     string
+	rsaKey     *rsa.PrivateKey
+	oidcServer *httptest.Server
+	provider   *auth.EntraProvider
+	sessions   *auth.SessionStore
+	database   *db.DB
+	queue      *queue.Queue
+	apiServer  *httptest.Server
+	clientID   string
 }
 
 // newTestEnv creates a fully wired test environment with auth enabled.
@@ -132,10 +132,10 @@ func newMockOIDCServer(t *testing.T, key *rsa.PrivateKey) *httptest.Server {
 		issuer := fmt.Sprintf("%s://%s", scheme, r.Host)
 
 		doc := map[string]interface{}{
-			"issuer":                 issuer,
-			"authorization_endpoint": issuer + "/authorize",
-			"token_endpoint":         issuer + "/token",
-			"jwks_uri":               issuer + "/jwks",
+			"issuer":                                issuer,
+			"authorization_endpoint":                issuer + "/authorize",
+			"token_endpoint":                        issuer + "/token",
+			"jwks_uri":                              issuer + "/jwks",
 			"id_token_signing_alg_values_supported": []string{"RS256"},
 		}
 		w.Header().Set("Content-Type", "application/json")

@@ -1,8 +1,12 @@
 package db
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
+	"time"
 
+	"github.com/ryan/ralph-o-matic/internal/broadcast"
 	"github.com/ryan/ralph-o-matic/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -111,4 +115,72 @@ func TestLogRepo_GetLatest(t *testing.T) {
 	logs, err := logRepo.GetLatest(job.ID, 5)
 	require.NoError(t, err)
 	assert.Len(t, logs, 5)
+}
+
+func TestLogRepo_Append_PublishesBroadcast(t *testing.T) {
+	db := newTestDB(t)
+	jobRepo := NewJobRepo(db)
+	b := broadcast.New()
+	logRepo := NewLogRepo(db)
+	logRepo.SetBroadcaster(b)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, jobRepo.Create(job))
+
+	_, ch := b.Subscribe(fmt.Sprintf("job:%d", job.ID))
+
+	err := logRepo.Append(job.ID, 1, "Starting iteration 1")
+	require.NoError(t, err)
+
+	select {
+	case msg := <-ch:
+		var payload map[string]interface{}
+		require.NoError(t, json.Unmarshal(msg, &payload))
+		assert.Equal(t, "log", payload["type"])
+		assert.Equal(t, float64(1), payload["iteration"])
+		assert.Equal(t, "Starting iteration 1", payload["message"])
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for broadcast")
+	}
+}
+
+func TestLogRepo_Append_SpecialCharacters(t *testing.T) {
+	db := newTestDB(t)
+	jobRepo := NewJobRepo(db)
+	b := broadcast.New()
+	logRepo := NewLogRepo(db)
+	logRepo.SetBroadcaster(b)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, jobRepo.Create(job))
+
+	_, ch := b.Subscribe(fmt.Sprintf("job:%d", job.ID))
+
+	// Message with quotes, newlines, and unicode
+	msg := "error: \"file not found\"\nnext line\ttab \u2603"
+	err := logRepo.Append(job.ID, 2, msg)
+	require.NoError(t, err)
+
+	select {
+	case raw := <-ch:
+		var payload map[string]interface{}
+		require.NoError(t, json.Unmarshal(raw, &payload), "payload must be valid JSON: %s", string(raw))
+		assert.Equal(t, msg, payload["message"])
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for broadcast")
+	}
+}
+
+func TestLogRepo_Append_NilBroadcaster(t *testing.T) {
+	db := newTestDB(t)
+	jobRepo := NewJobRepo(db)
+	logRepo := NewLogRepo(db)
+	// No broadcaster set
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, jobRepo.Create(job))
+
+	// Should work without panic
+	err := logRepo.Append(job.ID, 1, "Hello")
+	require.NoError(t, err)
 }

@@ -217,4 +217,3 @@ func schemeHost(r *http.Request, secure bool) string {
 	}
 	return scheme + r.Host
 }
-

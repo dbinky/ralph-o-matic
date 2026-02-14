@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/models"
 )
@@ -376,4 +377,80 @@ func (r *JobRepo) CountByStatus() (map[models.JobStatus]int, error) {
 	}
 
 	return counts, nil
+}
+
+// ListTerminal returns all jobs in terminal states (completed, failed, cancelled)
+func (r *JobRepo) ListTerminal() ([]*models.Job, error) {
+	rows, err := r.db.conn.Query(`
+		SELECT id FROM jobs
+		WHERE status IN (?, ?, ?)
+		ORDER BY id
+	`, models.StatusCompleted, models.StatusFailed, models.StatusCancelled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list terminal jobs: %w", err)
+	}
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("failed to scan job id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate terminal jobs: %w", err)
+	}
+
+	var jobs []*models.Job
+	for _, id := range ids {
+		job, err := r.Get(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get job %d: %w", id, err)
+		}
+		jobs = append(jobs, job)
+	}
+
+	return jobs, nil
+}
+
+// ListExpired returns jobs in terminal states with completed_at (or created_at
+// as fallback) strictly before the cutoff time.
+func (r *JobRepo) ListExpired(cutoff time.Time) ([]*models.Job, error) {
+	rows, err := r.db.conn.Query(`
+		SELECT id FROM jobs
+		WHERE status IN (?, ?, ?)
+		AND COALESCE(completed_at, created_at) < ?
+		ORDER BY id
+	`, models.StatusCompleted, models.StatusFailed, models.StatusCancelled, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list expired jobs: %w", err)
+	}
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("failed to scan job id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate expired jobs: %w", err)
+	}
+
+	var jobs []*models.Job
+	for _, id := range ids {
+		job, err := r.Get(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get job %d: %w", id, err)
+		}
+		jobs = append(jobs, job)
+	}
+
+	return jobs, nil
 }

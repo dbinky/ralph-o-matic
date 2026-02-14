@@ -11,7 +11,7 @@ import (
 // tokenClaims represents the JWT claims extracted from an EntraID token.
 type tokenClaims struct {
 	OID               string   `json:"oid"`
-	PreferredUsername  string   `json:"preferred_username"`
+	PreferredUsername string   `json:"preferred_username"`
 	Name              string   `json:"name"`
 	Roles             []string `json:"roles"`
 }

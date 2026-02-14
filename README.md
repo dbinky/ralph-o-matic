@@ -141,7 +141,7 @@ Key settings:
 | `large_model.device` | `cpu` | Where to run it (`cpu`, `gpu`, `auto`) |
 | `small_model.name` | `qwen3:8b` | Fast model for simple tasks |
 | `small_model.device` | `gpu` | Where to run it |
-| `concurrent_jobs` | `1` | Parallel job limit |
+
 | `default_max_iterations` | `50` | Default iteration cap |
 | `job_retention_days` | `30` | Days to keep completed jobs |
 | `notify.smtp.host` | | SMTP server hostname |
@@ -219,6 +219,10 @@ The server exposes a REST API at `http://<host>:9090/api/`:
 | `PATCH` | `/api/config` | Update server config (partial) |
 | `POST` | `/api/config/test-notify` | Send test notification (admin only) |
 | `GET` | `/health` | Health check |
+
+## Deploying for a Team
+
+See the [Operations & Deployment Guide](docs/ops-guide.md) for reverse proxy setup, TLS termination, backup, monitoring, and production hardening.
 
 ## Development
 
