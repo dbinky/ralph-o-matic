@@ -30,15 +30,18 @@ func submitCmd() *cobra.Command {
 			}
 
 			// Resolve prompt: --open-ended overrides everything, else --prompt, else RALPH.md
+			promptSource := "flag"
 			if openEnded {
 				safeBranch := strings.ReplaceAll(branch, "/", "-")
 				progressPath := fmt.Sprintf("docs/plans/%s-ralph-status.md", safeBranch)
 				prompt = openEndedPrompt(progressPath)
+				promptSource = "open-ended"
 			} else if prompt == "" {
 				prompt, err = readPromptFile(workingDir)
 				if err != nil {
 					return fmt.Errorf("no prompt provided and RALPH.md not found")
 				}
+				promptSource = "RALPH.md"
 			}
 
 			if priority == "" {
@@ -62,17 +65,19 @@ func submitCmd() *cobra.Command {
 			}
 
 			fmt.Println("Submitting job...")
-			fmt.Printf("  Repository:    %s\n", repoURL)
-			fmt.Printf("  Branch:        %s\n", branch)
+			fmt.Printf("  Repository:     %s\n", repoURL)
+			fmt.Printf("  Branch:         %s\n", branch)
+			promptDesc := fmt.Sprintf("%s (%d chars)", promptSource, len(prompt))
+			fmt.Printf("  Prompt:         %s\n", promptDesc)
 			fmt.Printf("  Max iterations: %d\n", maxIterations)
-			fmt.Printf("  Priority:      %s\n", priority)
+			fmt.Printf("  Priority:       %s\n", priority)
 
 			job, err := client.CreateJob(req)
 			if err != nil {
 				return err
 			}
 
-			fmt.Printf("\nJob #%d queued (position: %d)\n", job.ID, job.Position)
+			fmt.Printf("\n✓ Job #%d queued (position: %d)\n", job.ID, job.Position)
 			fmt.Printf("\nDashboard: %s/jobs/%d\n", cfg.Server, job.ID)
 			return nil
 		},
@@ -257,6 +262,54 @@ func resumeCmd() *cobra.Command {
 	}
 }
 
+func updateCmd() *cobra.Command {
+	var priority string
+	var maxIterations int
+
+	cmd := &cobra.Command{
+		Use:   "update <job-id>",
+		Short: "Update properties of a queued or running job",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid job ID")
+			}
+
+			updates := make(map[string]interface{})
+
+			if cmd.Flags().Changed("priority") {
+				updates["priority"] = priority
+			}
+			if cmd.Flags().Changed("max-iterations") {
+				updates["max_iterations"] = maxIterations
+			}
+
+			if len(updates) == 0 {
+				return fmt.Errorf("no updates specified; use --priority or --max-iterations")
+			}
+
+			job, err := client.UpdateJob(id, updates)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("Job #%d updated\n", job.ID)
+			if cmd.Flags().Changed("priority") {
+				fmt.Printf("  Priority:       %s\n", prioritySymbol(job.Priority))
+			}
+			if cmd.Flags().Changed("max-iterations") {
+				fmt.Printf("  Max iterations: %d\n", job.MaxIterations)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&priority, "priority", "", "Priority: high, normal, low")
+	cmd.Flags().IntVar(&maxIterations, "max-iterations", 0, "Max iterations")
+	return cmd
+}
+
 func moveCmd() *cobra.Command {
 	var position int
 	var after int64
@@ -336,26 +389,33 @@ func configCmd() *cobra.Command {
 				return nil
 			}
 
-			if len(args) >= 3 && args[0] == "set" {
-				key := args[1]
-				value := args[2]
-
-				switch key {
-				case "server":
-					cfg.Server = value
-				case "default_priority":
-					cfg.DefaultPriority = value
-				case "default_max_iterations":
-					v, _ := strconv.Atoi(value)
-					cfg.DefaultMaxIterations = v
-				default:
-					return fmt.Errorf("unknown config key: %s", key)
-				}
-
-				return cli.SaveConfig(cli.ConfigPath(), cfg)
+			if args[0] != "set" {
+				return fmt.Errorf("unknown subcommand %q\n\nUsage:\n  ralph-o-matic config              Show current configuration\n  ralph-o-matic config set <key> <value>  Set a configuration value\n\nKeys: server, default_priority, default_max_iterations", args[0])
 			}
 
-			return nil
+			if len(args) < 3 {
+				return fmt.Errorf("missing arguments: expected 'config set <key> <value>'\n\nKeys: server, default_priority, default_max_iterations")
+			}
+
+			key := args[1]
+			value := args[2]
+
+			switch key {
+			case "server":
+				cfg.Server = value
+			case "default_priority":
+				cfg.DefaultPriority = value
+			case "default_max_iterations":
+				v, err := strconv.Atoi(value)
+				if err != nil {
+					return fmt.Errorf("invalid value for default_max_iterations: %q (must be an integer)", value)
+				}
+				cfg.DefaultMaxIterations = v
+			default:
+				return fmt.Errorf("unknown config key: %s\n\nKeys: server, default_priority, default_max_iterations", key)
+			}
+
+			return cli.SaveConfig(cli.ConfigPath(), cfg)
 		},
 	}
 	return cmd
@@ -400,33 +460,74 @@ func serverConfigCmd() *cobra.Command {
 					return err
 				}
 
-				fmt.Printf("ollama_host: %s (remote: %v)\n", serverCfg.Ollama.Host, serverCfg.Ollama.IsRemote)
-				fmt.Printf("large_model: %s (device: %s, %.1fGB)\n", serverCfg.LargeModel.Name, serverCfg.LargeModel.Device, serverCfg.LargeModel.MemoryGB)
-				fmt.Printf("small_model: %s (device: %s, %.1fGB)\n", serverCfg.SmallModel.Name, serverCfg.SmallModel.Device, serverCfg.SmallModel.MemoryGB)
+				fmt.Printf("default_backend: %s\n", serverCfg.DefaultBackend)
+				fmt.Println()
+				fmt.Println("# Ollama")
+				fmt.Printf("ollama.host: %s\n", serverCfg.Ollama.Host)
+				fmt.Printf("ollama.is_remote: %v\n", serverCfg.Ollama.IsRemote)
+				fmt.Printf("large_model.name: %s\n", serverCfg.LargeModel.Name)
+				fmt.Printf("large_model.device: %s\n", serverCfg.LargeModel.Device)
+				fmt.Printf("large_model.memory_gb: %.1f\n", serverCfg.LargeModel.MemoryGB)
+				fmt.Printf("small_model.name: %s\n", serverCfg.SmallModel.Name)
+				fmt.Printf("small_model.device: %s\n", serverCfg.SmallModel.Device)
+				fmt.Printf("small_model.memory_gb: %.1f\n", serverCfg.SmallModel.MemoryGB)
+				fmt.Println()
+				fmt.Println("# Anthropic")
+				fmt.Printf("anthropic.large_model: %s\n", serverCfg.Anthropic.LargeModel)
+				fmt.Printf("anthropic.small_model: %s\n", serverCfg.Anthropic.SmallModel)
+				fmt.Printf("anthropic.api_key_set: %v\n", serverCfg.Anthropic.APIKeySet)
+				fmt.Println()
+				fmt.Println("# Execution")
 				fmt.Printf("default_max_iterations: %d\n", serverCfg.DefaultMaxIterations)
+				fmt.Printf("max_claude_retries: %d\n", serverCfg.MaxClaudeRetries)
+				fmt.Printf("max_git_retries: %d\n", serverCfg.MaxGitRetries)
+				fmt.Printf("git_retry_backoff_ms: %d\n", serverCfg.GitRetryBackoffMs)
+				fmt.Println()
+				fmt.Println("# Storage")
+				if serverCfg.WorkspaceDir != "" {
+					fmt.Printf("workspace_dir: %s\n", serverCfg.WorkspaceDir)
+				} else {
+					fmt.Printf("workspace_dir: (default)\n")
+				}
+				fmt.Printf("job_retention_days: %d\n", serverCfg.JobRetentionDays)
+				fmt.Println()
+				fmt.Println("# Notifications")
+				fmt.Printf("notify.smtp.enabled: %v\n", serverCfg.Notify.SMTP.Enabled)
+				if serverCfg.Notify.SMTP.Enabled {
+					fmt.Printf("notify.smtp.host: %s\n", serverCfg.Notify.SMTP.Host)
+					fmt.Printf("notify.smtp.port: %d\n", serverCfg.Notify.SMTP.Port)
+					fmt.Printf("notify.smtp.from: %s\n", serverCfg.Notify.SMTP.From)
+				}
+				fmt.Printf("notify.teams.enabled: %v\n", serverCfg.Notify.Teams.Enabled)
 
 				return nil
 			}
 
-			if len(args) >= 3 && args[0] == "set" {
-				// Parse value to appropriate JSON type (int, float, bool, or string)
-				var value interface{} = args[2]
-				if v, err := strconv.Atoi(args[2]); err == nil {
-					value = v
-				} else if v, err := strconv.ParseFloat(args[2], 64); err == nil {
-					value = v
-				} else if v, err := strconv.ParseBool(args[2]); err == nil {
-					value = v
-				}
-
-				updates := map[string]interface{}{
-					args[1]: value,
-				}
-
-				_, err := client.UpdateConfig(updates)
-				return err
+			if args[0] != "set" {
+				return fmt.Errorf("unknown subcommand %q\n\nUsage:\n  ralph-o-matic server-config                    Show server configuration\n  ralph-o-matic server-config set <key> <value>   Set a server configuration value\n\nUse dotted keys for nested values, e.g.: large_model.name, notify.smtp.host", args[0])
 			}
 
+			if len(args) < 3 {
+				return fmt.Errorf("missing arguments: expected 'server-config set <key> <value>'\n\nUse dotted keys for nested values, e.g.: large_model.name, notify.smtp.host")
+			}
+
+			// Parse value to appropriate JSON type (int, float, bool, or string)
+			var value interface{} = args[2]
+			if v, err := strconv.Atoi(args[2]); err == nil {
+				value = v
+			} else if v, err := strconv.ParseFloat(args[2], 64); err == nil {
+				value = v
+			} else if v, err := strconv.ParseBool(args[2]); err == nil {
+				value = v
+			}
+
+			updates := buildNestedMap(args[1], value)
+
+			_, err := client.UpdateConfig(updates)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Set %s = %v\n", args[1], args[2])
 			return nil
 		},
 	}
@@ -434,6 +535,23 @@ func serverConfigCmd() *cobra.Command {
 }
 
 // Helper functions
+
+// buildNestedMap converts a dotted key like "large_model.name" and a value
+// into a nested map: {"large_model": {"name": value}}.
+// Keys without dots produce a flat single-key map.
+func buildNestedMap(dottedKey string, value interface{}) map[string]interface{} {
+	parts := strings.Split(dottedKey, ".")
+	if len(parts) == 1 {
+		return map[string]interface{}{dottedKey: value}
+	}
+
+	// Build inside-out: start with the leaf value and wrap in parent maps
+	result := map[string]interface{}{parts[len(parts)-1]: value}
+	for i := len(parts) - 2; i >= 0; i-- {
+		result = map[string]interface{}{parts[i]: result}
+	}
+	return result
+}
 
 func getGitInfo() (string, string, error) {
 	repoURL, err := execGit("remote", "get-url", "origin")
@@ -475,39 +593,48 @@ func readPromptFile(workingDir string) (string, error) {
 
 func printQueueOverview(jobs []*models.Job) {
 	fmt.Println("Ralph-o-matic Queue")
-	fmt.Println(strings.Repeat("=", 40))
+	fmt.Println("═══════════════════")
 
 	// Group by status
 	var running, paused, queued []*models.Job
 	for _, j := range jobs {
 		switch j.Status {
-		case "running":
+		case models.StatusRunning:
 			running = append(running, j)
-		case "paused":
+		case models.StatusPaused:
 			paused = append(paused, j)
-		case "queued":
+		case models.StatusQueued:
 			queued = append(queued, j)
 		}
 	}
 
 	if len(running) > 0 {
-		fmt.Println("\nRUNNING")
+		fmt.Println("\n▶ RUNNING")
 		for _, j := range running {
-			fmt.Printf("  #%d %s    iter %d/%d\n", j.ID, j.Branch, j.Iteration, j.MaxIterations)
+			pct := int(j.Progress() * 100)
+			bar := progressBar(j.Progress(), 10)
+			elapsed := formatDuration(j.Duration())
+			fmt.Printf("  #%-4d %-30s iter %d/%d    %s %d%%    %s\n",
+				j.ID, j.Branch, j.Iteration, j.MaxIterations, bar, pct, elapsed)
 		}
 	}
 
 	if len(paused) > 0 {
-		fmt.Println("\nPAUSED")
+		fmt.Println("\n⏸ PAUSED")
 		for _, j := range paused {
-			fmt.Printf("  #%d %s    iter %d/%d\n", j.ID, j.Branch, j.Iteration, j.MaxIterations)
+			pausedAgo := ""
+			if j.PausedAt != nil {
+				pausedAgo = fmt.Sprintf("paused %s ago", formatDuration(time.Since(*j.PausedAt)))
+			}
+			fmt.Printf("  #%-4d %-30s iter %d/%d                      %s\n",
+				j.ID, j.Branch, j.Iteration, j.MaxIterations, pausedAgo)
 		}
 	}
 
 	if len(queued) > 0 {
-		fmt.Printf("\nQUEUED (%d)\n", len(queued))
+		fmt.Printf("\n⏳ QUEUED (%d)\n", len(queued))
 		for _, j := range queued {
-			fmt.Printf("  #%d %s    %s\n", j.ID, j.Branch, j.Priority)
+			fmt.Printf("  #%-4d %-30s %s\n", j.ID, j.Branch, prioritySymbol(j.Priority))
 		}
 	}
 
@@ -516,7 +643,7 @@ func printQueueOverview(jobs []*models.Job) {
 	today := time.Now().Truncate(24 * time.Hour)
 	for _, j := range jobs {
 		switch j.Status {
-		case models.StatusCompleted, models.StatusFailed:
+		case models.StatusCompleted, models.StatusFailed, models.StatusCancelled:
 			if j.CompletedAt != nil && j.CompletedAt.After(today) {
 				completedToday = append(completedToday, j)
 			}
@@ -524,20 +651,22 @@ func printQueueOverview(jobs []*models.Job) {
 	}
 
 	if len(completedToday) > 0 {
-		fmt.Println("\nCOMPLETED TODAY")
+		fmt.Println("\nTODAY")
 		for _, j := range completedToday {
-			result := "PASSED"
+			symbol := "✓"
 			if j.Status == models.StatusFailed {
-				result = "FAILED"
+				symbol = "✗"
+			} else if j.Status == models.StatusCancelled {
+				symbol = "⊘"
 			}
-			fmt.Printf("  #%d %s    %s   %d iters", j.ID, j.Branch, result, j.Iteration)
-			if j.PRURL != "" {
-				fmt.Printf("   %s", j.PRURL)
-			}
+			line := fmt.Sprintf("  %s #%-4d %-30s %d iters", symbol, j.ID, j.Branch, j.Iteration)
 			if d := j.Duration(); d > 0 {
-				fmt.Printf("   %s", formatDuration(d))
+				line += fmt.Sprintf("    %s", formatDuration(d))
 			}
-			fmt.Println()
+			if j.PRURL != "" {
+				line += fmt.Sprintf("    %s", j.PRURL)
+			}
+			fmt.Println(line)
 		}
 	}
 
@@ -557,6 +686,51 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh", h)
 	}
 	return fmt.Sprintf("%dh %dm", h, m)
+}
+
+// progressBar renders a text progress bar, e.g. "████████░░" for 80% with width 10.
+func progressBar(fraction float64, width int) string {
+	if fraction < 0 {
+		fraction = 0
+	}
+	if fraction > 1 {
+		fraction = 1
+	}
+	filled := int(fraction * float64(width))
+	empty := width - filled
+	return strings.Repeat("█", filled) + strings.Repeat("░", empty)
+}
+
+// statusSymbol returns a Unicode symbol for the job status.
+func statusSymbol(s models.JobStatus) string {
+	switch s {
+	case models.StatusRunning:
+		return "▶"
+	case models.StatusPaused:
+		return "⏸"
+	case models.StatusQueued:
+		return "⏳"
+	case models.StatusCompleted:
+		return "✓"
+	case models.StatusFailed:
+		return "✗"
+	case models.StatusCancelled:
+		return "⊘"
+	default:
+		return "?"
+	}
+}
+
+// prioritySymbol returns a symbol + label for display.
+func prioritySymbol(p models.Priority) string {
+	switch p {
+	case models.PriorityHigh:
+		return "⚡ high"
+	case models.PriorityLow:
+		return "○ low"
+	default:
+		return "• normal"
+	}
 }
 
 func isTerminal(status models.JobStatus) bool {
@@ -588,12 +762,50 @@ Do not output a <promise> tag. Continue improving until stopped.
 }
 
 func printJobDetail(job *models.Job) {
-	fmt.Printf("Job #%d\n", job.ID)
-	fmt.Printf("  Branch:     %s\n", job.Branch)
-	fmt.Printf("  Status:     %s\n", job.Status)
-	fmt.Printf("  Iteration:  %d/%d\n", job.Iteration, job.MaxIterations)
-	fmt.Printf("  Priority:   %s\n", job.Priority)
+	fmt.Printf("Job #%d  %s %s\n", job.ID, statusSymbol(job.Status), strings.ToUpper(string(job.Status)))
+	fmt.Printf("  Repository:  %s\n", job.RepoURL)
+	fmt.Printf("  Branch:      %s\n", job.Branch)
+	if job.ResultBranch != "" {
+		fmt.Printf("  Result:      %s\n", job.ResultBranch)
+	}
+	if job.WorkingDir != "" {
+		fmt.Printf("  Working dir: %s\n", job.WorkingDir)
+	}
+	fmt.Printf("  Priority:    %s\n", prioritySymbol(job.Priority))
+	if job.Backend != "" {
+		fmt.Printf("  Backend:     %s\n", job.Backend)
+	}
+	fmt.Printf("  Iteration:   %d/%d\n", job.Iteration, job.MaxIterations)
+
+	if job.Status == models.StatusRunning {
+		pct := int(job.Progress() * 100)
+		fmt.Printf("  Progress:    %s %d%%\n", progressBar(job.Progress(), 20), pct)
+	}
+
+	if d := job.Duration(); d > 0 {
+		label := "Duration:"
+		if job.Status == models.StatusRunning {
+			label = "Elapsed:"
+		}
+		fmt.Printf("  %-12s  %s\n", label, formatDuration(d))
+	}
+
+	if job.Status == models.StatusPaused && job.PausedAt != nil {
+		fmt.Printf("  Paused:      %s ago\n", formatDuration(time.Since(*job.PausedAt)))
+	}
+
+	fmt.Printf("  Created:     %s\n", job.CreatedAt.Format("2006-01-02 15:04"))
+	if job.StartedAt != nil {
+		fmt.Printf("  Started:     %s\n", job.StartedAt.Format("2006-01-02 15:04"))
+	}
+	if job.CompletedAt != nil {
+		fmt.Printf("  Completed:   %s\n", job.CompletedAt.Format("2006-01-02 15:04"))
+	}
+
 	if job.PRURL != "" {
-		fmt.Printf("  PR:         %s\n", job.PRURL)
+		fmt.Printf("  PR:          %s\n", job.PRURL)
+	}
+	if job.Error != "" {
+		fmt.Printf("  Error:       %s\n", job.Error)
 	}
 }

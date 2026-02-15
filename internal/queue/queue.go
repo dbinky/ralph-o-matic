@@ -97,9 +97,10 @@ func (q *Queue) Pause(job *models.Job) error {
 	return nil
 }
 
-// Resume resumes a paused job.
-// The explicit status check is intentional: the state machine allows
-// queued→running (used by Dequeue), but Resume must only accept paused jobs.
+// Resume re-queues a paused job so the worker picks it up naturally.
+// The job transitions paused→queued (not paused→running) because the worker
+// polls via Dequeue which only selects queued jobs. The iteration counter is
+// preserved so execution resumes where it left off.
 func (q *Queue) Resume(job *models.Job) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -108,7 +109,7 @@ func (q *Queue) Resume(job *models.Job) error {
 		return fmt.Errorf("cannot resume job: job is not paused (status: %s)", job.Status)
 	}
 
-	if err := job.TransitionTo(models.StatusRunning); err != nil {
+	if err := job.TransitionTo(models.StatusQueued); err != nil {
 		return fmt.Errorf("cannot resume job: %w", err)
 	}
 

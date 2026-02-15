@@ -722,34 +722,19 @@ default_max_iterations: 50
 EOF
         success "Client configured for $SERVER_URL"
     else
-        # Server config
-        local lan_ip
-        if [[ "$OS" == "darwin" ]]; then
-            lan_ip=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
-        else
-            lan_ip=$(hostname -I | awk '{print $1}' || echo "localhost")
-        fi
-
+        # Server/full mode: write CLI config (server reads config from database,
+        # not this file). Model config is pushed to the server API after startup
+        # via apply_model_config().
         cat > "$config_dir/config.yaml" <<EOF
-# Ralph-o-matic Server Configuration
-ollama:
-  url: $OLLAMA_URL
-  inference_mode: $INFERENCE_MODE
-large_model:
-  name: $LARGE_MODEL
-small_model:
-  name: $SMALL_MODEL
+server: http://localhost:9090
+default_priority: normal
 default_max_iterations: 50
-bind_address: $lan_ip
-port: 9090
-workspace_dir: $config_dir/workspace
-job_retention_days: 30
 EOF
 
         mkdir -p "$config_dir/workspace"
         mkdir -p "$config_dir/data"
 
-        success "Server configured on $lan_ip:9090"
+        success "Server configured (CLI pointing to localhost:9090)"
     fi
 }
 
@@ -803,6 +788,53 @@ configure_notifications() {
     fi
 }
 
+apply_model_config() {
+    info "Applying model configuration to server..."
+
+    # Wait for server to be ready (up to 15 seconds)
+    local retries=0
+    while ! curl -sf http://localhost:9090/api/config &>/dev/null; do
+        retries=$((retries + 1))
+        if [[ $retries -ge 15 ]]; then
+            warn "Server not responding — skipping model config"
+            warn "You can set model config later with: ralph-o-matic server-config set"
+            return
+        fi
+        sleep 1
+    done
+
+    # Map INFERENCE_MODE to device settings and is_remote flag
+    local is_remote=false
+    local large_device="cpu"
+    local small_device="gpu"
+
+    case "$INFERENCE_MODE" in
+        gpu_cpu_split)
+            large_device="cpu"
+            small_device="gpu"
+            ;;
+        gpu_only)
+            large_device="gpu"
+            small_device="gpu"
+            ;;
+        cpu_only)
+            large_device="cpu"
+            small_device="cpu"
+            ;;
+        remote)
+            is_remote=true
+            large_device="auto"
+            small_device="auto"
+            ;;
+    esac
+
+    curl -sf -X PATCH http://localhost:9090/api/config \
+        -H "Content-Type: application/json" \
+        -d "{\"ollama\":{\"host\":\"$OLLAMA_URL\",\"is_remote\":$is_remote},\"large_model\":{\"name\":\"$LARGE_MODEL\",\"device\":\"$large_device\"},\"small_model\":{\"name\":\"$SMALL_MODEL\",\"device\":\"$small_device\"}}" &>/dev/null
+
+    success "Model config applied (large=$LARGE_MODEL [$large_device], small=$SMALL_MODEL [$small_device])"
+}
+
 apply_notification_config() {
     # Nothing to apply if no notifications configured
     if [[ "$NOTIFY_SMTP_ENABLED" == false ]] && [[ "$NOTIFY_TEAMS_ENABLED" == false ]]; then
@@ -823,30 +855,32 @@ apply_notification_config() {
         sleep 1
     done
 
-    # Push config via CLI (fall back to curl if CLI not in PATH)
-    local set_config
-    if command -v ralph-o-matic &>/dev/null; then
-        set_config() { ralph-o-matic server-config set "$1" "$2"; }
-    else
-        set_config() {
-            curl -sf -X PATCH http://localhost:9090/api/config \
-                -H "Content-Type: application/json" \
-                -d "{\"$1\": \"$2\"}" &>/dev/null
-        }
-    fi
+    # Push config via a single PATCH request with nested JSON.
+    # The CLI now supports dotted keys, but batching into one request
+    # avoids intermediate validation failures for partial configs.
+    local patch_config
+    patch_config() {
+        curl -sf -X PATCH http://localhost:9090/api/config \
+            -H "Content-Type: application/json" \
+            -d "$1" &>/dev/null
+    }
 
     if [[ "$NOTIFY_SMTP_ENABLED" == true ]]; then
-        set_config "notify.smtp.host" "$NOTIFY_SMTP_HOST"
-        set_config "notify.smtp.port" "$NOTIFY_SMTP_PORT"
-        set_config "notify.smtp.username" "$NOTIFY_SMTP_USERNAME"
-        set_config "notify.smtp.password" "$NOTIFY_SMTP_PASSWORD"
-        set_config "notify.smtp.from" "$NOTIFY_SMTP_FROM"
-        set_config "notify.smtp.recipients" "$NOTIFY_SMTP_RECIPIENTS"
+        # Build recipients as a JSON array: ["a@b.com","c@d.com"]
+        local recipients_json="[]"
+        if [[ -n "$NOTIFY_SMTP_RECIPIENTS" ]]; then
+            recipients_json=$(printf '%s' "$NOTIFY_SMTP_RECIPIENTS" \
+                | tr ',' '\n' | sed 's/^ *//;s/ *$//' \
+                | awk 'NF{printf "%s\"%s\"", (NR>1?",":""), $0}' \
+                | sed 's/^/[/;s/$/]/')
+        fi
+
+        patch_config "{\"notify\":{\"smtp\":{\"enabled\":true,\"host\":\"$NOTIFY_SMTP_HOST\",\"port\":$NOTIFY_SMTP_PORT,\"username\":\"$NOTIFY_SMTP_USERNAME\",\"password\":\"$NOTIFY_SMTP_PASSWORD\",\"from\":\"$NOTIFY_SMTP_FROM\",\"recipients\":$recipients_json}}}"
         success "SMTP config applied"
     fi
 
     if [[ "$NOTIFY_TEAMS_ENABLED" == true ]]; then
-        set_config "notify.teams.webhook_url" "$NOTIFY_TEAMS_WEBHOOK_URL"
+        patch_config "{\"notify\":{\"teams\":{\"enabled\":true,\"webhook_url\":\"$NOTIFY_TEAMS_WEBHOOK_URL\"}}}"
         success "Teams config applied"
     fi
 }
@@ -1111,6 +1145,7 @@ main() {
     if [[ "$MODE" != "client" ]]; then
         configure_notifications
         prompt_start_server
+        apply_model_config
         apply_notification_config
         test_notifications
     fi

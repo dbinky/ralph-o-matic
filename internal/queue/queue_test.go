@@ -126,7 +126,7 @@ func TestQueue_Resume(t *testing.T) {
 	err := q.Resume(dequeued)
 	require.NoError(t, err)
 
-	assert.Equal(t, models.StatusRunning, dequeued.Status)
+	assert.Equal(t, models.StatusQueued, dequeued.Status)
 	assert.Equal(t, 5, dequeued.Iteration) // Still preserved
 }
 

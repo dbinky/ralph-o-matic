@@ -126,15 +126,72 @@ func (c *Client) ResumeJob(id int64) (*models.Job, error) {
 	return &job, nil
 }
 
+// UpdateJob updates properties of an existing job.
+func (c *Client) UpdateJob(id int64, updates map[string]interface{}) (*models.Job, error) {
+	var job models.Job
+	if err := c.patch(fmt.Sprintf("/api/jobs/%d", id), updates, &job); err != nil {
+		return nil, err
+	}
+	return &job, nil
+}
+
 // ReorderJobs reorders the queue
 func (c *Client) ReorderJobs(jobIDs []int64) error {
 	req := map[string][]int64{"job_ids": jobIDs}
 	return c.put("/api/jobs/order", req, nil)
 }
 
+// ServerConfigResponse matches the redacted JSON shape returned by GET /api/config.
+// It differs from models.ServerConfig in that sensitive fields are replaced
+// with boolean indicators (api_key_set, password_set, webhook_url_set).
+type ServerConfigResponse struct {
+	Ollama               models.OllamaConfig        `json:"ollama"`
+	LargeModel           models.ModelPlacement       `json:"large_model"`
+	SmallModel           models.ModelPlacement       `json:"small_model"`
+	DefaultMaxIterations int                         `json:"default_max_iterations"`
+	WorkspaceDir         string                      `json:"workspace_dir,omitempty"`
+	JobRetentionDays     int                         `json:"job_retention_days"`
+	DefaultBackend       models.Backend              `json:"default_backend"`
+	Anthropic            AnthropicConfigResponse     `json:"anthropic"`
+	MaxClaudeRetries     int                         `json:"max_claude_retries"`
+	MaxGitRetries        int                         `json:"max_git_retries"`
+	GitRetryBackoffMs    int                         `json:"git_retry_backoff_ms"`
+	Notify               NotifyConfigResponse        `json:"notify"`
+}
+
+// AnthropicConfigResponse matches the redacted Anthropic config from the API.
+type AnthropicConfigResponse struct {
+	APIKeySet  bool   `json:"api_key_set"`
+	LargeModel string `json:"large_model"`
+	SmallModel string `json:"small_model"`
+}
+
+// SMTPConfigResponse matches the redacted SMTP config from the API.
+type SMTPConfigResponse struct {
+	Enabled     bool     `json:"enabled"`
+	Host        string   `json:"host"`
+	Port        int      `json:"port"`
+	Username    string   `json:"username"`
+	PasswordSet bool     `json:"password_set"`
+	From        string   `json:"from"`
+	Recipients  []string `json:"recipients"`
+}
+
+// TeamsConfigResponse matches the redacted Teams config from the API.
+type TeamsConfigResponse struct {
+	Enabled       bool `json:"enabled"`
+	WebhookURLSet bool `json:"webhook_url_set"`
+}
+
+// NotifyConfigResponse matches the redacted notification config from the API.
+type NotifyConfigResponse struct {
+	SMTP  SMTPConfigResponse  `json:"smtp"`
+	Teams TeamsConfigResponse `json:"teams"`
+}
+
 // GetConfig retrieves server config
-func (c *Client) GetConfig() (*models.ServerConfig, error) {
-	var cfg models.ServerConfig
+func (c *Client) GetConfig() (*ServerConfigResponse, error) {
+	var cfg ServerConfigResponse
 	if err := c.get("/api/config", &cfg); err != nil {
 		return nil, err
 	}
@@ -142,8 +199,8 @@ func (c *Client) GetConfig() (*models.ServerConfig, error) {
 }
 
 // UpdateConfig updates server config
-func (c *Client) UpdateConfig(updates map[string]interface{}) (*models.ServerConfig, error) {
-	var cfg models.ServerConfig
+func (c *Client) UpdateConfig(updates map[string]interface{}) (*ServerConfigResponse, error) {
+	var cfg ServerConfigResponse
 	if err := c.patch("/api/config", updates, &cfg); err != nil {
 		return nil, err
 	}

@@ -30,7 +30,7 @@ setup() {
 
 @test "check_ram_requirement fails with insufficient RAM" {
     MODE="server"
-    RAM_GB=16
+    RAM_GB=8
 
     run check_ram_requirement
     [ "$status" -eq 1 ]

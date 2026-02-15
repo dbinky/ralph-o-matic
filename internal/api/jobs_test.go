@@ -140,6 +140,74 @@ func TestAPI_ListJobs_WithStatus(t *testing.T) {
 	assert.Equal(t, 1, resp.Total)
 }
 
+func TestAPI_ListJobs_InvalidStatus(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	tests := []struct {
+		name   string
+		status string
+	}{
+		{"unknown status", "pending"},
+		{"garbage string", "foobar"},
+		{"valid with invalid", "queued,bogus"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/jobs?status="+tc.status, nil)
+			w := httptest.NewRecorder()
+			srv.Router().ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "invalid status filter")
+		})
+	}
+}
+
+func TestAPI_ListJobs_InvalidPagination(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	tests := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{"non-numeric limit", "limit=abc", "invalid limit"},
+		{"negative limit", "limit=-1", "invalid limit"},
+		{"non-numeric offset", "offset=xyz", "invalid offset"},
+		{"negative offset", "offset=-5", "invalid offset"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/jobs?"+tc.query, nil)
+			w := httptest.NewRecorder()
+			srv.Router().ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), tc.want)
+		})
+	}
+}
+
+func TestAPI_ListJobs_DefaultLimit(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	// Create a job so we can verify the response structure
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+
+	req := httptest.NewRequest("GET", "/api/jobs", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp ListJobsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, defaultListLimit, resp.Limit)
+}
+
 func TestAPI_CancelJob(t *testing.T) {
 	srv, _ := newTestServer(t)
 
@@ -200,7 +268,7 @@ func TestAPI_ResumeJob(t *testing.T) {
 
 	var resp models.Job
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, models.StatusRunning, resp.Status)
+	assert.Equal(t, models.StatusQueued, resp.Status)
 }
 
 func TestAPI_ReorderJobs(t *testing.T) {
@@ -589,4 +657,161 @@ func TestGetJob_PreAuthJob_AccessibleByAll(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAPI_UpdateJob_Priority(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+
+	body := `{"priority":"high"}`
+	req := httptest.NewRequest("PATCH", "/api/jobs/"+strconv.FormatInt(job.ID, 10), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp models.Job
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, models.PriorityHigh, resp.Priority)
+}
+
+func TestAPI_UpdateJob_MaxIterations(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+
+	body := `{"max_iterations":25}`
+	req := httptest.NewRequest("PATCH", "/api/jobs/"+strconv.FormatInt(job.ID, 10), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp models.Job
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 25, resp.MaxIterations)
+}
+
+func TestAPI_UpdateJob_RunningJob(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+
+	// Dequeue to move to running state
+	_, err := srv.queue.Dequeue()
+	require.NoError(t, err)
+
+	body := `{"max_iterations":50}`
+	req := httptest.NewRequest("PATCH", "/api/jobs/"+strconv.FormatInt(job.ID, 10), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp models.Job
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 50, resp.MaxIterations)
+}
+
+func TestAPI_UpdateJob_TerminalState_Rejected(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+
+	// Cancel the job to put it in a terminal state
+	require.NoError(t, srv.queue.Cancel(job))
+
+	body := `{"priority":"high"}`
+	req := httptest.NewRequest("PATCH", "/api/jobs/"+strconv.FormatInt(job.ID, 10), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), "cannot update job")
+}
+
+func TestAPI_UpdateJob_InvalidMaxIterations(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"zero", `{"max_iterations":0}`},
+		{"negative", `{"max_iterations":-5}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("PATCH", "/api/jobs/"+strconv.FormatInt(job.ID, 10), strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			srv.Router().ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "max_iterations must be positive")
+		})
+	}
+}
+
+func TestAPI_UpdateJob_InvalidPriority(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+
+	body := `{"priority":"urgent"}`
+	req := httptest.NewRequest("PATCH", "/api/jobs/"+strconv.FormatInt(job.ID, 10), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_UpdateJob_InvalidJSON(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+
+	req := httptest.NewRequest("PATCH", "/api/jobs/"+strconv.FormatInt(job.ID, 10), strings.NewReader("{not json"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid JSON")
+}
+
+func TestAPI_UpdateJob_NotFound(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := `{"priority":"high"}`
+	req := httptest.NewRequest("PATCH", "/api/jobs/99999", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }

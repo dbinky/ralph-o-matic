@@ -278,6 +278,7 @@ func TestAPI_GetConfig_ResponseSchema_NoConcurrentJobs(t *testing.T) {
 		"default_max_iterations", "job_retention_days",
 		"default_backend", "anthropic",
 		"max_claude_retries", "max_git_retries", "git_retry_backoff_ms",
+		"notify",
 	}
 	for _, key := range expectedKeys {
 		assert.Contains(t, raw, key, "expected key %s in response", key)
@@ -287,6 +288,75 @@ func TestAPI_GetConfig_ResponseSchema_NoConcurrentJobs(t *testing.T) {
 	for _, key := range unexpectedKeys {
 		assert.NotContains(t, raw, key, "unexpected key %s in response", key)
 	}
+}
+
+func TestAPI_GetConfig_IncludesNotifyConfig(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	// Set notification config
+	body := []byte(`{"notify":{"smtp":{"enabled":true,"host":"mail.example.com","port":587,"username":"user@example.com","password":"s3cret","from":"ralph@example.com","recipients":["team@example.com"]},"teams":{"enabled":true,"webhook_url":"https://outlook.office.com/webhook/secret"}}}`)
+	req := httptest.NewRequest("PATCH", "/api/config", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	// GET and verify notification fields are present
+	req = httptest.NewRequest("GET", "/api/config", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp configResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	// SMTP
+	assert.True(t, resp.Notify.SMTP.Enabled)
+	assert.Equal(t, "mail.example.com", resp.Notify.SMTP.Host)
+	assert.Equal(t, 587, resp.Notify.SMTP.Port)
+	assert.Equal(t, "user@example.com", resp.Notify.SMTP.Username)
+	assert.True(t, resp.Notify.SMTP.PasswordSet)
+	assert.Equal(t, "ralph@example.com", resp.Notify.SMTP.From)
+	assert.Equal(t, []string{"team@example.com"}, resp.Notify.SMTP.Recipients)
+
+	// Teams
+	assert.True(t, resp.Notify.Teams.Enabled)
+	assert.True(t, resp.Notify.Teams.WebhookURLSet)
+
+	// Verify secrets are NOT in the raw JSON
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &raw))
+
+	var notifyRaw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(raw["notify"], &notifyRaw))
+
+	var smtpRaw map[string]interface{}
+	require.NoError(t, json.Unmarshal(notifyRaw["smtp"], &smtpRaw))
+	_, hasPassword := smtpRaw["password"]
+	assert.False(t, hasPassword, "SMTP password must not be returned in GET response")
+
+	var teamsRaw map[string]interface{}
+	require.NoError(t, json.Unmarshal(notifyRaw["teams"], &teamsRaw))
+	_, hasWebhookURL := teamsRaw["webhook_url"]
+	assert.False(t, hasWebhookURL, "Teams webhook URL must not be returned in GET response")
+}
+
+func TestAPI_GetConfig_NotifyDefaultsEmpty(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp configResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	// Defaults: notifications disabled
+	assert.False(t, resp.Notify.SMTP.Enabled)
+	assert.False(t, resp.Notify.SMTP.PasswordSet)
+	assert.False(t, resp.Notify.Teams.Enabled)
+	assert.False(t, resp.Notify.Teams.WebhookURLSet)
 }
 
 func TestAPI_GetConfig_ResponseStructure(t *testing.T) {
