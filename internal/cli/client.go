@@ -144,6 +144,7 @@ func (c *Client) ReorderJobs(jobIDs []int64) error {
 // ServerConfigResponse matches the redacted JSON shape returned by GET /api/config.
 // It differs from models.ServerConfig in that sensitive fields are replaced
 // with boolean indicators (api_key_set, password_set, webhook_url_set).
+// SYNC: mirrors api.configResponse in internal/api/config.go
 type ServerConfigResponse struct {
 	Ollama               models.OllamaConfig        `json:"ollama"`
 	LargeModel           models.ModelPlacement       `json:"large_model"`
@@ -160,6 +161,7 @@ type ServerConfigResponse struct {
 }
 
 // AnthropicConfigResponse matches the redacted Anthropic config from the API.
+// SYNC: mirrors api.anthropicConfigResponse in internal/api/config.go
 type AnthropicConfigResponse struct {
 	APIKeySet  bool   `json:"api_key_set"`
 	LargeModel string `json:"large_model"`
@@ -167,6 +169,7 @@ type AnthropicConfigResponse struct {
 }
 
 // SMTPConfigResponse matches the redacted SMTP config from the API.
+// SYNC: mirrors api.smtpConfigResponse in internal/api/config.go
 type SMTPConfigResponse struct {
 	Enabled     bool     `json:"enabled"`
 	Host        string   `json:"host"`
@@ -178,12 +181,14 @@ type SMTPConfigResponse struct {
 }
 
 // TeamsConfigResponse matches the redacted Teams config from the API.
+// SYNC: mirrors api.teamsConfigResponse in internal/api/config.go
 type TeamsConfigResponse struct {
 	Enabled       bool `json:"enabled"`
 	WebhookURLSet bool `json:"webhook_url_set"`
 }
 
 // NotifyConfigResponse matches the redacted notification config from the API.
+// SYNC: mirrors api.notifyConfigResponse in internal/api/config.go
 type NotifyConfigResponse struct {
 	SMTP  SMTPConfigResponse  `json:"smtp"`
 	Teams TeamsConfigResponse `json:"teams"`
@@ -265,6 +270,13 @@ func (c *Client) StreamJobEvents(ctx context.Context, jobID int64) (<-chan struc
 	}
 
 	ch := make(chan struct{})
+	// Close the response body when context is cancelled to unblock scanner.Scan().
+	// Go's HTTP transport handles this via context cancellation, but the explicit
+	// close makes the shutdown contract visible in the code.
+	go func() {
+		<-ctx.Done()
+		resp.Body.Close()
+	}()
 	go func() {
 		defer close(ch)
 		defer resp.Body.Close()

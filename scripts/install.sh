@@ -828,9 +828,19 @@ apply_model_config() {
             ;;
     esac
 
+    local json_payload
+    json_payload=$(jq -n \
+        --arg host "$OLLAMA_URL" \
+        --argjson is_remote "$is_remote" \
+        --arg large_name "$LARGE_MODEL" \
+        --arg large_device "$large_device" \
+        --arg small_name "$SMALL_MODEL" \
+        --arg small_device "$small_device" \
+        '{ollama:{host:$host,is_remote:$is_remote},large_model:{name:$large_name,device:$large_device},small_model:{name:$small_name,device:$small_device}}')
+
     curl -sf -X PATCH http://localhost:9090/api/config \
         -H "Content-Type: application/json" \
-        -d "{\"ollama\":{\"host\":\"$OLLAMA_URL\",\"is_remote\":$is_remote},\"large_model\":{\"name\":\"$LARGE_MODEL\",\"device\":\"$large_device\"},\"small_model\":{\"name\":\"$SMALL_MODEL\",\"device\":\"$small_device\"}}" &>/dev/null
+        -d "$json_payload" &>/dev/null
 
     success "Model config applied (large=$LARGE_MODEL [$large_device], small=$SMALL_MODEL [$small_device])"
 }
@@ -866,21 +876,33 @@ apply_notification_config() {
     }
 
     if [[ "$NOTIFY_SMTP_ENABLED" == true ]]; then
-        # Build recipients as a JSON array: ["a@b.com","c@d.com"]
-        local recipients_json="[]"
-        if [[ -n "$NOTIFY_SMTP_RECIPIENTS" ]]; then
-            recipients_json=$(printf '%s' "$NOTIFY_SMTP_RECIPIENTS" \
-                | tr ',' '\n' | sed 's/^ *//;s/ *$//' \
-                | awk 'NF{printf "%s\"%s\"", (NR>1?",":""), $0}' \
-                | sed 's/^/[/;s/$/]/')
-        fi
+        # Build recipients as a JSON array using jq for safe escaping
+        local recipients_json
+        recipients_json=$(printf '%s' "$NOTIFY_SMTP_RECIPIENTS" \
+            | tr ',' '\n' | sed 's/^ *//;s/ *$//' \
+            | jq -R 'select(length > 0)' | jq -s '.')
 
-        patch_config "{\"notify\":{\"smtp\":{\"enabled\":true,\"host\":\"$NOTIFY_SMTP_HOST\",\"port\":$NOTIFY_SMTP_PORT,\"username\":\"$NOTIFY_SMTP_USERNAME\",\"password\":\"$NOTIFY_SMTP_PASSWORD\",\"from\":\"$NOTIFY_SMTP_FROM\",\"recipients\":$recipients_json}}}"
+        local smtp_payload
+        smtp_payload=$(jq -n \
+            --arg host "$NOTIFY_SMTP_HOST" \
+            --argjson port "$NOTIFY_SMTP_PORT" \
+            --arg username "$NOTIFY_SMTP_USERNAME" \
+            --arg password "$NOTIFY_SMTP_PASSWORD" \
+            --arg from "$NOTIFY_SMTP_FROM" \
+            --argjson recipients "$recipients_json" \
+            '{notify:{smtp:{enabled:true,host:$host,port:$port,username:$username,password:$password,from:$from,recipients:$recipients}}}')
+
+        patch_config "$smtp_payload"
         success "SMTP config applied"
     fi
 
     if [[ "$NOTIFY_TEAMS_ENABLED" == true ]]; then
-        patch_config "{\"notify\":{\"teams\":{\"enabled\":true,\"webhook_url\":\"$NOTIFY_TEAMS_WEBHOOK_URL\"}}}"
+        local teams_payload
+        teams_payload=$(jq -n \
+            --arg url "$NOTIFY_TEAMS_WEBHOOK_URL" \
+            '{notify:{teams:{enabled:true,webhook_url:$url}}}')
+
+        patch_config "$teams_payload"
         success "Teams config applied"
     fi
 }

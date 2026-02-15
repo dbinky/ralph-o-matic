@@ -78,10 +78,8 @@ type mockQueue struct {
 	failed    []*models.Job
 
 	// externalStatus overrides the status returned by Get (simulates external pause/cancel).
-	// When set, Get returns a copy of the job with this status.
+	// When set, Get returns a copy of the job with this status immediately.
 	externalStatus models.JobStatus
-	// externalAfter is the iteration count after which externalStatus takes effect.
-	externalAfter int
 }
 
 func (m *mockQueue) Dequeue() (*models.Job, error) {
@@ -98,8 +96,8 @@ func (m *mockQueue) Dequeue() (*models.Job, error) {
 func (m *mockQueue) Get(id int64) (*models.Job, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// If external status is configured and we've passed the threshold, return it
-	if m.externalStatus != "" && m.externalAfter >= 0 {
+	// If external status is configured, return it immediately
+	if m.externalStatus != "" {
 		return &models.Job{ID: id, Status: m.externalStatus}, nil
 	}
 	// Default: return running (normal state during worker execution)

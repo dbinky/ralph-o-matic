@@ -34,7 +34,7 @@ func submitCmd() *cobra.Command {
 			if openEnded {
 				safeBranch := strings.ReplaceAll(branch, "/", "-")
 				progressPath := fmt.Sprintf("docs/plans/%s-ralph-status.md", safeBranch)
-				prompt = openEndedPrompt(progressPath)
+				prompt = models.DefaultOpenEndedPrompt(progressPath)
 				promptSource = "open-ended"
 			} else if prompt == "" {
 				prompt, err = readPromptFile(workingDir)
@@ -157,7 +157,7 @@ func logsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if isTerminal(job.Status) {
+			if job.Status.IsTerminal() {
 				return nil
 			}
 
@@ -180,12 +180,6 @@ func logsCmd() *cobra.Command {
 					fmt.Printf("[iter %v] %v\n", allLogs[i]["iteration"], allLogs[i]["message"])
 				}
 				lastCount = len(allLogs)
-
-				// Stop when job reaches terminal state
-				job, err := client.GetJob(id)
-				if err == nil && isTerminal(job.Status) {
-					return nil
-				}
 			}
 
 			return nil
@@ -344,12 +338,15 @@ func moveCmd() *cobra.Command {
 			case first:
 				newOrder = append([]int64{id}, newOrder...)
 			case after > 0:
-				insertAt := len(newOrder) // default: end if not found
+				insertAt := -1
 				for i, jid := range newOrder {
 					if jid == after {
 						insertAt = i + 1
 						break
 					}
+				}
+				if insertAt < 0 {
+					return fmt.Errorf("target job #%d not found in queue", after)
 				}
 				newOrder = append(newOrder[:insertAt], append([]int64{id}, newOrder[insertAt:]...)...)
 			case position > 0:
@@ -453,6 +450,14 @@ func serverConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server-config [set <key> <value>]",
 		Short: "Show or set server configuration",
+		Long: `Show or set server configuration.
+
+When using 'set', values are auto-detected as int, float, bool, or string
+(in that order). For example: "1" becomes an integer, "1.5" a float,
+"true"/"false" a boolean, and anything else stays a string. The server
+validates the resulting type against the config schema.
+
+Use dotted keys for nested values, e.g.: large_model.name, notify.smtp.host`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				serverCfg, err := client.GetConfig()
@@ -731,34 +736,6 @@ func prioritySymbol(p models.Priority) string {
 	default:
 		return "• normal"
 	}
-}
-
-func isTerminal(status models.JobStatus) bool {
-	switch status {
-	case models.StatusCompleted, models.StatusFailed, models.StatusCancelled:
-		return true
-	}
-	return false
-}
-
-// openEndedPrompt returns the open-ended polish prompt template.
-// This mirrors internal/executor.DefaultOpenEndedPrompt but avoids importing
-// the executor package (which would pull in heavy server-side dependencies).
-func openEndedPrompt(progressPath string) string {
-	return fmt.Sprintf(`You are improving this codebase toward production quality.
-
-Progress: %s
-
-Each iteration:
-1. Read the progress file to understand what's been done and what remains
-2. Search the codebase before assuming anything is missing
-3. Pick the single highest-impact improvement
-4. Implement it, keeping the change focused and testable
-5. Run tests — if they fail, fix before moving on
-6. Update the progress file: mark completed items, add discovered work, note what's next
-
-Do not output a <promise> tag. Continue improving until stopped.
-`, progressPath)
 }
 
 func printJobDetail(job *models.Job) {

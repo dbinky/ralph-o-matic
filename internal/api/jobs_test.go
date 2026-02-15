@@ -208,6 +208,29 @@ func TestAPI_ListJobs_DefaultLimit(t *testing.T) {
 	assert.Equal(t, defaultListLimit, resp.Limit)
 }
 
+func TestAPI_ListJobs_ExplicitLimitZero_ReturnsAll(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	// Create 3 jobs
+	for i := 0; i < 3; i++ {
+		job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+		require.NoError(t, srv.queue.Enqueue(job))
+	}
+
+	// Explicit limit=0 should return all results (backward compatibility)
+	req := httptest.NewRequest("GET", "/api/jobs?limit=0", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp ListJobsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 3, resp.Total)
+	assert.Len(t, resp.Jobs, 3, "limit=0 should return all results")
+	assert.Equal(t, 0, resp.Limit, "response should reflect the explicit limit=0")
+}
+
 func TestAPI_CancelJob(t *testing.T) {
 	srv, _ := newTestServer(t)
 

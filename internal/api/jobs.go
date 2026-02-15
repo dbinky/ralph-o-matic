@@ -127,7 +127,9 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse pagination with validation
+	limitSpecified := false
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		limitSpecified = true
 		limit, err := strconv.Atoi(limitStr)
 		if err != nil || limit < 0 {
 			writeError(w, http.StatusBadRequest, "invalid limit: must be a non-negative integer")
@@ -144,8 +146,9 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		opts.Offset = offset
 	}
 
-	// Apply default limit to prevent unbounded responses
-	if opts.Limit == 0 {
+	// Apply default limit only when the parameter was not specified.
+	// An explicit limit=0 means "return all results" (preserves backward compatibility).
+	if !limitSpecified {
 		opts.Limit = defaultListLimit
 	}
 
