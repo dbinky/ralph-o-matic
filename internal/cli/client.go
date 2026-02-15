@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -174,6 +176,55 @@ func (c *Client) GetLogs(jobID int64) ([]map[string]interface{}, error) {
 		return nil, err
 	}
 	return resp.Logs, nil
+}
+
+// StreamJobEvents connects to the SSE endpoint for a job and sends a
+// notification on the returned channel each time an event arrives.
+// The channel is closed when the connection ends or the context is cancelled.
+func (c *Client) StreamJobEvents(ctx context.Context, jobID int64) (<-chan struct{}, error) {
+	sseURL := fmt.Sprintf("%s/api/jobs/%d/events", c.baseURL, jobID)
+	req, err := http.NewRequestWithContext(ctx, "GET", sseURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	// Attach bearer token if available.
+	if c.tokenPath != "" {
+		token := c.loadCachedToken()
+		if token != nil && !token.IsExpired() && token.Server == c.baseURL {
+			req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+		}
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("SSE connection failed: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("SSE connection failed (status %d)", resp.StatusCode)
+	}
+
+	ch := make(chan struct{})
+	go func() {
+		defer close(ch)
+		defer resp.Body.Close()
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "data:") {
+				select {
+				case ch <- struct{}{}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+
+	return ch, nil
 }
 
 // Ping checks if server is reachable

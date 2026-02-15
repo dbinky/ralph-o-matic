@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/cli"
 	"github.com/ryan/ralph-o-matic/internal/models"
@@ -27,8 +29,12 @@ func submitCmd() *cobra.Command {
 				return fmt.Errorf("failed to get git info: %w", err)
 			}
 
-			// Resolve prompt
-			if prompt == "" {
+			// Resolve prompt: --open-ended overrides everything, else --prompt, else RALPH.md
+			if openEnded {
+				safeBranch := strings.ReplaceAll(branch, "/", "-")
+				progressPath := fmt.Sprintf("docs/plans/%s-ralph-status.md", safeBranch)
+				prompt = openEndedPrompt(progressPath)
+			} else if prompt == "" {
 				prompt, err = readPromptFile(workingDir)
 				if err != nil {
 					return fmt.Errorf("no prompt provided and RALPH.md not found")
@@ -136,6 +142,47 @@ func logsCmd() *cobra.Command {
 			for _, log := range logs {
 				fmt.Printf("[iter %v] %v\n", log["iteration"], log["message"])
 			}
+
+			if !follow {
+				return nil
+			}
+
+			// Check if job is already terminal before streaming
+			job, err := client.GetJob(id)
+			if err != nil {
+				return err
+			}
+			if isTerminal(job.Status) {
+				return nil
+			}
+
+			// Stream via SSE — poll for new logs on each event
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+
+			events, err := client.StreamJobEvents(ctx, id)
+			if err != nil {
+				return fmt.Errorf("failed to stream events: %w", err)
+			}
+
+			lastCount := len(logs)
+			for range events {
+				allLogs, err := client.GetLogs(id)
+				if err != nil {
+					continue
+				}
+				for i := lastCount; i < len(allLogs); i++ {
+					fmt.Printf("[iter %v] %v\n", allLogs[i]["iteration"], allLogs[i]["message"])
+				}
+				lastCount = len(allLogs)
+
+				// Stop when job reaches terminal state
+				job, err := client.GetJob(id)
+				if err == nil && isTerminal(job.Status) {
+					return nil
+				}
+			}
+
 			return nil
 		},
 	}
@@ -243,6 +290,15 @@ func moveCmd() *cobra.Command {
 			switch {
 			case first:
 				newOrder = append([]int64{id}, newOrder...)
+			case after > 0:
+				insertAt := len(newOrder) // default: end if not found
+				for i, jid := range newOrder {
+					if jid == after {
+						insertAt = i + 1
+						break
+					}
+				}
+				newOrder = append(newOrder[:insertAt], append([]int64{id}, newOrder[insertAt:]...)...)
 			case position > 0:
 				pos := position - 1
 				if pos > len(newOrder) {
@@ -353,8 +409,18 @@ func serverConfigCmd() *cobra.Command {
 			}
 
 			if len(args) >= 3 && args[0] == "set" {
+				// Parse value to appropriate JSON type (int, float, bool, or string)
+				var value interface{} = args[2]
+				if v, err := strconv.Atoi(args[2]); err == nil {
+					value = v
+				} else if v, err := strconv.ParseFloat(args[2], 64); err == nil {
+					value = v
+				} else if v, err := strconv.ParseBool(args[2]); err == nil {
+					value = v
+				}
+
 				updates := map[string]interface{}{
-					args[1]: args[2],
+					args[1]: value,
 				}
 
 				_, err := client.UpdateConfig(updates)
@@ -445,7 +511,80 @@ func printQueueOverview(jobs []*models.Job) {
 		}
 	}
 
+	// Show today's completed/failed jobs
+	var completedToday []*models.Job
+	today := time.Now().Truncate(24 * time.Hour)
+	for _, j := range jobs {
+		switch j.Status {
+		case models.StatusCompleted, models.StatusFailed:
+			if j.CompletedAt != nil && j.CompletedAt.After(today) {
+				completedToday = append(completedToday, j)
+			}
+		}
+	}
+
+	if len(completedToday) > 0 {
+		fmt.Println("\nCOMPLETED TODAY")
+		for _, j := range completedToday {
+			result := "PASSED"
+			if j.Status == models.StatusFailed {
+				result = "FAILED"
+			}
+			fmt.Printf("  #%d %s    %s   %d iters", j.ID, j.Branch, result, j.Iteration)
+			if j.PRURL != "" {
+				fmt.Printf("   %s", j.PRURL)
+			}
+			if d := j.Duration(); d > 0 {
+				fmt.Printf("   %s", formatDuration(d))
+			}
+			fmt.Println()
+		}
+	}
+
 	fmt.Printf("\nDashboard: %s\n", cfg.Server)
+}
+
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if m == 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dh %dm", h, m)
+}
+
+func isTerminal(status models.JobStatus) bool {
+	switch status {
+	case models.StatusCompleted, models.StatusFailed, models.StatusCancelled:
+		return true
+	}
+	return false
+}
+
+// openEndedPrompt returns the open-ended polish prompt template.
+// This mirrors internal/executor.DefaultOpenEndedPrompt but avoids importing
+// the executor package (which would pull in heavy server-side dependencies).
+func openEndedPrompt(progressPath string) string {
+	return fmt.Sprintf(`You are improving this codebase toward production quality.
+
+Progress: %s
+
+Each iteration:
+1. Read the progress file to understand what's been done and what remains
+2. Search the codebase before assuming anything is missing
+3. Pick the single highest-impact improvement
+4. Implement it, keeping the change focused and testable
+5. Run tests — if they fail, fix before moving on
+6. Update the progress file: mark completed items, add discovered work, note what's next
+
+Do not output a <promise> tag. Continue improving until stopped.
+`, progressPath)
 }
 
 func printJobDetail(job *models.Job) {

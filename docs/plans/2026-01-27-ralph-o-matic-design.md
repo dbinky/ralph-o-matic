@@ -1295,9 +1295,9 @@ make coverage
 
 ### Network Security
 
-- Server binds to LAN IP only (not 0.0.0.0)
-- No authentication (trusted home network)
-- No TLS (local network)
+- Server binds to all interfaces (`:9090` by default, override with `RALPH_ADDR`)
+- Supports deployment on public-facing VMs (e.g. Azure) with Entra ID SSO authentication
+- TLS termination handled by reverse proxy (e.g. Azure Application Gateway, nginx) in production
 
 ### Git Security
 

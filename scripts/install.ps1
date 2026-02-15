@@ -7,8 +7,8 @@ param(
     [ValidateSet("full", "server", "client")]
     [string]$Mode = "full",
     [string]$Server = "",
-    [string]$LargeModel = "qwen3-coder:70b",
-    [string]$SmallModel = "qwen2.5-coder:7b"
+    [string]$LargeModel = "",
+    [string]$SmallModel = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,7 +46,7 @@ function Get-Platform {
 }
 
 function Test-RamRequirement {
-    $MinRam = 32
+    $MinRam = 16
 
     if ($Mode -eq "client") {
         return
@@ -54,15 +54,20 @@ function Test-RamRequirement {
 
     if ($script:RamGB -lt $MinRam) {
         Write-Err @"
-Insufficient RAM: ${script:RamGB}GB detected, ${MinRam}GB required for server mode.
+Insufficient RAM: ${script:RamGB}GB detected, ${MinRam}GB minimum required.
 
-Server mode requires 32GB RAM to run qwen3-coder.
+Server mode requires at least 16GB RAM to run coding models.
 If you only want to submit jobs to a remote server, use:
   .\install.ps1 -Mode client -Server http://your-server:9090
 "@
     }
 
-    Write-Success "RAM check passed: ${script:RamGB}GB available"
+    if ($script:RamGB -lt 32) {
+        Write-Warn "RAM: ${script:RamGB}GB detected. Smaller models will be recommended."
+        Write-Info "The installer will recommend smaller models that fit your hardware."
+    } else {
+        Write-Success "RAM check passed: ${script:RamGB}GB available"
+    }
 }
 
 function Get-Gpu {
@@ -99,7 +104,8 @@ function Get-Gpu {
     }
 
     # Determine what models can run on GPU
-    if ($script:GpuVramMB -ge 45000) {
+    # devstral needs ~15GB VRAM, qwen3:8b needs ~5GB VRAM
+    if ($script:GpuVramMB -ge 16000) {
         $script:GpuCanRunLarge = $true
         $script:GpuCanRunSmall = $true
         Write-Success "GPU can run both large and small models"
@@ -111,6 +117,201 @@ function Get-Gpu {
             Write-Info "GPU VRAM insufficient for models, will use CPU/RAM"
         }
     }
+}
+
+$script:InferenceMode = ""  # gpu_cpu_split, gpu_only, cpu_only, remote
+$script:OllamaUrl = "http://localhost:11434"
+
+function Show-HardwareSummary {
+    Write-Host ""
+    Write-Host "Hardware Summary:" -ForegroundColor Blue
+    Write-Host "  OS:   Windows ($env:PROCESSOR_ARCHITECTURE)"
+    Write-Host "  RAM:  ${script:RamGB}GB"
+    if ($script:GpuType -eq "nvidia") {
+        Write-Host "  GPU:  NVIDIA (${script:GpuVramMB}MB VRAM)"
+    } elseif ($script:GpuType -eq "amd") {
+        Write-Host "  GPU:  AMD (${script:GpuVramMB}MB VRAM)"
+    } else {
+        Write-Host "  GPU:  None detected"
+    }
+    Write-Host ""
+}
+
+function Show-ModelRecommendation {
+    param([string]$RecLarge, [string]$RecSmall, [string]$RecMode)
+
+    Write-Host "Recommended configuration:" -ForegroundColor Green
+    Write-Host "  Inference mode: $RecMode"
+    Write-Host "  Large model:    $RecLarge"
+    Write-Host "  Small model:    $RecSmall"
+    Write-Host ""
+}
+
+function Select-CustomModels {
+    Write-Host ""
+    Write-Host "Available large models (all support tool use):"
+    Write-Host "  [1] devstral            (15GB, quality 9 - best)"
+    Write-Host "  [2] qwen3-coder:30b    (19GB, quality 8)"
+    Write-Host "  [3] qwen3:14b          (9.3GB, quality 6)"
+    Write-Host "  [4] qwen3:8b           (5.2GB, quality 4)"
+    Write-Host ""
+    $choice = Read-Host "Select large model [1-4]"
+    switch ($choice) {
+        "1" { $script:LargeModel = "devstral" }
+        "2" { $script:LargeModel = "qwen3-coder:30b" }
+        "3" { $script:LargeModel = "qwen3:14b" }
+        "4" { $script:LargeModel = "qwen3:8b" }
+        default { Write-Warn "Invalid choice, using qwen3:14b"; $script:LargeModel = "qwen3:14b" }
+    }
+
+    Write-Host ""
+    Write-Host "Available small models:"
+    Write-Host "  [1] qwen3:8b    (5.2GB, quality 4 - tool use)"
+    Write-Host "  [2] qwen3:4b    (2.5GB, quality 2 - fastest)"
+    Write-Host ""
+    $choice = Read-Host "Select small model [1-2]"
+    switch ($choice) {
+        "1" { $script:SmallModel = "qwen3:8b" }
+        "2" { $script:SmallModel = "qwen3:4b" }
+        default { Write-Warn "Invalid choice, using qwen3:8b"; $script:SmallModel = "qwen3:8b" }
+    }
+
+    Write-Success "Selected: large=$($script:LargeModel), small=$($script:SmallModel)"
+}
+
+function Set-RemoteOllama {
+    Write-Host ""
+    $script:OllamaUrl = Read-Host "Enter remote Ollama URL (e.g. http://192.168.1.100:11434)"
+
+    Write-Info "Checking remote Ollama at $($script:OllamaUrl)..."
+    try {
+        $response = Invoke-RestMethod -Uri "$($script:OllamaUrl)/api/tags" -TimeoutSec 5
+        Write-Success "Remote Ollama is reachable"
+
+        if ($response.models) {
+            Write-Host ""
+            Write-Host "Models available on remote:"
+            foreach ($m in $response.models) {
+                Write-Host "  - $($m.name)"
+            }
+            Write-Host ""
+        }
+    } catch {
+        Write-Warn "Could not reach remote Ollama at $($script:OllamaUrl)"
+        Write-Warn "Continuing anyway - ensure the remote is available before running jobs"
+    }
+
+    # Default models for remote
+    if (-not $script:LargeModel) { $script:LargeModel = "devstral" }
+    if (-not $script:SmallModel) { $script:SmallModel = "qwen3:8b" }
+}
+
+function Select-Models {
+    Show-HardwareSummary
+
+    # Compute recommendation based on hardware (matches bash installer logic)
+    $recLarge = "qwen3:14b"
+    $recSmall = "qwen3:8b"
+    $recMode = "cpu_only"
+
+    if ($script:GpuType -eq "nvidia" -or $script:GpuType -eq "amd") {
+        if ($script:GpuCanRunLarge) {
+            $recLarge = "devstral"
+            $recMode = "gpu_only"
+        } elseif ($script:GpuCanRunSmall) {
+            $recMode = "gpu_cpu_split"
+            if ($script:RamGB -ge 48) {
+                $recLarge = "devstral"
+            } elseif ($script:RamGB -ge 32) {
+                $recLarge = "qwen3-coder:30b"
+            } elseif ($script:RamGB -ge 16) {
+                $recLarge = "qwen3:14b"
+            } else {
+                $recLarge = "qwen3:8b"
+            }
+        } else {
+            $recMode = "cpu_only"
+            if ($script:RamGB -ge 48) {
+                $recLarge = "devstral"
+            } elseif ($script:RamGB -ge 32) {
+                $recLarge = "qwen3-coder:30b"
+            } elseif ($script:RamGB -ge 16) {
+                $recLarge = "qwen3:14b"
+            } else {
+                $recLarge = "qwen3:8b"
+            }
+        }
+    } else {
+        # No GPU
+        $recMode = "cpu_only"
+        if ($script:RamGB -ge 48) {
+            $recLarge = "devstral"
+        } elseif ($script:RamGB -ge 32) {
+            $recLarge = "qwen3-coder:30b"
+        } elseif ($script:RamGB -ge 16) {
+            $recLarge = "qwen3:14b"
+        } else {
+            $recLarge = "qwen3:8b"
+        }
+    }
+
+    Show-ModelRecommendation -RecLarge $recLarge -RecSmall $recSmall -RecMode $recMode
+
+    # If -Yes flag or CLI overrides provided, use defaults/overrides
+    if ($Yes) {
+        if (-not $script:LargeModel) { $script:LargeModel = $recLarge }
+        if (-not $script:SmallModel) { $script:SmallModel = $recSmall }
+        $script:InferenceMode = $recMode
+        Write-Success "Using recommended configuration (-Yes)"
+        return
+    }
+
+    # Check if user passed model overrides via CLI flags
+    if ($script:LargeModel -and $script:SmallModel) {
+        $script:InferenceMode = $recMode
+        Write-Success "Using CLI-specified models: large=$($script:LargeModel), small=$($script:SmallModel)"
+        return
+    }
+
+    Write-Host "How would you like to run inference?"
+    Write-Host ""
+    Write-Host "  [1] GPU + CPU split (large model on CPU/RAM, small model on GPU)"
+    Write-Host "  [2] GPU only (all models on GPU)"
+    Write-Host "  [3] CPU only (all models on CPU/RAM)"
+    Write-Host "  [4] Remote Ollama (use a remote Ollama server)"
+    Write-Host ""
+    $choice = Read-Host "Select mode [1-4] (recommended: press Enter for $recMode)"
+
+    switch ($choice) {
+        "1" { $script:InferenceMode = "gpu_cpu_split" }
+        "2" { $script:InferenceMode = "gpu_only" }
+        "3" { $script:InferenceMode = "cpu_only" }
+        "4" { $script:InferenceMode = "remote" }
+        "" { $script:InferenceMode = $recMode }
+        default { Write-Warn "Invalid choice, using recommended"; $script:InferenceMode = $recMode }
+    }
+
+    if ($script:InferenceMode -eq "remote") {
+        Set-RemoteOllama
+        Write-Host ""
+        $response = Read-Host "Accept recommended models? [Y/n]"
+        if ($response -match "^[Nn]") {
+            Select-CustomModels
+        }
+        return
+    }
+
+    # Offer accept or customize
+    Write-Host ""
+    $response = Read-Host "Accept recommended models ($recLarge + $recSmall)? [Y/n]"
+    if ($response -match "^[Nn]") {
+        Select-CustomModels
+    } else {
+        $script:LargeModel = $recLarge
+        $script:SmallModel = $recSmall
+    }
+
+    Write-Success "Configuration: mode=$($script:InferenceMode), large=$($script:LargeModel), small=$($script:SmallModel)"
 }
 
 function Test-Dependencies {
@@ -221,6 +422,13 @@ function Install-MissingDependencies {
 }
 
 function Install-Models {
+    # Skip pulling for remote Ollama - models are managed on the remote
+    if ($script:InferenceMode -eq "remote") {
+        Write-Info "Using remote Ollama at $($script:OllamaUrl) - skipping local model pull"
+        Write-Info "Ensure models '$($script:LargeModel)' and '$($script:SmallModel)' are available on the remote"
+        return
+    }
+
     Write-Info "Pulling Ollama models (this may take a while)..."
 
     # Start Ollama if not running
@@ -231,22 +439,22 @@ function Install-Models {
         Start-Sleep -Seconds 3
     }
 
-    # Pull small model first
-    Write-Info "Pulling $SmallModel..."
-    & ollama pull $SmallModel
+    # Pull small model first (faster, provides early feedback)
+    Write-Info "Pulling $($script:SmallModel)..."
+    & ollama pull $script:SmallModel
     if ($LASTEXITCODE -eq 0) {
-        Write-Success "$SmallModel ready"
+        Write-Success "$($script:SmallModel) ready"
     } else {
-        Write-Err "Failed to pull $SmallModel"
+        Write-Err "Failed to pull $($script:SmallModel)"
     }
 
     # Pull large model
-    Write-Info "Pulling $LargeModel (this is ~40GB, be patient)..."
-    & ollama pull $LargeModel
+    Write-Info "Pulling $($script:LargeModel)..."
+    & ollama pull $script:LargeModel
     if ($LASTEXITCODE -eq 0) {
-        Write-Success "$LargeModel ready"
+        Write-Success "$($script:LargeModel) ready"
     } else {
-        Write-Err "Failed to pull $LargeModel"
+        Write-Err "Failed to pull $($script:LargeModel)"
     }
 
     Write-Success "All models ready"
@@ -305,10 +513,14 @@ default_max_iterations: 50
 
         @"
 # Ralph-o-matic Server Configuration
-large_model: $LargeModel
-small_model: $SmallModel
+ollama:
+  url: $($script:OllamaUrl)
+  inference_mode: $($script:InferenceMode)
+large_model:
+  name: $($script:LargeModel)
+small_model:
+  name: $($script:SmallModel)
 default_max_iterations: 50
-concurrent_jobs: 1
 bind_address: $lanIp
 port: 9090
 workspace_dir: $configDir\workspace
@@ -397,6 +609,86 @@ function Install-Skill {
         Write-Success "brainstorm-to-ralph skill installed"
     } catch {
         Write-Warn "Could not install brainstorm-to-ralph skill"
+    }
+}
+
+function Install-Service {
+    Write-Info "Installing ralph-o-matic as a scheduled task (auto-start on login)..."
+
+    $binDir = "$env:LOCALAPPDATA\Programs\ralph-o-matic"
+    $configDir = "$env:USERPROFILE\.config\ralph-o-matic"
+    $logDir = "$configDir\logs"
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+    $taskName = "RalphOMaticServer"
+
+    # Remove existing task if present
+    $existing = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    if ($existing) {
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+    }
+
+    # Create a scheduled task that runs at logon
+    $action = New-ScheduledTaskAction `
+        -Execute "$binDir\ralph-o-matic-server.exe" `
+        -WorkingDirectory $configDir
+
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+
+    $settings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable `
+        -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 1) `
+        -ExecutionTimeLimit (New-TimeSpan -Days 365)
+
+    Register-ScheduledTask `
+        -TaskName $taskName `
+        -Action $action `
+        -Trigger $trigger `
+        -Settings $settings `
+        -Description "Ralph-o-matic server - AI iterative development pipeline" `
+        -RunLevel Limited | Out-Null
+
+    Write-Success "Scheduled task '$taskName' installed (runs automatically on login)"
+}
+
+function Start-RalphServer {
+    Write-Info "Starting ralph-o-matic server..."
+
+    $configDir = "$env:USERPROFILE\.config\ralph-o-matic"
+    $taskName = "RalphOMaticServer"
+
+    # Set environment for the server process
+    $env:RALPH_DB = "$configDir\data\ralph.db"
+
+    # Start via scheduled task
+    Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+
+    # Verify it's running
+    $serverProcess = Get-Process -Name "ralph-o-matic-server" -ErrorAction SilentlyContinue
+    if ($serverProcess) {
+        Write-Success "Server started (runs automatically on login)"
+    } else {
+        Write-Warn "Server may have failed to start - check logs at $configDir\logs\"
+        Write-Warn "You can start it manually: ralph-o-matic-server"
+    }
+}
+
+function Request-StartServer {
+    Install-Service
+
+    if ($Yes) {
+        Start-RalphServer
+        return
+    }
+
+    Write-Host ""
+    $response = Read-Host "Start server now? [Y/n]"
+    if (-not $response -or $response -match "^[Yy]") {
+        Start-RalphServer
     }
 }
 
@@ -557,6 +849,7 @@ function Main {
 
     if ($Mode -ne "client") {
         Get-Gpu
+        Select-Models
         Install-Models
     }
 
@@ -566,9 +859,7 @@ function Main {
 
     if ($Mode -ne "client") {
         Set-NotificationConfig
-        # Note: Push and Test require the server to be running.
-        # On Windows there is no auto-start service in this installer,
-        # so we attempt to push config and warn if the server isn't up.
+        Request-StartServer
         Push-NotificationConfig
         Test-NotificationConfig
     }

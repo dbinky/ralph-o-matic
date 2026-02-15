@@ -259,7 +259,8 @@ fi
 echo "✓ Server reachable"
 
 # 5. Branch not already in queue
-EXISTING=$(ralph-o-matic status --json | jq -r ".jobs[] | select(.branch == \"$BRANCH\") | .id")
+SERVER=$(ralph-o-matic config | grep '^server:' | awk '{print $2}')
+EXISTING=$(curl -sf "$SERVER/api/jobs?status=queued,running,paused" | jq -r ".jobs[] | select(.branch == \"$BRANCH\") | .id" 2>/dev/null | head -1)
 if [ -n "$EXISTING" ]; then
     echo "✗ Branch already in queue as job #$EXISTING"
     exit 1

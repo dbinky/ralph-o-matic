@@ -97,7 +97,9 @@ func (q *Queue) Pause(job *models.Job) error {
 	return nil
 }
 
-// Resume resumes a paused job
+// Resume resumes a paused job.
+// The explicit status check is intentional: the state machine allows
+// queued→running (used by Dequeue), but Resume must only accept paused jobs.
 func (q *Queue) Resume(job *models.Job) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
