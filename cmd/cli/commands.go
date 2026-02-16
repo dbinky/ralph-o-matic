@@ -480,7 +480,8 @@ Use dotted keys for nested values, e.g.: large_model.name, notify.smtp.host`,
 				fmt.Println("# Anthropic")
 				fmt.Printf("anthropic.large_model: %s\n", serverCfg.Anthropic.LargeModel)
 				fmt.Printf("anthropic.small_model: %s\n", serverCfg.Anthropic.SmallModel)
-				fmt.Printf("anthropic.api_key_set: %v\n", serverCfg.Anthropic.APIKeySet)
+					keyConfigured := serverCfg.Anthropic.APIKeySet
+				fmt.Printf("anthropic.api_key_set: %v\n", keyConfigured)
 				fmt.Println()
 				fmt.Println("# Execution")
 				fmt.Printf("default_max_iterations: %d\n", serverCfg.DefaultMaxIterations)
@@ -658,11 +659,14 @@ func printQueueOverview(jobs []*models.Job) {
 	if len(completedToday) > 0 {
 		fmt.Println("\nTODAY")
 		for _, j := range completedToday {
-			symbol := "✓"
-			if j.Status == models.StatusFailed {
+			var symbol string
+			switch j.Status {
+			case models.StatusFailed:
 				symbol = "✗"
-			} else if j.Status == models.StatusCancelled {
+			case models.StatusCancelled:
 				symbol = "⊘"
+			default:
+				symbol = "✓"
 			}
 			line := fmt.Sprintf("  %s #%-4d %-30s %d iters", symbol, j.ID, j.Branch, j.Iteration)
 			if d := j.Duration(); d > 0 {
