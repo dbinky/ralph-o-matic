@@ -16,7 +16,7 @@ import (
 
 // anthropicConfigResponse redacts the API key, exposing only whether one is set.
 type anthropicConfigResponse struct {
-	APIKeySet  bool   `json:"api_key_set"`
+	APIConfigured bool `json:"api_key_set"`
 	LargeModel string `json:"large_model"`
 	SmallModel string `json:"small_model"`
 }
@@ -70,7 +70,7 @@ func newConfigResponse(cfg *models.ServerConfig) *configResponse {
 		JobRetentionDays:     cfg.JobRetentionDays,
 		DefaultBackend:       cfg.DefaultBackend,
 		Anthropic: anthropicConfigResponse{
-			APIKeySet:  cfg.Anthropic.APIKey != "",
+			APIConfigured: cfg.Anthropic.APIKey != "",
 			LargeModel: cfg.Anthropic.LargeModel,
 			SmallModel: cfg.Anthropic.SmallModel,
 		},

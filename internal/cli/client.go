@@ -163,7 +163,7 @@ type ServerConfigResponse struct {
 // AnthropicConfigResponse matches the redacted Anthropic config from the API.
 // SYNC: mirrors api.anthropicConfigResponse in internal/api/config.go
 type AnthropicConfigResponse struct {
-	APIKeySet  bool   `json:"api_key_set"`
+	APIConfigured bool `json:"api_key_set"`
 	LargeModel string `json:"large_model"`
 	SmallModel string `json:"small_model"`
 }

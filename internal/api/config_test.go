@@ -30,7 +30,7 @@ func TestAPI_GetConfig(t *testing.T) {
 	assert.Equal(t, "devstral", resp.LargeModel.Name)
 	assert.Equal(t, "cpu", resp.LargeModel.Device)
 	assert.Equal(t, "http://localhost:11434", resp.Ollama.Host)
-	assert.False(t, resp.Anthropic.APIKeySet)
+	assert.False(t, resp.Anthropic.APIConfigured)
 }
 
 func TestAPI_UpdateConfig(t *testing.T) {
@@ -221,7 +221,7 @@ func TestAPI_GetConfig_IncludesAnthropicDefaults(t *testing.T) {
 	assert.Equal(t, models.BackendOllama, resp.DefaultBackend)
 	assert.Equal(t, "claude-opus-4-5-20251101", resp.Anthropic.LargeModel)
 	assert.Equal(t, "claude-haiku-4-5-20251001", resp.Anthropic.SmallModel)
-	assert.False(t, resp.Anthropic.APIKeySet)
+	assert.False(t, resp.Anthropic.APIConfigured)
 }
 
 func TestAPI_GetConfig_NoConcurrentJobsField(t *testing.T) {

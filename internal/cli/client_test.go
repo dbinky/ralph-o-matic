@@ -105,7 +105,7 @@ func TestClient_GetConfig_DeserializesRedactedFields(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify redacted boolean fields are properly deserialized
-	assert.True(t, cfg.Anthropic.APIKeySet, "api_key_set should be true")
+	assert.True(t, cfg.Anthropic.APIConfigured, "api_key_set should be true")
 	assert.Equal(t, "claude-sonnet-4-20250514", cfg.Anthropic.LargeModel)
 	assert.Equal(t, "claude-haiku-3-20240307", cfg.Anthropic.SmallModel)
 

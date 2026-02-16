@@ -480,8 +480,7 @@ Use dotted keys for nested values, e.g.: large_model.name, notify.smtp.host`,
 				fmt.Println("# Anthropic")
 				fmt.Printf("anthropic.large_model: %s\n", serverCfg.Anthropic.LargeModel)
 				fmt.Printf("anthropic.small_model: %s\n", serverCfg.Anthropic.SmallModel)
-					keyConfigured := serverCfg.Anthropic.APIKeySet
-				fmt.Printf("anthropic.api_key_set: %v\n", keyConfigured)
+					fmt.Printf("anthropic.api_key_set: %v\n", serverCfg.Anthropic.APIConfigured)
 				fmt.Println()
 				fmt.Println("# Execution")
 				fmt.Printf("default_max_iterations: %d\n", serverCfg.DefaultMaxIterations)
