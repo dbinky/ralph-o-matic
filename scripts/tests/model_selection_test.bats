@@ -102,7 +102,7 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "configure_ralph writes structured config" {
+@test "configure_ralph writes CLI config in server mode" {
     OS="linux"
     ARCH="amd64"
     MODE="server"
@@ -120,10 +120,30 @@ setup() {
     local config_file="$HOME/.config/ralph-o-matic/config.yaml"
     [ -f "$config_file" ]
 
-    # Check config contains model info
-    grep -q "large_model" "$config_file"
-    grep -q "qwen3:14b" "$config_file"
+    # Server mode writes CLI-compatible config (model config goes to API)
+    grep -q "server: http://localhost:9090" "$config_file"
+    grep -q "default_priority: normal" "$config_file"
+    grep -q "default_max_iterations: 50" "$config_file"
+
+    # Should NOT contain server-side model config (that goes via API)
+    ! grep -q "ollama:" "$config_file"
+    ! grep -q "large_model:" "$config_file"
 
     # Cleanup
     rm -rf "$HOME"
+}
+
+@test "apply_model_config fails gracefully when server unreachable" {
+    OLLAMA_URL="http://localhost:11434"
+    LARGE_MODEL="qwen3:14b"
+    SMALL_MODEL="qwen3:8b"
+    INFERENCE_MODE="cpu_only"
+
+    # Override curl to simulate unreachable server
+    curl() { return 1; }
+    export -f curl
+
+    run apply_model_config
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"not responding"* ]]
 }

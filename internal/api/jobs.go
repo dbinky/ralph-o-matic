@@ -102,6 +102,9 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, job)
 }
 
+// defaultListLimit is the maximum number of jobs returned when no limit is specified.
+const defaultListLimit = 100
+
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	opts := db.ListOptions{}
 
@@ -110,22 +113,43 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		opts.OwnerID = user.ID
 	}
 
-	// Parse status filter
+	// Parse and validate status filter
 	if statusStr := r.URL.Query().Get("status"); statusStr != "" {
 		statuses := strings.Split(statusStr, ",")
 		for _, s := range statuses {
-			opts.Statuses = append(opts.Statuses, models.JobStatus(s))
+			status := models.JobStatus(s)
+			if !status.Valid() {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid status filter: %q", s))
+				return
+			}
+			opts.Statuses = append(opts.Statuses, status)
 		}
 	}
 
-	// Parse pagination
+	// Parse pagination with validation
+	limitSpecified := false
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		limit, _ := strconv.Atoi(limitStr)
+		limitSpecified = true
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit < 0 {
+			writeError(w, http.StatusBadRequest, "invalid limit: must be a non-negative integer")
+			return
+		}
 		opts.Limit = limit
 	}
 	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
-		offset, _ := strconv.Atoi(offsetStr)
+		offset, err := strconv.Atoi(offsetStr)
+		if err != nil || offset < 0 {
+			writeError(w, http.StatusBadRequest, "invalid offset: must be a non-negative integer")
+			return
+		}
 		opts.Offset = offset
+	}
+
+	// Apply default limit only when the parameter was not specified.
+	// An explicit limit=0 means "return all results" (preserves backward compatibility).
+	if !limitSpecified {
+		opts.Limit = defaultListLimit
 	}
 
 	jobs, total, err := db.NewJobRepo(s.db).List(opts)
@@ -189,6 +213,15 @@ func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Only allow updates on non-terminal jobs
+	if job.Status.IsTerminal() {
+		writeError(w, http.StatusConflict, fmt.Sprintf("cannot update job in %s state", job.Status))
+		return
+	}
+
+	// Limit request body to 1 MB to prevent denial of service
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	var updates map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -205,7 +238,12 @@ func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
 		job.Priority = p
 	}
 	if maxIter, ok := updates["max_iterations"].(float64); ok {
-		job.MaxIterations = int(maxIter)
+		v := int(maxIter)
+		if v <= 0 {
+			writeError(w, http.StatusBadRequest, "max_iterations must be positive")
+			return
+		}
+		job.MaxIterations = v
 	}
 
 	if err := s.queue.Update(job); err != nil {
@@ -257,6 +295,9 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReorderJobs(w http.ResponseWriter, r *http.Request) {
+	// Limit request body to 1 MB to prevent denial of service
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	var req ReorderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")

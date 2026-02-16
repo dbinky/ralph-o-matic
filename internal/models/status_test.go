@@ -61,9 +61,9 @@ func TestJobStatus_CanTransitionTo(t *testing.T) {
 		{StatusRunning, StatusCancelled, true},
 		{StatusRunning, StatusQueued, false},
 		// From paused
+		{StatusPaused, StatusQueued, true},
 		{StatusPaused, StatusRunning, true},
 		{StatusPaused, StatusCancelled, true},
-		{StatusPaused, StatusQueued, false},
 		{StatusPaused, StatusCompleted, false},
 		// From terminal states
 		{StatusCompleted, StatusRunning, false},

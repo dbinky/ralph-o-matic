@@ -23,11 +23,9 @@ Phase 1: Brainstorm (INTERACTIVE) ────► Design document
                                               │
 Phase 2: Plan (AUTOMATIC) ────────────► Phase documents
                                               │
-Phase 3: Beads Setup (AUTOMATIC) ─────► Task DAG
+Phase 3: Execute (PARALLEL) ──────────► Implementation
                                               │
-Phase 4: Execute (PARALLEL) ──────────► Implementation
-                                              │
-Phase 5: Ship (AUTOMATIC) ────────────► Ralph job submitted
+Phase 4: Ship (AUTOMATIC) ────────────► Ralph job submitted
 ```
 
 ---
@@ -73,76 +71,12 @@ Each phase document must follow the writing-plans format:
 
 **On completion:**
 - Commit all phase documents
-- Announce: "Planning complete. {N} phases created. Setting up task tracking..."
+- Announce: "Planning complete. {N} phases created. Starting parallel execution..."
 - Proceed to Phase 3
 
 ---
 
-## Phase 3: Beads Setup (AUTOMATIC)
-
-**Announce:** "Setting up task tracking with Beads..."
-
-Initialize Beads if needed and create the task structure:
-
-### Step 1: Initialize Beads
-
-```bash
-# Check if Beads is initialized
-if [ ! -d ".beads" ]; then
-    bd init
-fi
-```
-
-### Step 2: Create Phase Tasks
-
-For each phase document, create a parent task:
-
-```bash
-# Example for 3 phases
-bd add "Phase 1: Database Schema" --id PHASE-1
-bd add "Phase 2: API Endpoints" --id PHASE-2 --blocked-by PHASE-1
-bd add "Phase 3: Frontend Integration" --id PHASE-3 --blocked-by PHASE-2
-```
-
-### Step 3: Create Sub-Tasks
-
-Parse each phase document and create sub-tasks for each "Task N:" section:
-
-```bash
-# Example sub-tasks for Phase 1
-bd add "Create users table" --id PHASE-1-1 --parent PHASE-1
-bd add "Create sessions table" --id PHASE-1-2 --parent PHASE-1 --blocked-by PHASE-1-1
-bd add "Add indexes" --id PHASE-1-3 --parent PHASE-1 --blocked-by PHASE-1-1,PHASE-1-2
-```
-
-### Step 4: Verify Structure
-
-```bash
-bd list --tree
-```
-
-Should show:
-```
-Phase 1: Database Schema [PHASE-1]
-├── Create users table [PHASE-1-1] ○
-├── Create sessions table [PHASE-1-2] ○ (blocked by PHASE-1-1)
-└── Add indexes [PHASE-1-3] ○ (blocked by PHASE-1-1, PHASE-1-2)
-
-Phase 2: API Endpoints [PHASE-2] (blocked by PHASE-1)
-├── POST /auth/register [PHASE-2-1] ○
-├── POST /auth/login [PHASE-2-2] ○
-└── POST /auth/logout [PHASE-2-3] ○
-...
-```
-
-**On completion:**
-- Commit `.beads/` directory
-- Announce: "Task tracking ready. {N} tasks created. Starting parallel execution..."
-- Proceed to Phase 4
-
----
-
-## Phase 4: Execute (PARALLEL)
+## Phase 3: Execute (PARALLEL)
 
 **Announce:** "Launching parallel execution agents..."
 
@@ -159,64 +93,47 @@ You are executing an implementation plan for a specific phase.
 
 **REQUIRED:** Invoke `superpowers:executing-plans` with this phase document.
 
-**Beads Integration:**
+**Task Tracking:**
 
-Before starting any task:
-```bash
-bd list --ready
-```
+Each phase document contains numbered tasks. Work through them in order:
+1. Read the phase document to understand the full scope
+2. For each task, implement it following TDD (tests first, then implementation)
+3. Run tests after each task to verify correctness
+4. Commit after each task completion
 
-After completing a task:
-```bash
-bd done {TASK-ID}
-```
-
-If blocked by another agent's work:
-```bash
-bd list --blocked
-# Wait and poll every 30 seconds until unblocked
-```
-
-After all tasks complete, verify:
-```bash
-bd list --status PHASE-{N}
-# Should show all tasks complete
-```
+If a task depends on work from another phase that isn't complete yet,
+skip it and move to the next independent task. Return to blocked tasks
+after the dependency is available.
 
 **Commit Strategy:**
 - Commit after each task completion
 - Use conventional commit messages
-- Reference task ID in commit message: "feat: create users table [PHASE-1-1]"
+- Reference the phase and task in commit messages, e.g.: "feat(phase-1): create users table"
 ```
 
 ### Execution Flow
 
 1. Dispatch agents for all phases simultaneously
-2. Agents that are blocked will wait automatically (via Beads)
-3. Monitor progress through Beads:
-   ```bash
-   watch -n 5 'bd list --compact'
-   ```
-4. Wait for all agents to complete
+2. Phases with dependencies on earlier phases will skip blocked tasks and return to them
+3. Wait for all agents to complete
+4. If any agent fails, review its output and either fix manually or re-run
 
 ### Handling Failures
 
 If an agent fails:
-1. Check which task failed: `bd list --failed`
-2. Review the error in agent output
-3. Either:
-   - Fix manually and mark done: `bd done {TASK-ID}`
-   - Reset and retry: `bd reset {TASK-ID}` and re-run agent
+1. Review the error in agent output
+2. Either:
+   - Fix manually and commit the fix
+   - Re-run the agent for that specific phase
 
 **On completion:**
-- Verify all Beads tasks are complete: `bd list --summary`
 - Run full test suite to verify implementation
 - Announce: "Implementation complete. All {N} phases done. Preparing for ralph submission..."
-- Proceed to Phase 5
+- Proceed to Phase 4
 
 ---
 
-## Phase 5: Ship (AUTOMATIC)
+## Phase 4: Ship (AUTOMATIC)
 
 **Announce:** "Running pre-flight checks and shipping to ralph-o-matic..."
 
@@ -259,7 +176,8 @@ fi
 echo "✓ Server reachable"
 
 # 5. Branch not already in queue
-EXISTING=$(ralph-o-matic status --json | jq -r ".jobs[] | select(.branch == \"$BRANCH\") | .id")
+SERVER=$(ralph-o-matic config | grep '^server:' | awk '{print $2}')
+EXISTING=$(curl -sf "$SERVER/api/jobs?status=queued,running,paused" | jq -r ".jobs[] | select(.branch == \"$BRANCH\") | .id" 2>/dev/null | head -1)
 if [ -n "$EXISTING" ]; then
     echo "✗ Branch already in queue as job #$EXISTING"
     exit 1
@@ -421,7 +339,7 @@ If brainstorming completed but planning failed:
 /brainstorm-to-ralph resume --from-design docs/plans/YYYY-MM-DD-{topic}-design.md
 ```
 
-### Resume from Phase 4 (Execution)
+### Resume from Phase 3 (Execution)
 
 If planning completed but execution failed:
 
@@ -429,7 +347,7 @@ If planning completed but execution failed:
 /brainstorm-to-ralph resume --from-plans "docs/plans/YYYY-MM-DD-{topic}-design-phase-*.md"
 ```
 
-### Resume from Phase 5 (Ship)
+### Resume from Phase 4 (Ship)
 
 If execution completed but shipping failed:
 

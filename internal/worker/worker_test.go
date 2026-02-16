@@ -16,11 +16,12 @@ import (
 
 // mockHandler implements JobHandler for testing
 type mockHandler struct {
-	mu       sync.Mutex
-	results  []*executor.ExecutionResult // one per call, cycles if exhausted
-	errors   []error
-	calls    int
-	handleFn func(ctx context.Context, job *models.Job) (*executor.ExecutionResult, error)
+	mu              sync.Mutex
+	results         []*executor.ExecutionResult // one per call, cycles if exhausted
+	errors          []error
+	calls           int
+	handleFn        func(ctx context.Context, job *models.Job) (*executor.ExecutionResult, error)
+	finalizeSuccess *bool // records the success arg passed to Finalize
 }
 
 func (m *mockHandler) Handle(ctx context.Context, job *models.Job) (*executor.ExecutionResult, error) {
@@ -51,7 +52,16 @@ func (m *mockHandler) Handle(ctx context.Context, job *models.Job) (*executor.Ex
 }
 
 func (m *mockHandler) Finalize(ctx context.Context, job *models.Job, success bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.finalizeSuccess = &success
 	return nil
+}
+
+func (m *mockHandler) getFinalizeSuccess() *bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.finalizeSuccess
 }
 
 func (m *mockHandler) callCount() int {
@@ -66,6 +76,10 @@ type mockQueue struct {
 	jobs      []*models.Job
 	completed []*models.Job
 	failed    []*models.Job
+
+	// externalStatus overrides the status returned by Get (simulates external pause/cancel).
+	// When set, Get returns a copy of the job with this status immediately.
+	externalStatus models.JobStatus
 }
 
 func (m *mockQueue) Dequeue() (*models.Job, error) {
@@ -77,6 +91,17 @@ func (m *mockQueue) Dequeue() (*models.Job, error) {
 	job := m.jobs[0]
 	m.jobs = m.jobs[1:]
 	return job, nil
+}
+
+func (m *mockQueue) Get(id int64) (*models.Job, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// If external status is configured, return it immediately
+	if m.externalStatus != "" {
+		return &models.Job{ID: id, Status: m.externalStatus}, nil
+	}
+	// Default: return running (normal state during worker execution)
+	return &models.Job{ID: id, Status: models.StatusRunning}, nil
 }
 
 func (m *mockQueue) Update(job *models.Job) error {
@@ -146,7 +171,10 @@ func TestWorker_RunsToMaxIterations_WhenNeverCompleted(t *testing.T) {
 	w.poll(ctx)
 
 	assert.Equal(t, 5, handler.callCount(), "should have run all 5 iterations")
-	require.Len(t, q.completed, 1, "job should be completed")
+	require.Len(t, q.failed, 1, "job should be failed when max iterations reached without completion signal")
+	assert.Contains(t, q.failed[0].Error, "max iterations reached")
+	require.NotNil(t, handler.getFinalizeSuccess())
+	assert.False(t, *handler.getFinalizeSuccess(), "Finalize should be called with success=false")
 }
 
 func TestWorker_EarlyTermination_FirstIteration(t *testing.T) {
@@ -256,7 +284,10 @@ func TestWorker_CircuitBreaker_ProgressPreventsOpen(t *testing.T) {
 	w.poll(ctx)
 
 	assert.Equal(t, 6, handler.callCount(), "should run all 6 iterations")
-	require.Len(t, q.completed, 1, "job should complete normally")
+	// Circuit breaker stayed closed (good), but job still hit max iterations without
+	// a completion signal, so it should be marked as failed — not completed.
+	require.Len(t, q.failed, 1, "job should fail when max iterations reached without completion signal")
+	assert.Contains(t, q.failed[0].Error, "max iterations reached")
 }
 
 // --- Retry Tests ---
@@ -440,6 +471,29 @@ func TestWorker_Notification_CircuitBreakerFailed(t *testing.T) {
 	assert.Equal(t, notify.EventFailed, calls[0].Event)
 }
 
+func TestWorker_Notification_MaxIterationsReached(t *testing.T) {
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: false, Metadata: &executor.ResponseMetadata{FilesModified: 1}},
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{newTestJob(3)}}
+	mn := &mockNotifier{}
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.SetNotifier(mn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	require.Len(t, q.failed, 1, "job should be failed")
+	assert.Contains(t, q.failed[0].Error, "max iterations reached")
+	calls := mn.getCalls()
+	require.Len(t, calls, 1)
+	assert.Equal(t, notify.EventFailed, calls[0].Event)
+}
+
 func TestWorker_Notification_NilNotifier_NoPanic(t *testing.T) {
 	handler := &mockHandler{
 		results: []*executor.ExecutionResult{
@@ -504,6 +558,130 @@ func TestWorker_Notification_OnlyOnTerminalState(t *testing.T) {
 	calls := mn.getCalls()
 	require.Len(t, calls, 1, "should get exactly one notification on terminal state")
 	assert.Equal(t, notify.EventCompleted, calls[0].Event)
+}
+
+// --- External Pause/Cancel Tests ---
+
+func TestWorker_ExternalPause_StopsIterating(t *testing.T) {
+	// Job has 10 max iterations, but is paused externally after iteration 2
+	progress := &executor.ResponseMetadata{FilesModified: 1}
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: false, Metadata: progress},
+		},
+	}
+	q := &mockQueue{
+		jobs:           []*models.Job{newTestJob(10)},
+		externalStatus: models.StatusPaused,
+	}
+
+	w := New(q, handler, 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	// Should have run only 1 iteration (check happens after first iteration)
+	assert.Equal(t, 1, handler.callCount(), "should stop after detecting pause")
+	// Job should NOT be completed or failed — status was already set by the API
+	assert.Empty(t, q.completed, "paused job should not be marked completed")
+	assert.Empty(t, q.failed, "paused job should not be marked failed")
+}
+
+func TestWorker_ExternalCancel_StopsIterating(t *testing.T) {
+	// Job has 10 max iterations, but is cancelled externally after iteration 2
+	progress := &executor.ResponseMetadata{FilesModified: 1}
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: false, Metadata: progress},
+		},
+	}
+	q := &mockQueue{
+		jobs:           []*models.Job{newTestJob(10)},
+		externalStatus: models.StatusCancelled,
+	}
+
+	w := New(q, handler, 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	assert.Equal(t, 1, handler.callCount(), "should stop after detecting cancel")
+	assert.Empty(t, q.completed, "cancelled job should not be marked completed")
+	assert.Empty(t, q.failed, "cancelled job should not be marked failed")
+}
+
+func TestWorker_ExternalCancel_SendsNotification(t *testing.T) {
+	progress := &executor.ResponseMetadata{FilesModified: 1}
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: false, Metadata: progress},
+		},
+	}
+	q := &mockQueue{
+		jobs:           []*models.Job{newTestJob(10)},
+		externalStatus: models.StatusCancelled,
+	}
+	mn := &mockNotifier{}
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.SetNotifier(mn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	calls := mn.getCalls()
+	require.Len(t, calls, 1, "should send exactly one notification")
+	assert.Equal(t, notify.EventCancelled, calls[0].Event)
+}
+
+func TestWorker_ExternalPause_NoNotification(t *testing.T) {
+	progress := &executor.ResponseMetadata{FilesModified: 1}
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: false, Metadata: progress},
+		},
+	}
+	q := &mockQueue{
+		jobs:           []*models.Job{newTestJob(10)},
+		externalStatus: models.StatusPaused,
+	}
+	mn := &mockNotifier{}
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.SetNotifier(mn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	calls := mn.getCalls()
+	assert.Empty(t, calls, "pause should not trigger notification")
+}
+
+func TestWorker_ExternalStop_NoFinalize(t *testing.T) {
+	// When paused/cancelled externally, Finalize should NOT be called
+	// (no PR creation for interrupted jobs)
+	progress := &executor.ResponseMetadata{FilesModified: 1}
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: false, Metadata: progress},
+		},
+	}
+	q := &mockQueue{
+		jobs:           []*models.Job{newTestJob(10)},
+		externalStatus: models.StatusPaused,
+	}
+
+	w := New(q, handler, 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	assert.Nil(t, handler.getFinalizeSuccess(), "Finalize should not be called for paused jobs")
 }
 
 // --- Rate Limiter Integration Tests ---

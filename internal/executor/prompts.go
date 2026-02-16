@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ryan/ralph-o-matic/internal/models"
 )
 
 const boundedTemplate = `You are refining code to meet a specification.
@@ -26,29 +28,15 @@ When all spec requirements are satisfied and tests pass, output:
 <promise>COMPLETE</promise>
 `
 
-const openEndedTemplate = `You are improving this codebase toward production quality.
-
-Progress: %s
-
-Each iteration:
-1. Read the progress file to understand what's been done and what remains
-2. Search the codebase before assuming anything is missing
-3. Pick the single highest-impact improvement
-4. Implement it, keeping the change focused and testable
-5. Run tests — if they fail, fix before moving on
-6. Update the progress file: mark completed items, add discovered work, note what's next
-
-Do not output a <promise> tag. Continue improving until stopped.
-`
-
 // DefaultBoundedPrompt returns the default prompt for spec-driven jobs with exit criteria.
 func DefaultBoundedPrompt(specPath, progressPath string) string {
 	return fmt.Sprintf(boundedTemplate, specPath, progressPath)
 }
 
 // DefaultOpenEndedPrompt returns the default prompt for open-ended polish jobs.
+// Delegates to models.DefaultOpenEndedPrompt to avoid template duplication.
 func DefaultOpenEndedPrompt(progressPath string) string {
-	return fmt.Sprintf(openEndedTemplate, progressPath)
+	return models.DefaultOpenEndedPrompt(progressPath)
 }
 
 // ProgressSeedContent returns the initial content for a new progress file.

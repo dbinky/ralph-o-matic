@@ -12,6 +12,6 @@
   ],
   "dependencies": {
     "plugins": ["superpowers"],
-    "tools": ["ralph-o-matic", "ralph", "bd", "git", "gh"]
+    "tools": ["ralph-o-matic", "git", "gh"]
   }
 }

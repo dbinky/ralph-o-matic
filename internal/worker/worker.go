@@ -24,6 +24,7 @@ type JobHandler interface {
 // JobQueue manages job scheduling and state transitions.
 type JobQueue interface {
 	Dequeue() (*models.Job, error)
+	Get(id int64) (*models.Job, error)
 	Update(job *models.Job) error
 	Complete(job *models.Job) error
 	Fail(job *models.Job, errMsg string) error
@@ -131,6 +132,7 @@ func (w *Worker) poll(ctx context.Context) {
 	cb := executor.NewCircuitBreaker(loopConfig.CircuitBreakerNoProgress, loopConfig.CircuitBreakerSameError)
 	w.rateLimiter = NewRateLimiter(loopConfig.MaxCallsPerHour)
 
+	completedBySignal := false
 	for {
 		if ctx.Err() != nil {
 			log.Printf("Worker: context cancelled, stopping job #%d", job.ID)
@@ -165,6 +167,7 @@ func (w *Worker) poll(ctx context.Context) {
 
 		if result != nil && result.Completed {
 			log.Printf("Worker: job #%d signaled completion at iteration %d", job.ID, job.Iteration)
+			completedBySignal = true
 			break
 		}
 
@@ -184,6 +187,12 @@ func (w *Worker) poll(ctx context.Context) {
 			return
 		}
 
+		// Check if job was paused or cancelled externally between iterations.
+		// The current iteration's work is already committed (Handle does per-iteration commits).
+		if w.checkExternalStop(ctx, job) {
+			return
+		}
+
 		if job.HasReachedMaxIterations() {
 			log.Printf("Worker: job #%d reached max iterations (%d)", job.ID, job.MaxIterations)
 			break
@@ -191,8 +200,7 @@ func (w *Worker) poll(ctx context.Context) {
 	}
 
 	// Finalize: commit and create PR
-	success := true
-	if err := w.handler.Finalize(ctx, job, success); err != nil {
+	if err := w.handler.Finalize(ctx, job, completedBySignal); err != nil {
 		log.Printf("Worker: job #%d finalize failed: %v", job.ID, err)
 		if fErr := w.queue.Fail(job, fmt.Sprintf("finalize failed: %v", err)); fErr != nil {
 			log.Printf("Worker: failed to mark job #%d as failed: %v", job.ID, fErr)
@@ -201,12 +209,45 @@ func (w *Worker) poll(ctx context.Context) {
 		return
 	}
 
-	if err := w.queue.Complete(job); err != nil {
-		log.Printf("Worker: failed to mark job #%d as complete: %v", job.ID, err)
+	if completedBySignal {
+		if err := w.queue.Complete(job); err != nil {
+			log.Printf("Worker: failed to mark job #%d as complete: %v", job.ID, err)
+		} else {
+			log.Printf("Worker: job #%d completed after %d iterations", job.ID, job.Iteration)
+		}
+		w.sendNotification(ctx, job, notify.EventCompleted)
 	} else {
-		log.Printf("Worker: job #%d completed after %d iterations", job.ID, job.Iteration)
+		log.Printf("Worker: job #%d reached max iterations (%d) without completion signal", job.ID, job.MaxIterations)
+		if fErr := w.queue.Fail(job, fmt.Sprintf("max iterations reached (%d) without completion signal", job.MaxIterations)); fErr != nil {
+			log.Printf("Worker: failed to mark job #%d as failed: %v", job.ID, fErr)
+		}
+		w.sendNotification(ctx, job, notify.EventFailed)
 	}
-	w.sendNotification(ctx, job, notify.EventCompleted)
+}
+
+// checkExternalStop re-reads the job from the database to detect pause or cancel
+// requests issued via the API while the worker was executing iterations.
+// Returns true if the worker should stop processing this job.
+func (w *Worker) checkExternalStop(ctx context.Context, job *models.Job) bool {
+	fresh, err := w.queue.Get(job.ID)
+	if err != nil {
+		// If we can't read the job, continue processing — transient DB error
+		// shouldn't stop a running job.
+		log.Printf("Worker: job #%d failed to check external status: %v", job.ID, err)
+		return false
+	}
+
+	switch fresh.Status {
+	case models.StatusCancelled:
+		log.Printf("Worker: job #%d was cancelled externally, stopping", job.ID)
+		w.sendNotification(ctx, job, notify.EventCancelled)
+		return true
+	case models.StatusPaused:
+		log.Printf("Worker: job #%d was paused externally at iteration %d, stopping", job.ID, job.Iteration)
+		return true
+	default:
+		return false
+	}
 }
 
 // waitForRateLimit blocks until the rate limiter allows a call.

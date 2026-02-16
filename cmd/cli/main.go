@@ -39,6 +39,7 @@ func main() {
 		cancelCmd(),
 		pauseCmd(),
 		resumeCmd(),
+		updateCmd(),
 		moveCmd(),
 		configCmd(),
 		serverConfigCmd(),

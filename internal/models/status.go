@@ -46,7 +46,7 @@ func (s JobStatus) CanTransitionTo(target JobStatus) bool {
 		return target == StatusPaused || target == StatusCompleted ||
 			target == StatusFailed || target == StatusCancelled
 	case StatusPaused:
-		return target == StatusRunning || target == StatusCancelled
+		return target == StatusQueued || target == StatusRunning || target == StatusCancelled
 	case StatusCompleted, StatusFailed, StatusCancelled:
 		return false // Terminal states cannot transition
 	default:
