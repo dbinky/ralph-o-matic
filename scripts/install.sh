@@ -30,6 +30,7 @@ LARGE_MODEL=""
 SMALL_MODEL=""
 OLLAMA_URL="http://localhost:11434"
 INFERENCE_MODE=""  # gpu_cpu_split, gpu_only, cpu_only, remote
+BACKEND="ollama"  # ollama or anthropic
 
 # Notification configuration
 NOTIFY_SMTP_ENABLED=false
@@ -297,6 +298,27 @@ setup_remote_ollama() {
     if [[ -z "$SMALL_MODEL" ]]; then
         SMALL_MODEL="qwen3:8b"
     fi
+}
+
+select_backend() {
+    # Skip if --yes flag (default to ollama)
+    if [[ "$YES_FLAG" == true ]]; then
+        return
+    fi
+
+    echo ""
+    echo "How would you like to run ralph-o-matic?"
+    echo ""
+    echo "  [1] Local models via Ollama (GPU/CPU — free, private, requires hardware)"
+    echo "  [2] Anthropic API via Claude Code (uses your Claude subscription/API credits)"
+    echo ""
+    read -p "Select [1-2]: " -n 1 -r
+    echo ""
+
+    case $REPLY in
+        2) BACKEND="anthropic" ;;
+        *) BACKEND="ollama" ;;
+    esac
 }
 
 select_models() {
