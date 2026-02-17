@@ -775,32 +775,34 @@ install_binaries() {
 }
 
 install_skill() {
-    info "Installing Claude Code skill..."
+    info "Installing Claude Code skills..."
 
     if ! command -v claude &>/dev/null; then
-        warn "Claude Code not installed, skipping skill"
+        warn "Claude Code not installed, skipping skills"
         return
     fi
 
-    # Install brainstorm-to-ralph skill
-    # This is bundled with ralph-o-matic, copy to Claude Code skills directory
     local skills_dir="$HOME/.claude/skills"
     mkdir -p "$skills_dir"
 
-    if [[ -d "/usr/local/share/ralph-o-matic/skills/brainstorm-to-ralph" ]]; then
-        cp -r /usr/local/share/ralph-o-matic/skills/brainstorm-to-ralph "$skills_dir/"
-        success "brainstorm-to-ralph skill installed"
-    else
-        # Download from release
-        local skill_url="$RELEASE_URL/brainstorm-to-ralph-skill.tar.gz"
-        if curl -fsSL "$skill_url" -o /tmp/skill.tar.gz 2>/dev/null; then
-            tar -xzf /tmp/skill.tar.gz -C "$skills_dir/"
-            rm /tmp/skill.tar.gz
-            success "brainstorm-to-ralph skill installed"
+    local skills=("brainstorm-to-ralph" "direct-to-ralph")
+
+    for skill_name in "${skills[@]}"; do
+        if [[ -d "/usr/local/share/ralph-o-matic/skills/$skill_name" ]]; then
+            cp -r "/usr/local/share/ralph-o-matic/skills/$skill_name" "$skills_dir/"
+            success "$skill_name skill installed"
         else
-            warn "Could not install brainstorm-to-ralph skill"
+            # Download from release
+            local skill_url="$RELEASE_URL/${skill_name}-skill.tar.gz"
+            if curl -fsSL "$skill_url" -o /tmp/skill.tar.gz 2>/dev/null; then
+                tar -xzf /tmp/skill.tar.gz -C "$skills_dir/"
+                rm /tmp/skill.tar.gz
+                success "$skill_name skill installed"
+            else
+                warn "Could not install $skill_name skill"
+            fi
         fi
-    fi
+    done
 }
 
 configure_ralph() {
