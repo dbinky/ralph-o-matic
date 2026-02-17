@@ -6,6 +6,8 @@ param(
     [switch]$Yes,
     [ValidateSet("full", "server", "client")]
     [string]$Mode = "full",
+    [ValidateSet("ollama", "anthropic")]
+    [string]$Backend = "ollama",
     [string]$Server = "",
     [string]$LargeModel = "",
     [string]$SmallModel = ""
@@ -48,7 +50,7 @@ function Get-Platform {
 function Test-RamRequirement {
     $MinRam = 16
 
-    if ($Mode -eq "client") {
+    if ($Mode -eq "client" -or $Backend -eq "anthropic") {
         return
     }
 
@@ -345,8 +347,8 @@ function Test-Dependencies {
         Write-Warn "gh (GitHub CLI) not installed"
     }
 
-    # Ollama (server mode only)
-    if ($Mode -ne "client") {
+    # Ollama (server mode + ollama backend only)
+    if ($Mode -ne "client" -and $Backend -ne "anthropic") {
         try {
             $ollamaVersion = & ollama --version 2>$null
             $script:Deps["ollama"] = @{ Installed = $true; Version = $ollamaVersion }
@@ -408,7 +410,7 @@ function Install-MissingDependencies {
         & gh auth login
     }
 
-    if ($Mode -ne "client" -and -not $script:Deps["ollama"].Installed) {
+    if ($Mode -ne "client" -and $Backend -ne "anthropic" -and -not $script:Deps["ollama"].Installed) {
         Write-Info "Installing Ollama..."
         winget install --id Ollama.Ollama -e --source winget --accept-package-agreements --accept-source-agreements
         Write-Success "Ollama installed"
@@ -511,7 +513,14 @@ default_max_iterations: 50
         $lanIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" -and $_.PrefixOrigin -eq "Dhcp" } | Select-Object -First 1).IPAddress
         if (-not $lanIp) { $lanIp = "localhost" }
 
-        @"
+        if ($Backend -eq "anthropic") {
+            @"
+server: http://localhost:9090
+default_priority: normal
+default_max_iterations: 50
+"@ | Out-File -FilePath "$configDir\config.yaml" -Encoding utf8
+        } else {
+            @"
 # Ralph-o-matic Server Configuration
 ollama:
   url: $($script:OllamaUrl)
@@ -526,6 +535,7 @@ port: 9090
 workspace_dir: $configDir\workspace
 job_retention_days: 30
 "@ | Out-File -FilePath "$configDir\config.yaml" -Encoding utf8
+        }
 
         New-Item -ItemType Directory -Path "$configDir\workspace" -Force | Out-Null
         New-Item -ItemType Directory -Path "$configDir\data" -Force | Out-Null
@@ -559,6 +569,139 @@ function Get-InstallMode {
         "2" { $script:Mode = "server" }
         "3" { $script:Mode = "client" }
         default { $script:Mode = "full" }
+    }
+}
+
+function Select-Backend {
+    if ($Yes) { return }
+
+    Write-Host ""
+    Write-Host "How would you like to run ralph-o-matic?"
+    Write-Host ""
+    Write-Host "  [1] Local models via Ollama (GPU/CPU - free, private, requires hardware)"
+    Write-Host "  [2] Anthropic API via Claude Code (uses your Claude subscription/API credits)"
+    Write-Host ""
+    $choice = Read-Host "Select [1-2]"
+
+    switch ($choice) {
+        "2" { $script:Backend = "anthropic" }
+        default { $script:Backend = "ollama" }
+    }
+}
+
+function Test-ClaudeAuth {
+    Write-Info "Validating Claude Code installation..."
+
+    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+        Write-Err "Claude Code CLI not found. Install it first: npm install -g @anthropic-ai/claude-code"
+    }
+    Write-Success "Claude Code CLI found"
+
+    Write-Info "Checking authentication (this makes a quick API call)..."
+    try {
+        $result = (& claude --print "respond with only the word OK" --model claude-haiku-4-5-20251001 2>$null) -join " "
+        if ($result -notmatch "(?i)ok") {
+            Write-Err "Claude Code authentication failed. Run 'claude' to log in first."
+        }
+    } catch {
+        Write-Err "Claude Code authentication failed. Run 'claude' to log in first."
+    }
+    Write-Success "Claude Code authenticated"
+}
+
+function Select-AnthropicModels {
+    # Auto-select defaults with -Yes flag
+    if ($Yes) {
+        $script:LargeModel = "claude-sonnet-4-5-20250929"
+        $script:SmallModel = "claude-haiku-4-5-20251001"
+        return
+    }
+
+    Write-Host ""
+    Write-Host "Select the LARGE model (used for main coding iterations):"
+    Write-Host ""
+    Write-Host "  [1] claude-opus-4-6               (most capable, slower, higher cost)"
+    Write-Host "  [2] claude-sonnet-4-5-20250929     (strong balance of quality and speed)"
+    Write-Host "  [3] Custom model ID"
+    Write-Host ""
+    $choice = Read-Host "Select [1-3]"
+
+    switch ($choice) {
+        "1" { $script:LargeModel = "claude-opus-4-6" }
+        "2" { $script:LargeModel = "claude-sonnet-4-5-20250929" }
+        "3" {
+            $script:LargeModel = Read-Host "Enter model ID"
+            if (-not $script:LargeModel) {
+                Write-Warn "Empty model ID, using claude-sonnet-4-5-20250929"
+                $script:LargeModel = "claude-sonnet-4-5-20250929"
+            }
+        }
+        default {
+            Write-Warn "Invalid choice, using claude-sonnet-4-5-20250929"
+            $script:LargeModel = "claude-sonnet-4-5-20250929"
+        }
+    }
+
+    Write-Host ""
+    Write-Host "Select the SMALL model (used for quick checks and lightweight tasks):"
+    Write-Host ""
+    Write-Host "  [1] claude-haiku-4-5-20251001     (fast, efficient, low cost)"
+    Write-Host "  [2] claude-sonnet-4-5-20250929     (higher quality for small tasks)"
+    Write-Host "  [3] Custom model ID"
+    Write-Host ""
+    $choice = Read-Host "Select [1-3]"
+
+    switch ($choice) {
+        "1" { $script:SmallModel = "claude-haiku-4-5-20251001" }
+        "2" { $script:SmallModel = "claude-sonnet-4-5-20250929" }
+        "3" {
+            $script:SmallModel = Read-Host "Enter model ID"
+            if (-not $script:SmallModel) {
+                Write-Warn "Empty model ID, using claude-haiku-4-5-20251001"
+                $script:SmallModel = "claude-haiku-4-5-20251001"
+            }
+        }
+        default {
+            Write-Warn "Invalid choice, using claude-haiku-4-5-20251001"
+            $script:SmallModel = "claude-haiku-4-5-20251001"
+        }
+    }
+
+    Write-Success "Selected: large=$($script:LargeModel), small=$($script:SmallModel)"
+}
+
+function Push-AnthropicConfig {
+    Write-Info "Applying Anthropic configuration to server..."
+
+    # Wait for server
+    $retries = 0
+    while ($retries -lt 15) {
+        try {
+            $null = Invoke-RestMethod -Uri "http://localhost:9090/api/config" -TimeoutSec 2
+            break
+        } catch {
+            $retries++
+            Start-Sleep -Seconds 1
+        }
+    }
+    if ($retries -ge 15) {
+        Write-Warn "Server not responding - skipping Anthropic config"
+        return
+    }
+
+    $body = @{
+        default_backend = "anthropic"
+        anthropic = @{
+            large_model = $script:LargeModel
+            small_model = $script:SmallModel
+        }
+    } | ConvertTo-Json -Depth 3
+
+    try {
+        Invoke-RestMethod -Uri "http://localhost:9090/api/config" -Method Patch -ContentType "application/json" -Body $body | Out-Null
+        Write-Success "Anthropic config applied (large=$($script:LargeModel), small=$($script:SmallModel))"
+    } catch {
+        Write-Warn "Failed to apply Anthropic config: $_"
     }
 }
 
@@ -853,15 +996,25 @@ function Test-NotificationConfig {
 function Main {
     Show-Banner
     Get-Platform
-    Test-RamRequirement
     Get-InstallMode
+
+    if ($Mode -ne "client") {
+        Select-Backend
+    }
+
+    Test-RamRequirement
     Test-Dependencies
     Install-MissingDependencies
 
     if ($Mode -ne "client") {
-        Get-Gpu
-        Select-Models
-        Install-Models
+        if ($Backend -eq "anthropic") {
+            Test-ClaudeAuth
+            Select-AnthropicModels
+        } else {
+            Get-Gpu
+            Select-Models
+            Install-Models
+        }
     }
 
     Install-Binaries
@@ -871,6 +1024,9 @@ function Main {
     if ($Mode -ne "client") {
         Set-NotificationConfig
         Request-StartServer
+        if ($Backend -eq "anthropic") {
+            Push-AnthropicConfig
+        }
         Push-NotificationConfig
         Test-NotificationConfig
     }
