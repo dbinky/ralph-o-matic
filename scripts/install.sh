@@ -48,6 +48,7 @@ parse_args() {
         case $1 in
             --yes|-y) YES_FLAG=true; shift ;;
             --mode=*) MODE="${1#*=}"; MODE_SET=true; shift ;;
+            --backend=*) BACKEND="${1#*=}"; shift ;;
             --server=*) SERVER_URL="${1#*=}"; shift ;;
             --large-model=*) LARGE_MODEL="${1#*=}"; shift ;;
             --small-model=*) SMALL_MODEL="${1#*=}"; shift ;;
@@ -117,8 +118,8 @@ detect_platform() {
 check_ram_requirement() {
     local MIN_RAM=16
 
-    if [[ "$MODE" == "client" ]]; then
-        # Client doesn't need much RAM
+    if [[ "$MODE" == "client" ]] || [[ "$BACKEND" == "anthropic" ]]; then
+        # Client doesn't need much RAM; anthropic backend runs models in the cloud
         return 0
     fi
 
@@ -592,8 +593,8 @@ check_dependencies() {
         warn "gh (GitHub CLI) not installed"
     fi
 
-    # Ollama (only for server mode)
-    if [[ "$MODE" != "client" ]]; then
+    # Ollama (only for server mode with ollama backend)
+    if [[ "$MODE" != "client" ]] && [[ "$BACKEND" != "anthropic" ]]; then
         if command -v ollama &>/dev/null; then
             DEPS_INSTALLED[ollama]=true
             DEPS_VERSION[ollama]=$(ollama --version 2>/dev/null | awk '{print $NF}' || echo "unknown")
@@ -620,12 +621,16 @@ check_dependencies() {
 install_missing_dependencies() {
     local need_install=false
 
-    for dep in git gh ollama claude; do
+    for dep in git gh claude; do
         if [[ "${DEPS_INSTALLED[$dep]:-false}" == "false" ]]; then
             need_install=true
             break
         fi
     done
+    # Only check ollama for non-anthropic backend
+    if [[ "$MODE" != "client" ]] && [[ "$BACKEND" != "anthropic" ]] && [[ "${DEPS_INSTALLED[ollama]:-false}" == "false" ]]; then
+        need_install=true
+    fi
 
     if [[ "$need_install" == false ]]; then
         success "All dependencies installed"
@@ -669,8 +674,8 @@ install_missing_dependencies() {
         gh auth login
     fi
 
-    # Install Ollama (server mode only)
-    if [[ "$MODE" != "client" ]] && [[ "${DEPS_INSTALLED[ollama]}" == "false" ]]; then
+    # Install Ollama (server mode + ollama backend only)
+    if [[ "$MODE" != "client" ]] && [[ "$BACKEND" != "anthropic" ]] && [[ "${DEPS_INSTALLED[ollama]}" == "false" ]]; then
         info "Installing Ollama..."
         curl -fsSL https://ollama.ai/install.sh | sh
         success "Ollama installed"
@@ -1276,15 +1281,23 @@ main() {
 
     print_banner
     detect_platform
-    check_ram_requirement
     prompt_mode
+    if [[ "$MODE" != "client" ]]; then
+        select_backend
+    fi
+    check_ram_requirement
     check_dependencies
     install_missing_dependencies
     if [[ "$MODE" != "client" ]]; then
-        detect_gpu
-        select_models
-        configure_ollama
-        pull_models
+        if [[ "$BACKEND" == "anthropic" ]]; then
+            validate_claude_auth
+            select_anthropic_models
+        else
+            detect_gpu
+            select_models
+            configure_ollama
+            pull_models
+        fi
     fi
     install_binaries
     install_skill
