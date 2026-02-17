@@ -897,6 +897,27 @@ apply_model_config() {
         sleep 1
     done
 
+    # Fork based on backend
+    if [[ "$BACKEND" == "anthropic" ]]; then
+        local json_payload
+        json_payload=$(jq -n \
+            --arg large "$LARGE_MODEL" \
+            --arg small "$SMALL_MODEL" \
+            '{default_backend:"anthropic",anthropic:{large_model:$large,small_model:$small}}')
+
+        local http_code
+        http_code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH http://localhost:9090/api/config \
+            -H "Content-Type: application/json" \
+            -d "$json_payload")
+        if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+            warn "Config update failed (HTTP $http_code) — check server logs"
+            return
+        fi
+
+        success "Anthropic config applied (large=$LARGE_MODEL, small=$SMALL_MODEL)"
+        return
+    fi
+
     # Map INFERENCE_MODE to device settings and is_remote flag
     local is_remote=false
     local large_device="cpu"

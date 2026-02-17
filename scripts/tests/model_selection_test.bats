@@ -191,6 +191,50 @@ setup() {
     [ "$SMALL_MODEL" = "claude-haiku-4-5-20251001" ]
 }
 
+@test "apply_model_config sends anthropic payload when backend is anthropic" {
+    BACKEND="anthropic"
+    LARGE_MODEL="claude-opus-4-6"
+    SMALL_MODEL="claude-haiku-4-5-20251001"
+
+    curl() {
+        # Server health check (curl -sf URL)
+        if [[ "$1" == "-sf" ]] && [[ "$2" != "-X" ]]; then
+            return 0
+        fi
+        # PATCH call - return HTTP 200 status code (mimics -w '%{http_code}')
+        printf "200"
+        return 0
+    }
+    export -f curl
+
+    run apply_model_config
+    [ "$status" -eq 0 ]
+    # Must use Anthropic-specific success message, not the Ollama one
+    [[ "$output" == *"Anthropic config applied"* ]]
+    # Must NOT contain Ollama-style device config
+    [[ "$output" != *"[cpu]"* ]]
+    [[ "$output" != *"[gpu]"* ]]
+}
+
+@test "apply_model_config warns on anthropic config HTTP failure" {
+    BACKEND="anthropic"
+    LARGE_MODEL="claude-opus-4-6"
+    SMALL_MODEL="claude-haiku-4-5-20251001"
+
+    curl() {
+        if [[ "$1" == "-sf" ]] && [[ "$2" != "-X" ]]; then
+            return 0  # health check passes
+        fi
+        printf "500"
+        return 0
+    }
+    export -f curl
+
+    run apply_model_config
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Config update failed (HTTP 500)"* ]]
+}
+
 @test "apply_model_config fails gracefully when server unreachable" {
     OLLAMA_URL="http://localhost:11434"
     LARGE_MODEL="qwen3:14b"
