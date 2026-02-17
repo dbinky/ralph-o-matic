@@ -228,7 +228,7 @@ func (r *JobRepo) List(opts ListOptions) ([]*models.Job, int, error) {
 	if opts.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", opts.Limit)
 		if opts.Offset > 0 {
-			query += fmt.Sprintf(" OFFSET %d", opts.Offset)
+			query += fmt.Sprintf(" OFFSET %d", opts.Offset) //nolint:gosec // G202: integer value, not user string
 		}
 	}
 
