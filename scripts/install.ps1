@@ -16,7 +16,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Version = "0.0.2"
+$Version = "0.0.3"
 $RepoUrl = "https://github.com/dbinky/ralph-o-matic"
 $ReleaseUrl = "$RepoUrl/releases/download/v$Version"
 
