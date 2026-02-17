@@ -1,0 +1,16 @@
+{
+  "name": "direct-to-ralph",
+  "version": "1.0.0",
+  "description": "Use when you have code ready for ralph-o-matic refinement and want to skip brainstorming, planning, and execution phases",
+  "author": "ryan",
+  "commands": [
+    {
+      "name": "direct-to-ralph",
+      "description": "Submit existing work to ralph-o-matic for iterative refinement",
+      "usage": "/direct-to-ralph \"<task description>\" [--spec <file>] [--max-iterations N] [--priority high|normal|low] [--open-ended] [--branch <name>]"
+    }
+  ],
+  "dependencies": {
+    "tools": ["ralph-o-matic", "git"]
+  }
+}

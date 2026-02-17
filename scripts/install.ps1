@@ -4,6 +4,7 @@
 
 param(
     [switch]$Yes,
+    [switch]$Update,
     [ValidateSet("full", "server", "client")]
     [string]$Mode = "full",
     [ValidateSet("ollama", "anthropic")]
@@ -731,27 +732,28 @@ function Show-Success {
 }
 
 function Install-Skill {
-    Write-Info "Installing Claude Code skill..."
+    Write-Info "Installing Claude Code skills..."
 
-    try {
-        $null = & claude --version 2>$null
-    } catch {
-        Write-Warn "Claude Code not installed, skipping skill"
+    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+        Write-Warn "Claude Code not installed, skipping skills"
         return
     }
 
-    # Install brainstorm-to-ralph skill
     $skillsDir = "$env:USERPROFILE\.claude\skills"
     New-Item -ItemType Directory -Path $skillsDir -Force | Out-Null
 
-    $skillUrl = "$ReleaseUrl/brainstorm-to-ralph-skill.zip"
-    try {
-        Invoke-WebRequest -Uri $skillUrl -OutFile "$env:TEMP\skill.zip"
-        Expand-Archive -Path "$env:TEMP\skill.zip" -DestinationPath $skillsDir -Force
-        Remove-Item "$env:TEMP\skill.zip"
-        Write-Success "brainstorm-to-ralph skill installed"
-    } catch {
-        Write-Warn "Could not install brainstorm-to-ralph skill"
+    $skills = @("brainstorm-to-ralph", "direct-to-ralph")
+
+    foreach ($skillName in $skills) {
+        $skillUrl = "$ReleaseUrl/$skillName-skill.zip"
+        try {
+            Invoke-WebRequest -Uri $skillUrl -OutFile "$env:TEMP\skill.zip"
+            Expand-Archive -Path "$env:TEMP\skill.zip" -DestinationPath $skillsDir -Force
+            Remove-Item "$env:TEMP\skill.zip"
+            Write-Success "$skillName skill installed"
+        } catch {
+            Write-Warn "Could not install $skillName skill"
+        }
     }
 }
 
@@ -797,7 +799,27 @@ function Install-Service {
     Write-Success "Scheduled task '$taskName' installed (runs automatically on login)"
 }
 
+function Stop-RalphServer {
+    Write-Info "Stopping ralph-o-matic server..."
+
+    $taskName = "RalphOMaticServer"
+
+    # Stop scheduled task
+    try {
+        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    } catch { }
+
+    # Kill process if still running
+    try {
+        Stop-Process -Name "ralph-o-matic-server" -Force -ErrorAction SilentlyContinue
+    } catch { }
+
+    Start-Sleep -Seconds 1
+}
+
 function Start-RalphServer {
+    Stop-RalphServer
+
     Write-Info "Starting ralph-o-matic server..."
 
     $configDir = "$env:USERPROFILE\.config\ralph-o-matic"
@@ -996,6 +1018,18 @@ function Test-NotificationConfig {
 function Main {
     Show-Banner
     Get-Platform
+
+    # -Update: quick software-only update path
+    if ($Update) {
+        Write-Info "Updating ralph-o-matic software..."
+        Stop-RalphServer
+        Install-Binaries
+        Install-Skill
+        Start-RalphServer
+        Show-Success
+        return
+    }
+
     Get-InstallMode
 
     if ($Mode -ne "client") {
@@ -1017,6 +1051,7 @@ function Main {
         }
     }
 
+    Stop-RalphServer
     Install-Binaries
     Install-Skill
     Set-Configuration

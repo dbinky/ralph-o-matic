@@ -25,6 +25,7 @@ error() { echo -e "${RED}✗${NC} $1"; exit 1; }
 MODE="full"  # full, server, client
 MODE_SET=false
 YES_FLAG=false
+UPDATE_FLAG=false
 SERVER_URL=""
 LARGE_MODEL=""
 SMALL_MODEL=""
@@ -52,6 +53,7 @@ parse_args() {
             --server=*) SERVER_URL="${1#*=}"; shift ;;
             --large-model=*) LARGE_MODEL="${1#*=}"; shift ;;
             --small-model=*) SMALL_MODEL="${1#*=}"; shift ;;
+            --update) UPDATE_FLAG=true; shift ;;
             *) error "Unknown option: $1" ;;
         esac
     done
@@ -773,32 +775,34 @@ install_binaries() {
 }
 
 install_skill() {
-    info "Installing Claude Code skill..."
+    info "Installing Claude Code skills..."
 
     if ! command -v claude &>/dev/null; then
-        warn "Claude Code not installed, skipping skill"
+        warn "Claude Code not installed, skipping skills"
         return
     fi
 
-    # Install brainstorm-to-ralph skill
-    # This is bundled with ralph-o-matic, copy to Claude Code skills directory
     local skills_dir="$HOME/.claude/skills"
     mkdir -p "$skills_dir"
 
-    if [[ -d "/usr/local/share/ralph-o-matic/skills/brainstorm-to-ralph" ]]; then
-        cp -r /usr/local/share/ralph-o-matic/skills/brainstorm-to-ralph "$skills_dir/"
-        success "brainstorm-to-ralph skill installed"
-    else
-        # Download from release
-        local skill_url="$RELEASE_URL/brainstorm-to-ralph-skill.tar.gz"
-        if curl -fsSL "$skill_url" -o /tmp/skill.tar.gz 2>/dev/null; then
-            tar -xzf /tmp/skill.tar.gz -C "$skills_dir/"
-            rm /tmp/skill.tar.gz
-            success "brainstorm-to-ralph skill installed"
+    local skills=("brainstorm-to-ralph" "direct-to-ralph")
+
+    for skill_name in "${skills[@]}"; do
+        if [[ -d "/usr/local/share/ralph-o-matic/skills/$skill_name" ]]; then
+            cp -r "/usr/local/share/ralph-o-matic/skills/$skill_name" "$skills_dir/"
+            success "$skill_name skill installed"
         else
-            warn "Could not install brainstorm-to-ralph skill"
+            # Download from release
+            local skill_url="$RELEASE_URL/${skill_name}-skill.tar.gz"
+            if curl -fsSL "$skill_url" -o /tmp/skill.tar.gz 2>/dev/null; then
+                tar -xzf /tmp/skill.tar.gz -C "$skills_dir/"
+                rm /tmp/skill.tar.gz
+                success "$skill_name skill installed"
+            else
+                warn "Could not install $skill_name skill"
+            fi
         fi
-    fi
+    done
 }
 
 configure_ralph() {
@@ -1153,18 +1157,29 @@ EOF
     fi
 }
 
+stop_server() {
+    info "Stopping ralph-o-matic server..."
+
+    if [[ "$OS" == "darwin" ]]; then
+        launchctl bootout "gui/$(id -u)/com.ralph-o-matic.server" 2>/dev/null || true
+    elif [[ "$OS" == "linux" ]]; then
+        systemctl --user stop ralph-o-matic.service 2>/dev/null || true
+    fi
+
+    sleep 1
+}
+
 start_server() {
+    stop_server
+
     info "Starting ralph-o-matic server..."
 
     if [[ "$OS" == "darwin" ]]; then
-        # Unload first (ignore errors if not loaded)
-        launchctl bootout "gui/$(id -u)" "com.ralph-o-matic.server" 2>/dev/null || true
-        sleep 1
         launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.ralph-o-matic.server.plist" || true
         sleep 2
 
     elif [[ "$OS" == "linux" ]]; then
-        systemctl --user restart ralph-o-matic.service || true
+        systemctl --user start ralph-o-matic.service || true
         sleep 2
     fi
 
@@ -1281,6 +1296,19 @@ main() {
 
     print_banner
     detect_platform
+
+    # --update: quick software-only update path
+    if [[ "$UPDATE_FLAG" == true ]]; then
+        info "Updating ralph-o-matic software..."
+        stop_server
+        install_binaries
+        install_skill
+        start_server
+        verify_installation
+        print_success
+        return
+    fi
+
     prompt_mode
     if [[ "$MODE" != "client" ]]; then
         select_backend
@@ -1299,6 +1327,7 @@ main() {
             pull_models
         fi
     fi
+    stop_server
     install_binaries
     install_skill
     configure_ralph
