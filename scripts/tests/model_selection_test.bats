@@ -133,6 +133,29 @@ setup() {
     rm -rf "$HOME"
 }
 
+@test "validate_claude_auth fails when claude not installed" {
+    # Override command to simulate claude not found
+    command() {
+        if [[ "$2" == "claude" ]]; then return 1; fi
+        builtin command "$@"
+    }
+    export -f command
+
+    run validate_claude_auth
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not found"* ]]
+}
+
+@test "validate_claude_auth fails when auth check fails" {
+    # claude exists but auth fails
+    claude() { return 1; }
+    export -f claude
+
+    run validate_claude_auth
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"auth"* ]] || [[ "$output" == *"failed"* ]]
+}
+
 @test "apply_model_config fails gracefully when server unreachable" {
     OLLAMA_URL="http://localhost:11434"
     LARGE_MODEL="qwen3:14b"

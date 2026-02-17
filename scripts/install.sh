@@ -321,6 +321,23 @@ select_backend() {
     esac
 }
 
+validate_claude_auth() {
+    info "Validating Claude Code installation..."
+
+    if ! command -v claude &>/dev/null; then
+        error "Claude Code CLI not found. Install it first:
+  npm install -g @anthropic-ai/claude-code
+  Then run 'claude' to log in."
+    fi
+    success "Claude Code CLI found"
+
+    info "Checking authentication (this makes a quick API call)..."
+    if ! claude --print "respond with only the word OK" --model claude-haiku-4-5-20251001 2>/dev/null | grep -qi "ok"; then
+        error "Claude Code authentication failed. Run 'claude' to log in first."
+    fi
+    success "Claude Code authenticated"
+}
+
 select_models() {
     show_hardware_summary
 
