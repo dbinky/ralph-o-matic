@@ -19,8 +19,8 @@ jobs:
         run: go test -v -short -race ./...
       - name: Build all targets
         run: make build-all
-      - name: Package skill
-        run: make package-skill
+      - name: Package skills
+        run: make package-skills
       - name: Generate SHA256SUMS
         run: |
           {
