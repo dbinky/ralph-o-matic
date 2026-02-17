@@ -80,6 +80,9 @@ type mockQueue struct {
 	// externalStatus overrides the status returned by Get (simulates external pause/cancel).
 	// When set, Get returns a copy of the job with this status immediately.
 	externalStatus models.JobStatus
+
+	// externalMaxIterations, when > 0, overrides MaxIterations in Get responses.
+	externalMaxIterations int
 }
 
 func (m *mockQueue) Dequeue() (*models.Job, error) {
@@ -101,7 +104,11 @@ func (m *mockQueue) Get(id int64) (*models.Job, error) {
 		return &models.Job{ID: id, Status: m.externalStatus}, nil
 	}
 	// Default: return running (normal state during worker execution)
-	return &models.Job{ID: id, Status: models.StatusRunning}, nil
+	fresh := &models.Job{ID: id, Status: models.StatusRunning}
+	if m.externalMaxIterations > 0 {
+		fresh.MaxIterations = m.externalMaxIterations
+	}
+	return fresh, nil
 }
 
 func (m *mockQueue) Update(job *models.Job) error {
@@ -797,6 +804,33 @@ func TestWorker_RateLimiter_ContextCancelDuringWait(t *testing.T) {
 
 	// Should have run 1 iteration, then been blocked by rate limit, then context cancelled
 	assert.Equal(t, 1, handler.callCount(), "should have run 1 iteration before rate limit + cancel")
+}
+
+func TestWorker_MaxIterations_SyncedFromDB(t *testing.T) {
+	// Verify that when max_iterations is updated externally (via API),
+	// the worker picks up the new value from checkExternalStop.
+	progress := &executor.ResponseMetadata{FilesModified: 1}
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{
+			{Completed: false, Metadata: progress},
+		},
+	}
+	// Start with max_iterations=10, but DB returns 3 on re-read
+	q := &mockQueue{
+		jobs:                  []*models.Job{newTestJob(10)},
+		externalMaxIterations: 3,
+	}
+
+	w := New(q, handler, 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	// Worker should stop after 3 iterations (synced from DB), not 10
+	assert.Equal(t, 3, handler.callCount(), "should stop at externally updated max_iterations")
+	require.Len(t, q.failed, 1, "should fail when max iterations reached without completion")
+	assert.Contains(t, q.failed[0].Error, "max iterations reached")
 }
 
 func TestWorker_RateLimiter_RecreatedPerJob(t *testing.T) {

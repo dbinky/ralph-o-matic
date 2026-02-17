@@ -23,7 +23,7 @@ func TestAPI_GetConfig(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var resp configResponse
+	var resp models.ServerConfigResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	// Should return defaults
@@ -49,7 +49,7 @@ func TestAPI_UpdateConfig(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var resp configResponse
+	var resp models.ServerConfigResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	assert.Equal(t, "custom-model:latest", resp.LargeModel.Name)
@@ -77,7 +77,7 @@ func TestAPI_ConfigRoundTrip_FullModelPlacement(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp configResponse
+	var resp models.ServerConfigResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "http://10.0.0.1:11434", resp.Ollama.Host)
 	assert.True(t, resp.Ollama.IsRemote)
@@ -100,7 +100,7 @@ func TestAPI_ConfigRoundTrip_PartialUpdate_PreservesDefaults(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp configResponse
+	var resp models.ServerConfigResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "only-name:14b", resp.LargeModel.Name)
 	assert.Equal(t, "cpu", resp.LargeModel.Device)  // preserved from default
@@ -118,7 +118,7 @@ func TestAPI_ConfigRoundTrip_ExplicitZeroValues(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp configResponse
+	var resp models.ServerConfigResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "test:7b", resp.LargeModel.Name)
 	assert.Equal(t, 0.0, resp.LargeModel.MemoryGB) // explicitly set to 0
@@ -173,7 +173,7 @@ func TestAPI_ConfigRoundTrip_OllamaRemote(t *testing.T) {
 	w = httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 
-	var resp configResponse
+	var resp models.ServerConfigResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "http://remote:11434", resp.Ollama.Host)
 	assert.True(t, resp.Ollama.IsRemote)
@@ -216,7 +216,7 @@ func TestAPI_GetConfig_IncludesAnthropicDefaults(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp configResponse
+	var resp models.ServerConfigResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, models.BackendOllama, resp.DefaultBackend)
 	assert.Equal(t, "claude-opus-4-5-20251101", resp.Anthropic.LargeModel)
@@ -307,7 +307,7 @@ func TestAPI_GetConfig_IncludesNotifyConfig(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp configResponse
+	var resp models.ServerConfigResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	// SMTP
@@ -349,7 +349,7 @@ func TestAPI_GetConfig_NotifyDefaultsEmpty(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var resp configResponse
+	var resp models.ServerConfigResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	// Defaults: notifications disabled

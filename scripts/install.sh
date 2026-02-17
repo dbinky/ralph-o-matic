@@ -868,11 +868,21 @@ apply_notification_config() {
     # Push config via a single PATCH request with nested JSON.
     # The CLI now supports dotted keys, but batching into one request
     # avoids intermediate validation failures for partial configs.
+    #
+    # NOTE: This sends credentials (SMTP password, Teams webhook URL) over
+    # unauthenticated HTTP to localhost. This is acceptable for local installs
+    # where the server is on the same machine, but credentials are visible to
+    # any process that can observe localhost traffic.
     local patch_config
     patch_config() {
-        curl -sf -X PATCH http://localhost:9090/api/config \
+        local http_code
+        http_code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH http://localhost:9090/api/config \
             -H "Content-Type: application/json" \
-            -d "$1" &>/dev/null
+            -d "$1")
+        if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+            warn "Config update failed (HTTP $http_code) — check server logs"
+            return 1
+        fi
     }
 
     if [[ "$NOTIFY_SMTP_ENABLED" == true ]]; then

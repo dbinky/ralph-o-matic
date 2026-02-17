@@ -769,15 +769,26 @@ function Push-NotificationConfig {
         return
     }
 
-    # Push config via CLI (fall back to Invoke-RestMethod if CLI not in PATH)
+    # Push config via CLI (fall back to Invoke-RestMethod if CLI not in PATH).
+    #
+    # NOTE: When falling back to Invoke-RestMethod, credentials (SMTP password,
+    # Teams webhook URL) are sent over unauthenticated HTTP to localhost. This is
+    # acceptable for local installs where the server is on the same machine.
     $useCli = $null -ne (Get-Command ralph-o-matic -ErrorAction SilentlyContinue)
 
     function Set-ServerConfig($key, $value) {
         if ($useCli) {
             & ralph-o-matic server-config set $key $value
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn "Failed to set $key via CLI"
+            }
         } else {
-            $body = @{ $key = $value } | ConvertTo-Json
-            Invoke-RestMethod -Uri "http://localhost:9090/api/config" -Method Patch -ContentType "application/json" -Body $body | Out-Null
+            try {
+                $body = @{ $key = $value } | ConvertTo-Json
+                Invoke-RestMethod -Uri "http://localhost:9090/api/config" -Method Patch -ContentType "application/json" -Body $body | Out-Null
+            } catch {
+                Write-Warn "Failed to set $key via API: $_"
+            }
         }
     }
 

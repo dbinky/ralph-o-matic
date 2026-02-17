@@ -208,7 +208,7 @@ func TestAPI_ListJobs_DefaultLimit(t *testing.T) {
 	assert.Equal(t, defaultListLimit, resp.Limit)
 }
 
-func TestAPI_ListJobs_ExplicitLimitZero_ReturnsAll(t *testing.T) {
+func TestAPI_ListJobs_ExplicitLimitZero_AppliesDefault(t *testing.T) {
 	srv, _ := newTestServer(t)
 
 	// Create 3 jobs
@@ -217,7 +217,7 @@ func TestAPI_ListJobs_ExplicitLimitZero_ReturnsAll(t *testing.T) {
 		require.NoError(t, srv.queue.Enqueue(job))
 	}
 
-	// Explicit limit=0 should return all results (backward compatibility)
+	// Explicit limit=0 should be treated as omitted and apply the default limit
 	req := httptest.NewRequest("GET", "/api/jobs?limit=0", nil)
 	w := httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
@@ -227,8 +227,8 @@ func TestAPI_ListJobs_ExplicitLimitZero_ReturnsAll(t *testing.T) {
 	var resp ListJobsResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, 3, resp.Total)
-	assert.Len(t, resp.Jobs, 3, "limit=0 should return all results")
-	assert.Equal(t, 0, resp.Limit, "response should reflect the explicit limit=0")
+	assert.Len(t, resp.Jobs, 3)
+	assert.Equal(t, defaultListLimit, resp.Limit, "limit=0 should apply default limit")
 }
 
 func TestAPI_CancelJob(t *testing.T) {
@@ -824,6 +824,35 @@ func TestAPI_UpdateJob_InvalidJSON(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), "invalid JSON")
+}
+
+func TestAPI_UpdateJob_UnknownField_Rejected(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"typo max_iteration", `{"max_iteration":25}`},
+		{"unknown field", `{"foo":"bar"}`},
+		{"mixed known and unknown", `{"priority":"high","unknown":true}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("PATCH", "/api/jobs/"+strconv.FormatInt(job.ID, 10), strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			srv.Router().ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "unknown field")
+		})
+	}
 }
 
 func TestAPI_UpdateJob_NotFound(t *testing.T) {
