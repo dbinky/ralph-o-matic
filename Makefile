@@ -93,15 +93,18 @@ vet:
 
 ## Skill packaging
 
-.PHONY: package-skill
-package-skill:
-	@echo "Packaging brainstorm-to-ralph skill..."
+.PHONY: package-skills
+package-skills:
 	@mkdir -p dist
-	@tar -czvf dist/brainstorm-to-ralph-skill.tar.gz -C skills brainstorm-to-ralph
-	@cd skills && zip -r ../dist/brainstorm-to-ralph-skill.zip brainstorm-to-ralph
-	@echo "Skill packaged: dist/brainstorm-to-ralph-skill.tar.gz"
-	@echo "Skill packaged: dist/brainstorm-to-ralph-skill.zip"
+	@for skill in skills/*/; do \
+		name=$$(basename "$$skill"); \
+		echo "Packaging $$name skill..."; \
+		tar -czvf "dist/$$name-skill.tar.gz" -C skills "$$name"; \
+		cd skills && zip -r "../dist/$$name-skill.zip" "$$name" && cd ..; \
+		echo "Skill packaged: dist/$$name-skill.tar.gz"; \
+		echo "Skill packaged: dist/$$name-skill.zip"; \
+	done
 
 .PHONY: release
-release: build-all package-skill
+release: build-all package-skills
 	@echo "Release artifacts ready in dist/"
