@@ -11,7 +11,7 @@
     }
   ],
   "dependencies": {
-    "plugins": ["superpowers", "ralph-wiggum"],
-    "tools": ["ralph-o-matic", "bd", "git", "gh"]
+    "plugins": ["superpowers"],
+    "tools": ["ralph-o-matic", "git", "gh"]
   }
 }

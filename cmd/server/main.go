@@ -6,12 +6,21 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
+	"log/slog"
+
 	"github.com/ryan/ralph-o-matic/internal/api"
+	"github.com/ryan/ralph-o-matic/internal/auth"
+	"github.com/ryan/ralph-o-matic/internal/broadcast"
 	"github.com/ryan/ralph-o-matic/internal/db"
+	"github.com/ryan/ralph-o-matic/internal/executor"
+	"github.com/ryan/ralph-o-matic/internal/git"
+	"github.com/ryan/ralph-o-matic/internal/notify"
 	"github.com/ryan/ralph-o-matic/internal/queue"
+	"github.com/ryan/ralph-o-matic/internal/worker"
 )
 
 // version is set via -ldflags at build time.
@@ -50,7 +59,78 @@ func run() error {
 	}
 
 	q := queue.New(database)
-	srv := api.NewServer(database, q, addr)
+
+	b := broadcast.New()
+	q.SetBroadcaster(b)
+
+	// Recover jobs orphaned by a previous server crash/restart
+	recovered, err := q.RecoverOrphaned()
+	if err != nil {
+		return fmt.Errorf("failed to recover orphaned jobs: %w", err)
+	}
+	if recovered > 0 {
+		slog.Info("recovered orphaned jobs", "count", recovered)
+	}
+
+	// Load auth configuration
+	authCfg, err := auth.LoadConfig(os.Getenv, "")
+	if err != nil {
+		return fmt.Errorf("failed to load auth config: %w", err)
+	}
+	if err := authCfg.Validate(); err != nil {
+		return fmt.Errorf("invalid auth config: %w", err)
+	}
+
+	var serverOpts *api.ServerOptions
+	if authCfg.Mode == auth.AuthModeEntra {
+		provider, err := auth.NewEntraProvider(context.Background(), authCfg.Entra, "")
+		if err != nil {
+			return fmt.Errorf("failed to initialize EntraID provider: %w", err)
+		}
+		secure := os.Getenv("RALPH_SECURE") == "true"
+		if os.Getenv("RALPH_SECURE") == "" {
+			log.Println("WARNING: RALPH_SECURE not set — session cookies will not have the Secure flag. Set RALPH_SECURE=true for HTTPS deployments.")
+		}
+		serverOpts = &api.ServerOptions{
+			AuthProvider: provider,
+			Sessions:     auth.NewSessionStore(30 * time.Minute),
+			Secure:       secure,
+		}
+		log.Printf("Authentication enabled: EntraID SSO (tenant: %s)", authCfg.Entra.TenantID)
+	} else {
+		log.Println("WARNING: running without authentication — all endpoints are open")
+	}
+
+	if serverOpts == nil {
+		serverOpts = &api.ServerOptions{}
+	}
+	serverOpts.Broadcaster = b
+
+	srv := api.NewServer(database, q, addr, serverOpts)
+
+	// Load config for executor
+	configRepo := db.NewConfigRepo(database)
+	config, err := configRepo.Get()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	workspaceDir := config.WorkspaceDir
+	if workspaceDir == "" {
+		workspaceDir = "workspaces"
+	}
+
+	handler := executor.NewRalphHandler(database, config, workspaceDir)
+	handler.SetLogBroadcaster(b)
+	w := worker.New(q, handler, 5*time.Second)
+
+	// Set up workspace and job retention cleaner
+	repoMgr := git.NewRepoManager(workspaceDir)
+	cleaner := worker.NewCleaner(db.NewJobRepo(database), configRepo, repoMgr, worker.NewGitChecker())
+
+	// Set up notification dispatcher (reads config per-call from DB)
+	dispatcher := notify.NewDispatcher(configRepo, slog.Default())
+	w.SetNotifier(dispatcher)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -61,10 +141,37 @@ func run() error {
 		}
 	}()
 
+	// Use WaitGroup to ensure worker and cleaner complete before shutdown
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		w.Run(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		cleaner.Run(ctx)
+	}()
+
 	log.Printf("ralph-o-matic-server %s listening on %s", version, addr)
 	<-ctx.Done()
 
 	log.Println("Shutting down...")
+
+	// Wait for worker to complete current iteration (with timeout)
+	workerDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(workerDone)
+	}()
+
+	select {
+	case <-workerDone:
+		log.Println("Worker shutdown complete")
+	case <-time.After(30 * time.Second):
+		log.Println("Warning: worker shutdown timed out after 30s")
+	}
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)

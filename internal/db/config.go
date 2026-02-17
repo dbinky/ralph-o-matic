@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/ryan/ralph-o-matic/internal/models"
 )
@@ -60,18 +61,32 @@ func (r *ConfigRepo) Save(cfg *models.ServerConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal ollama: %w", err)
 	}
+	anthropicJSON, err := json.Marshal(cfg.Anthropic)
+	if err != nil {
+		return fmt.Errorf("failed to marshal anthropic: %w", err)
+	}
 
 	values := map[string]string{
-		"large_model":            string(largeModelJSON),
-		"small_model":            string(smallModelJSON),
-		"ollama":                 string(ollamaJSON),
-		"default_max_iterations": strconv.Itoa(cfg.DefaultMaxIterations),
-		"concurrent_jobs":        strconv.Itoa(cfg.ConcurrentJobs),
-		"workspace_dir":          cfg.WorkspaceDir,
-		"job_retention_days":     strconv.Itoa(cfg.JobRetentionDays),
-		"max_claude_retries":     strconv.Itoa(cfg.MaxClaudeRetries),
-		"max_git_retries":        strconv.Itoa(cfg.MaxGitRetries),
-		"git_retry_backoff_ms":   strconv.Itoa(cfg.GitRetryBackoffMs),
+		"large_model":              string(largeModelJSON),
+		"small_model":              string(smallModelJSON),
+		"ollama":                   string(ollamaJSON),
+		"default_backend":          string(cfg.DefaultBackend),
+		"anthropic":                string(anthropicJSON),
+		"default_max_iterations":   strconv.Itoa(cfg.DefaultMaxIterations),
+		"workspace_dir":            cfg.WorkspaceDir,
+		"job_retention_days":       strconv.Itoa(cfg.JobRetentionDays),
+		"max_claude_retries":       strconv.Itoa(cfg.MaxClaudeRetries),
+		"max_git_retries":          strconv.Itoa(cfg.MaxGitRetries),
+		"git_retry_backoff_ms":     strconv.Itoa(cfg.GitRetryBackoffMs),
+		"notify.smtp.enabled":      strconv.FormatBool(cfg.Notify.SMTP.Enabled),
+		"notify.smtp.host":         cfg.Notify.SMTP.Host,
+		"notify.smtp.port":         strconv.Itoa(cfg.Notify.SMTP.Port),
+		"notify.smtp.username":     cfg.Notify.SMTP.Username,
+		"notify.smtp.password":     cfg.Notify.SMTP.Password,
+		"notify.smtp.from":         cfg.Notify.SMTP.From,
+		"notify.smtp.recipients":   strings.Join(cfg.Notify.SMTP.Recipients, ","),
+		"notify.teams.enabled":     strconv.FormatBool(cfg.Notify.Teams.Enabled),
+		"notify.teams.webhook_url": cfg.Notify.Teams.WebhookURL,
 	}
 
 	tx, err := r.db.conn.Begin()
@@ -151,12 +166,6 @@ func applyConfigValue(cfg *models.ServerConfig, key, value string) error {
 			return err
 		}
 		cfg.DefaultMaxIterations = v
-	case "concurrent_jobs":
-		v, err := strconv.Atoi(value)
-		if err != nil {
-			return err
-		}
-		cfg.ConcurrentJobs = v
 	case "workspace_dir":
 		cfg.WorkspaceDir = value
 	case "job_retention_days":
@@ -183,6 +192,36 @@ func applyConfigValue(cfg *models.ServerConfig, key, value string) error {
 			return err
 		}
 		cfg.GitRetryBackoffMs = v
+	case "default_backend":
+		cfg.DefaultBackend = models.Backend(value)
+	case "anthropic":
+		var ac models.AnthropicConfig
+		if err := json.Unmarshal([]byte(value), &ac); err != nil {
+			return err
+		}
+		cfg.Anthropic = ac
+	case "notify.smtp.enabled":
+		cfg.Notify.SMTP.Enabled = value == "true"
+	case "notify.smtp.host":
+		cfg.Notify.SMTP.Host = value
+	case "notify.smtp.port":
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		cfg.Notify.SMTP.Port = v
+	case "notify.smtp.username":
+		cfg.Notify.SMTP.Username = value
+	case "notify.smtp.password":
+		cfg.Notify.SMTP.Password = value
+	case "notify.smtp.from":
+		cfg.Notify.SMTP.From = value
+	case "notify.smtp.recipients":
+		cfg.Notify.SMTP.Recipients = strings.Split(value, ",")
+	case "notify.teams.enabled":
+		cfg.Notify.Teams.Enabled = value == "true"
+	case "notify.teams.webhook_url":
+		cfg.Notify.Teams.WebhookURL = value
 	default:
 		return fmt.Errorf("unknown config key: %s", key)
 	}

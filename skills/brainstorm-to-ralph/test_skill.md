@@ -6,7 +6,6 @@ Manual verification checklist for the skill.
 
 - [ ] ralph-o-matic server running
 - [ ] Claude Code with superpowers plugin installed
-- [ ] Beads CLI (`bd`) installed
 - [ ] Git repository initialized
 - [ ] GitHub CLI authenticated
 
@@ -20,8 +19,7 @@ Manual verification checklist for the skill.
    - [ ] Brainstorming questions are asked
    - [ ] Design document created in `docs/plans/`
    - [ ] Phase documents created
-   - [ ] Beads tasks created (check `bd list`)
-   - [ ] Parallel agents spawned
+   - [ ] Parallel agents spawned for execution
    - [ ] Implementation completed
    - [ ] Job submitted to ralph-o-matic
    - [ ] Dashboard shows new job
@@ -76,5 +74,4 @@ Manual verification checklist for the skill.
 
 - [ ] Brainstorming phase responds within 2s per question
 - [ ] Planning phase completes within 2 minutes for medium features
-- [ ] Beads setup completes within 30 seconds
 - [ ] Pre-flight checks complete within 5 seconds

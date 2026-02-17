@@ -52,9 +52,12 @@ func (g *GH) CreatePR(ctx context.Context, dir, baseBranch, headBranch, title, b
 	)
 	cmd.Dir = dir
 
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("gh pr create failed: %w", err)
+		return "", fmt.Errorf("gh pr create failed: %w: %s", err, stderr.String())
 	}
 
 	// Output is the PR URL
@@ -81,20 +84,20 @@ func BuildPRBody(iterations int, success bool, specPath string, details map[stri
 	sb.WriteString("## Summary\n\n")
 
 	if success {
-		sb.WriteString(fmt.Sprintf("Completed in %d iterations. All tests passing.\n\n", iterations))
+		fmt.Fprintf(&sb, "Completed in %d iterations. All tests passing.\n\n", iterations)
 	} else {
-		sb.WriteString(fmt.Sprintf("Reached max iterations (%d) without completing. Tests may still be failing.\n\n", iterations))
+		fmt.Fprintf(&sb, "Reached max iterations (%d) without completing. Tests may still be failing.\n\n", iterations)
 	}
 
 	if specPath != "" {
 		sb.WriteString("## Specification\n\n")
-		sb.WriteString(fmt.Sprintf("See: %s\n\n", specPath))
+		fmt.Fprintf(&sb, "See: %s\n\n", specPath)
 	}
 
 	if !success && len(details) > 0 {
 		sb.WriteString("## Current State\n\n")
 		for key, value := range details {
-			sb.WriteString(fmt.Sprintf("- **%s**: %s\n", key, value))
+			fmt.Fprintf(&sb, "- **%s**: %s\n", key, value)
 		}
 		sb.WriteString("\n")
 	}

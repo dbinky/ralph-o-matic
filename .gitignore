@@ -1,5 +1,7 @@
 # Binaries
 /build/
+/cli
+/server
 *.exe
 *.exe~
 *.dll
@@ -10,6 +12,7 @@
 *.test
 coverage.out
 coverage.html
+*.prof
 
 # IDE
 .idea/
@@ -24,11 +27,15 @@ Thumbs.db
 
 # Go
 vendor/
+go.work
+go.work.sum
 
 # Local config (may contain secrets)
 .env
+.env.*
 *.local.yaml
 *.local.json
+settings.json
 
 # Database
 *.db
@@ -42,3 +49,6 @@ logs/
 # Temp
 tmp/
 temp/
+
+# Workspaces (job execution)
+workspaces/

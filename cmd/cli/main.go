@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/ryan/ralph-o-matic/internal/cli"
+	"github.com/spf13/cobra"
 )
 
 // version is set via -ldflags at build time.
@@ -39,9 +39,11 @@ func main() {
 		cancelCmd(),
 		pauseCmd(),
 		resumeCmd(),
+		updateCmd(),
 		moveCmd(),
 		configCmd(),
 		serverConfigCmd(),
+		testNotifyCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {

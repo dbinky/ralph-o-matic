@@ -5,10 +5,28 @@ import (
 	"fmt"
 )
 
+// Backend identifies which AI provider to use
+type Backend string
+
+const (
+	BackendOllama    Backend = "ollama"
+	BackendAnthropic Backend = "anthropic"
+)
+
+// Valid returns true for known backends and empty (which means "use default")
+func (b Backend) Valid() bool {
+	switch b {
+	case "", BackendOllama, BackendAnthropic:
+		return true
+	default:
+		return false
+	}
+}
+
 // ModelPlacement describes which model to use and where to run it
 type ModelPlacement struct {
 	Name     string  `json:"name"`
-	Device   string  `json:"device"`    // "gpu", "cpu", or "auto"
+	Device   string  `json:"device"` // "gpu", "cpu", or "auto"
 	MemoryGB float64 `json:"memory_gb"`
 }
 
@@ -40,6 +58,47 @@ func (oc *OllamaConfig) Validate() error {
 	return nil
 }
 
+// AnthropicConfig holds settings for the Anthropic API backend
+type AnthropicConfig struct {
+	APIKey     string `json:"api_key,omitempty"`
+	LargeModel string `json:"large_model"`
+	SmallModel string `json:"small_model"`
+}
+
+// Validate checks that model names are set
+func (ac *AnthropicConfig) Validate() error {
+	if ac.LargeModel == "" {
+		return fmt.Errorf("large_model is required")
+	}
+	if ac.SmallModel == "" {
+		return fmt.Errorf("small_model is required")
+	}
+	return nil
+}
+
+// SMTPConfig holds SMTP notification settings
+type SMTPConfig struct {
+	Enabled    bool     `json:"enabled"`
+	Host       string   `json:"host"`
+	Port       int      `json:"port"`
+	Username   string   `json:"username"`
+	Password   string   `json:"password"`
+	From       string   `json:"from"`
+	Recipients []string `json:"recipients"`
+}
+
+// TeamsConfig holds Microsoft Teams webhook notification settings
+type TeamsConfig struct {
+	Enabled    bool   `json:"enabled"`
+	WebhookURL string `json:"webhook_url"`
+}
+
+// NotifyConfig holds notification configuration
+type NotifyConfig struct {
+	SMTP  SMTPConfig  `json:"smtp"`
+	Teams TeamsConfig `json:"teams"`
+}
+
 // ServerConfig holds server-wide configuration
 type ServerConfig struct {
 	// Ollama connection
@@ -51,26 +110,36 @@ type ServerConfig struct {
 
 	// Execution
 	DefaultMaxIterations int `json:"default_max_iterations"`
-	ConcurrentJobs       int `json:"concurrent_jobs"`
 
 	// Storage
 	WorkspaceDir     string `json:"workspace_dir"`
 	JobRetentionDays int    `json:"job_retention_days"`
 
+	// Backend
+	DefaultBackend Backend         `json:"default_backend"`
+	Anthropic      AnthropicConfig `json:"anthropic"`
+
 	// Retry behavior
 	MaxClaudeRetries  int `json:"max_claude_retries"`
 	MaxGitRetries     int `json:"max_git_retries"`
 	GitRetryBackoffMs int `json:"git_retry_backoff_ms"`
+
+	// Notifications
+	Notify NotifyConfig `json:"notify"`
 }
 
 // DefaultServerConfig returns a ServerConfig with sensible defaults
 func DefaultServerConfig() *ServerConfig {
 	return &ServerConfig{
-		Ollama:               OllamaConfig{Host: "http://localhost:11434", IsRemote: false},
-		LargeModel:           ModelPlacement{Name: "qwen3-coder:70b", Device: "cpu", MemoryGB: 42},
-		SmallModel:           ModelPlacement{Name: "qwen2.5-coder:7b", Device: "gpu", MemoryGB: 5},
+		Ollama:         OllamaConfig{Host: "http://localhost:11434", IsRemote: false},
+		LargeModel:     ModelPlacement{Name: "devstral", Device: "cpu", MemoryGB: 15},
+		SmallModel:     ModelPlacement{Name: "qwen3:8b", Device: "gpu", MemoryGB: 5.2},
+		DefaultBackend: BackendOllama,
+		Anthropic: AnthropicConfig{
+			LargeModel: "claude-opus-4-5-20251101",
+			SmallModel: "claude-haiku-4-5-20251001",
+		},
 		DefaultMaxIterations: 50,
-		ConcurrentJobs:       1,
 		JobRetentionDays:     30,
 		MaxClaudeRetries:     3,
 		MaxGitRetries:        3,
@@ -92,11 +161,16 @@ func (c *ServerConfig) Validate() error {
 	if c.DefaultMaxIterations <= 0 {
 		return fmt.Errorf("default_max_iterations must be positive")
 	}
-	if c.ConcurrentJobs <= 0 {
-		return fmt.Errorf("concurrent_jobs must be positive")
-	}
 	if c.JobRetentionDays < 0 {
 		return fmt.Errorf("job_retention_days cannot be negative")
+	}
+	if !c.DefaultBackend.Valid() {
+		return fmt.Errorf("invalid default_backend: %q", c.DefaultBackend)
+	}
+	if c.DefaultBackend == BackendAnthropic {
+		if err := c.Anthropic.Validate(); err != nil {
+			return fmt.Errorf("anthropic: %w", err)
+		}
 	}
 	return nil
 }
@@ -138,9 +212,6 @@ func (c *ServerConfig) Merge(updates *ServerConfig) *ServerConfig {
 	if updates.DefaultMaxIterations > 0 {
 		result.DefaultMaxIterations = updates.DefaultMaxIterations
 	}
-	if updates.ConcurrentJobs > 0 {
-		result.ConcurrentJobs = updates.ConcurrentJobs
-	}
 	if updates.WorkspaceDir != "" {
 		result.WorkspaceDir = updates.WorkspaceDir
 	}
@@ -155,6 +226,51 @@ func (c *ServerConfig) Merge(updates *ServerConfig) *ServerConfig {
 	}
 	if updates.GitRetryBackoffMs > 0 {
 		result.GitRetryBackoffMs = updates.GitRetryBackoffMs
+	}
+
+	// DefaultBackend
+	if updates.DefaultBackend != "" {
+		result.DefaultBackend = updates.DefaultBackend
+	}
+
+	// Anthropic: merge individual fields
+	if updates.Anthropic.APIKey != "" {
+		result.Anthropic.APIKey = updates.Anthropic.APIKey
+	}
+	if updates.Anthropic.LargeModel != "" {
+		result.Anthropic.LargeModel = updates.Anthropic.LargeModel
+	}
+	if updates.Anthropic.SmallModel != "" {
+		result.Anthropic.SmallModel = updates.Anthropic.SmallModel
+	}
+
+	// Notify: merge individual fields
+	if updates.Notify.SMTP.Host != "" {
+		result.Notify.SMTP.Host = updates.Notify.SMTP.Host
+	}
+	if updates.Notify.SMTP.Port != 0 {
+		result.Notify.SMTP.Port = updates.Notify.SMTP.Port
+	}
+	if updates.Notify.SMTP.Username != "" {
+		result.Notify.SMTP.Username = updates.Notify.SMTP.Username
+	}
+	if updates.Notify.SMTP.Password != "" {
+		result.Notify.SMTP.Password = updates.Notify.SMTP.Password
+	}
+	if updates.Notify.SMTP.From != "" {
+		result.Notify.SMTP.From = updates.Notify.SMTP.From
+	}
+	if len(updates.Notify.SMTP.Recipients) > 0 {
+		result.Notify.SMTP.Recipients = updates.Notify.SMTP.Recipients
+	}
+	if updates.Notify.SMTP.Enabled {
+		result.Notify.SMTP.Enabled = true
+	}
+	if updates.Notify.Teams.WebhookURL != "" {
+		result.Notify.Teams.WebhookURL = updates.Notify.Teams.WebhookURL
+	}
+	if updates.Notify.Teams.Enabled {
+		result.Notify.Teams.Enabled = true
 	}
 
 	return &result
@@ -200,6 +316,50 @@ func (c *ServerConfig) MergeJSON(raw json.RawMessage) (*ServerConfig, error) {
 		if err := json.Unmarshal(smRaw, &smMap); err == nil {
 			if _, ok := smMap["memory_gb"]; ok {
 				result.SmallModel.MemoryGB = updates.SmallModel.MemoryGB
+			}
+		}
+	}
+
+	if _, ok := rawMap["default_backend"]; ok {
+		result.DefaultBackend = updates.DefaultBackend
+	}
+
+	if anthropicRaw, ok := rawMap["anthropic"]; ok {
+		var anthropicMap map[string]json.RawMessage
+		if err := json.Unmarshal(anthropicRaw, &anthropicMap); err == nil {
+			if _, ok := anthropicMap["api_key"]; ok {
+				result.Anthropic.APIKey = updates.Anthropic.APIKey
+			}
+			if _, ok := anthropicMap["large_model"]; ok {
+				result.Anthropic.LargeModel = updates.Anthropic.LargeModel
+			}
+			if _, ok := anthropicMap["small_model"]; ok {
+				result.Anthropic.SmallModel = updates.Anthropic.SmallModel
+			}
+		}
+	}
+
+	if notifyRaw, ok := rawMap["notify"]; ok {
+		var notifyMap map[string]json.RawMessage
+		if err := json.Unmarshal(notifyRaw, &notifyMap); err == nil {
+			if smtpRaw, ok := notifyMap["smtp"]; ok {
+				var smtpMap map[string]json.RawMessage
+				if err := json.Unmarshal(smtpRaw, &smtpMap); err == nil {
+					if _, ok := smtpMap["enabled"]; ok {
+						result.Notify.SMTP.Enabled = updates.Notify.SMTP.Enabled
+					}
+					if _, ok := smtpMap["port"]; ok {
+						result.Notify.SMTP.Port = updates.Notify.SMTP.Port
+					}
+				}
+			}
+			if teamsRaw, ok := notifyMap["teams"]; ok {
+				var teamsMap map[string]json.RawMessage
+				if err := json.Unmarshal(teamsRaw, &teamsMap); err == nil {
+					if _, ok := teamsMap["enabled"]; ok {
+						result.Notify.Teams.Enabled = updates.Notify.Teams.Enabled
+					}
+				}
 			}
 		}
 	}

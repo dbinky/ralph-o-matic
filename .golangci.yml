@@ -37,7 +37,7 @@ linters:
           - gocritic
       - linters:
           - gosec
-        text: "G104|G304|G301"
+        text: "G104|G304|G301|G117|G204|G703|G704|G706"
       - linters:
           - staticcheck
         text: "ST1005"

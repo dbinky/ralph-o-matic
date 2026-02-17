@@ -19,7 +19,7 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 	t.Cleanup(func() { database.Close() })
 
 	q := queue.New(database)
-	srv := NewServer(database, q, ":9090")
+	srv := NewServer(database, q, ":9090", nil)
 	return srv, database
 }
 

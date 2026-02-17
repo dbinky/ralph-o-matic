@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":false,"duration_ms":5000,"num_turns":5,"result":"Fixed 2 of 5 test failures. Still working on the auth module.","session_id":"222b2763-1e88-4c07-87b5-465c01876e9a","total_cost_usd":0.25,"usage":{"input_tokens":200,"output_tokens":100},"permission_denials":[]}

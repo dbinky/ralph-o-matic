@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/models"
 )
@@ -44,15 +45,17 @@ func (r *JobRepo) Create(job *models.Job) error {
 		INSERT INTO jobs (
 			status, priority, position,
 			repo_url, branch, result_branch, working_dir,
-			prompt, max_iterations, env,
+			prompt, max_iterations, backend, env,
+			owner_id, owner_name,
 			iteration, retry_count,
 			created_at, started_at, paused_at, completed_at,
 			pr_url, error
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		job.Status, job.Priority, job.Position,
 		job.RepoURL, job.Branch, job.ResultBranch, job.WorkingDir,
-		job.Prompt, job.MaxIterations, envJSON,
+		job.Prompt, job.MaxIterations, string(job.Backend), envJSON,
+		job.OwnerID, job.OwnerName,
 		job.Iteration, job.RetryCount,
 		job.CreatedAt, job.StartedAt, job.PausedAt, job.CompletedAt,
 		job.PRURL, job.Error,
@@ -75,13 +78,14 @@ func (r *JobRepo) Get(id int64) (*models.Job, error) {
 	job := &models.Job{}
 	var envJSON sql.NullString
 	var startedAt, pausedAt, completedAt sql.NullTime
-	var workingDir, prURL, errStr sql.NullString
+	var workingDir, backend, prURL, errStr sql.NullString
 
 	err := r.db.conn.QueryRow(`
 		SELECT
 			id, status, priority, position,
 			repo_url, branch, result_branch, working_dir,
-			prompt, max_iterations, env,
+			prompt, max_iterations, backend, env,
+			owner_id, owner_name,
 			iteration, retry_count,
 			created_at, started_at, paused_at, completed_at,
 			pr_url, error
@@ -89,7 +93,8 @@ func (r *JobRepo) Get(id int64) (*models.Job, error) {
 	`, id).Scan(
 		&job.ID, &job.Status, &job.Priority, &job.Position,
 		&job.RepoURL, &job.Branch, &job.ResultBranch, &workingDir,
-		&job.Prompt, &job.MaxIterations, &envJSON,
+		&job.Prompt, &job.MaxIterations, &backend, &envJSON,
+		&job.OwnerID, &job.OwnerName,
 		&job.Iteration, &job.RetryCount,
 		&job.CreatedAt, &startedAt, &pausedAt, &completedAt,
 		&prURL, &errStr,
@@ -104,6 +109,9 @@ func (r *JobRepo) Get(id int64) (*models.Job, error) {
 	// Handle nullable fields
 	if workingDir.Valid {
 		job.WorkingDir = workingDir.String
+	}
+	if backend.Valid {
+		job.Backend = models.Backend(backend.String)
 	}
 	if startedAt.Valid {
 		job.StartedAt = &startedAt.Time
@@ -144,7 +152,8 @@ func (r *JobRepo) Update(job *models.Job) error {
 		UPDATE jobs SET
 			status = ?, priority = ?, position = ?,
 			repo_url = ?, branch = ?, result_branch = ?, working_dir = ?,
-			prompt = ?, max_iterations = ?, env = ?,
+			prompt = ?, max_iterations = ?, backend = ?, env = ?,
+			owner_id = ?, owner_name = ?,
 			iteration = ?, retry_count = ?,
 			started_at = ?, paused_at = ?, completed_at = ?,
 			pr_url = ?, error = ?
@@ -152,7 +161,8 @@ func (r *JobRepo) Update(job *models.Job) error {
 	`,
 		job.Status, job.Priority, job.Position,
 		job.RepoURL, job.Branch, job.ResultBranch, job.WorkingDir,
-		job.Prompt, job.MaxIterations, envJSON,
+		job.Prompt, job.MaxIterations, string(job.Backend), envJSON,
+		job.OwnerID, job.OwnerName,
 		job.Iteration, job.RetryCount,
 		job.StartedAt, job.PausedAt, job.CompletedAt,
 		job.PRURL, job.Error,
@@ -177,6 +187,7 @@ func (r *JobRepo) Delete(id int64) error {
 // ListOptions configures List queries
 type ListOptions struct {
 	Statuses []models.JobStatus
+	OwnerID  string
 	Limit    int
 	Offset   int
 }
@@ -193,6 +204,11 @@ func (r *JobRepo) List(opts ListOptions) ([]*models.Job, int, error) {
 			args = append(args, s)
 		}
 		where = append(where, "status IN ("+strings.Join(placeholders, ",")+")")
+	}
+
+	if opts.OwnerID != "" {
+		where = append(where, "owner_id = ?")
+		args = append(args, opts.OwnerID)
 	}
 
 	whereClause := ""
@@ -212,7 +228,7 @@ func (r *JobRepo) List(opts ListOptions) ([]*models.Job, int, error) {
 	if opts.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", opts.Limit)
 		if opts.Offset > 0 {
-			query += fmt.Sprintf(" OFFSET %d", opts.Offset)
+			query += fmt.Sprintf(" OFFSET %d", opts.Offset) //nolint:gosec // G202: integer value, not user string
 		}
 	}
 
@@ -233,6 +249,9 @@ func (r *JobRepo) List(opts ListOptions) ([]*models.Job, int, error) {
 		ids = append(ids, id)
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate jobs: %w", err)
+	}
 
 	// Now fetch full job objects
 	var jobs []*models.Job
@@ -275,6 +294,9 @@ func (r *JobRepo) ListQueued() ([]*models.Job, error) {
 		ids = append(ids, id)
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate queued jobs: %w", err)
+	}
 
 	// Now fetch full job objects
 	var jobs []*models.Job
@@ -362,6 +384,85 @@ func (r *JobRepo) CountByStatus() (map[models.JobStatus]int, error) {
 		}
 		counts[status] = count
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate status counts: %w", err)
+	}
 
 	return counts, nil
+}
+
+// ListTerminal returns all jobs in terminal states (completed, failed, cancelled)
+func (r *JobRepo) ListTerminal() ([]*models.Job, error) {
+	rows, err := r.db.conn.Query(`
+		SELECT id FROM jobs
+		WHERE status IN (?, ?, ?)
+		ORDER BY id
+	`, models.StatusCompleted, models.StatusFailed, models.StatusCancelled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list terminal jobs: %w", err)
+	}
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("failed to scan job id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate terminal jobs: %w", err)
+	}
+
+	var jobs []*models.Job
+	for _, id := range ids {
+		job, err := r.Get(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get job %d: %w", id, err)
+		}
+		jobs = append(jobs, job)
+	}
+
+	return jobs, nil
+}
+
+// ListExpired returns jobs in terminal states with completed_at (or created_at
+// as fallback) strictly before the cutoff time.
+func (r *JobRepo) ListExpired(cutoff time.Time) ([]*models.Job, error) {
+	rows, err := r.db.conn.Query(`
+		SELECT id FROM jobs
+		WHERE status IN (?, ?, ?)
+		AND COALESCE(completed_at, created_at) < ?
+		ORDER BY id
+	`, models.StatusCompleted, models.StatusFailed, models.StatusCancelled, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list expired jobs: %w", err)
+	}
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("failed to scan job id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate expired jobs: %w", err)
+	}
+
+	var jobs []*models.Job
+	for _, id := range ids {
+		job, err := r.Get(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get job %d: %w", id, err)
+		}
+		jobs = append(jobs, job)
+	}
+
+	return jobs, nil
 }

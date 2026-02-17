@@ -30,17 +30,32 @@ LARGE_MODEL=""
 SMALL_MODEL=""
 OLLAMA_URL="http://localhost:11434"
 INFERENCE_MODE=""  # gpu_cpu_split, gpu_only, cpu_only, remote
+BACKEND="ollama"  # ollama or anthropic
 
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --yes|-y) YES_FLAG=true; shift ;;
-        --mode=*) MODE="${1#*=}"; MODE_SET=true; shift ;;
-        --server=*) SERVER_URL="${1#*=}"; shift ;;
-        --large-model=*) LARGE_MODEL="${1#*=}"; shift ;;
-        --small-model=*) SMALL_MODEL="${1#*=}"; shift ;;
-        *) error "Unknown option: $1" ;;
-    esac
-done
+# Notification configuration
+NOTIFY_SMTP_ENABLED=false
+NOTIFY_SMTP_HOST=""
+NOTIFY_SMTP_PORT=587
+NOTIFY_SMTP_USERNAME=""
+NOTIFY_SMTP_PASSWORD=""
+NOTIFY_SMTP_FROM=""
+NOTIFY_SMTP_RECIPIENTS=""
+NOTIFY_TEAMS_ENABLED=false
+NOTIFY_TEAMS_WEBHOOK_URL=""
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --yes|-y) YES_FLAG=true; shift ;;
+            --mode=*) MODE="${1#*=}"; MODE_SET=true; shift ;;
+            --backend=*) BACKEND="${1#*=}"; shift ;;
+            --server=*) SERVER_URL="${1#*=}"; shift ;;
+            --large-model=*) LARGE_MODEL="${1#*=}"; shift ;;
+            --small-model=*) SMALL_MODEL="${1#*=}"; shift ;;
+            *) error "Unknown option: $1" ;;
+        esac
+    done
+}
 
 # Platform detection
 OS=""
@@ -103,8 +118,8 @@ detect_platform() {
 check_ram_requirement() {
     local MIN_RAM=16
 
-    if [[ "$MODE" == "client" ]]; then
-        # Client doesn't need much RAM
+    if [[ "$MODE" == "client" ]] || [[ "$BACKEND" == "anthropic" ]]; then
+        # Client doesn't need much RAM; anthropic backend runs models in the cloud
         return 0
     fi
 
@@ -117,7 +132,7 @@ If you only want to submit jobs to a remote server, use:
     fi
 
     if [[ $RAM_GB -lt 32 ]]; then
-        warn "RAM: ${RAM_GB}GB detected. The default 70b model needs 42GB."
+        warn "RAM: ${RAM_GB}GB detected. Smaller models will be recommended."
         info "The installer will recommend smaller models that fit your hardware."
     else
         success "RAM check passed: ${RAM_GB}GB available"
@@ -173,9 +188,9 @@ detect_gpu() {
     fi
 
     # Determine what models can run on GPU
-    # qwen3-coder:70b needs ~40GB VRAM
-    # qwen2.5-coder:7b needs ~5GB VRAM
-    if [[ $GPU_VRAM_MB -ge 45000 ]]; then
+    # devstral needs ~15GB VRAM
+    # qwen3:8b needs ~5GB VRAM
+    if [[ $GPU_VRAM_MB -ge 16000 ]]; then
         GPU_CAN_RUN_LARGE=true
         GPU_CAN_RUN_SMALL=true
         success "GPU can run both large and small models"
@@ -223,33 +238,33 @@ show_model_recommendation() {
 
 customize_models() {
     echo ""
-    echo "Available large models:"
-    echo "  [1] qwen3-coder:70b     (42GB, quality 10 - best)"
-    echo "  [2] qwen2.5-coder:32b   (20GB, quality 8)"
-    echo "  [3] qwen2.5-coder:14b   (10GB, quality 6)"
-    echo "  [4] qwen2.5-coder:7b    (5GB,  quality 4)"
+    echo "Available large models (all support tool use):"
+    echo "  [1] devstral            (15GB, quality 9 - best)"
+    echo "  [2] qwen3-coder:30b    (19GB, quality 8)"
+    echo "  [3] qwen3:14b          (9.3GB, quality 6)"
+    echo "  [4] qwen3:8b           (5.2GB, quality 4)"
     echo ""
     read -p "Select large model [1-4]: " -n 1 -r
     echo ""
     case $REPLY in
-        1) LARGE_MODEL="qwen3-coder:70b" ;;
-        2) LARGE_MODEL="qwen2.5-coder:32b" ;;
-        3) LARGE_MODEL="qwen2.5-coder:14b" ;;
-        4) LARGE_MODEL="qwen2.5-coder:7b" ;;
-        *) warn "Invalid choice, using qwen2.5-coder:14b"; LARGE_MODEL="qwen2.5-coder:14b" ;;
+        1) LARGE_MODEL="devstral" ;;
+        2) LARGE_MODEL="qwen3-coder:30b" ;;
+        3) LARGE_MODEL="qwen3:14b" ;;
+        4) LARGE_MODEL="qwen3:8b" ;;
+        *) warn "Invalid choice, using qwen3:14b"; LARGE_MODEL="qwen3:14b" ;;
     esac
 
     echo ""
     echo "Available small models:"
-    echo "  [1] qwen2.5-coder:7b    (5GB,   quality 4)"
-    echo "  [2] qwen2.5-coder:1.5b  (1.5GB, quality 2 - fastest)"
+    echo "  [1] qwen3:8b    (5.2GB, quality 4 - tool use)"
+    echo "  [2] qwen3:4b    (2.5GB, quality 2 - fastest)"
     echo ""
     read -p "Select small model [1-2]: " -n 1 -r
     echo ""
     case $REPLY in
-        1) SMALL_MODEL="qwen2.5-coder:7b" ;;
-        2) SMALL_MODEL="qwen2.5-coder:1.5b" ;;
-        *) warn "Invalid choice, using qwen2.5-coder:7b"; SMALL_MODEL="qwen2.5-coder:7b" ;;
+        1) SMALL_MODEL="qwen3:8b" ;;
+        2) SMALL_MODEL="qwen3:4b" ;;
+        *) warn "Invalid choice, using qwen3:8b"; SMALL_MODEL="qwen3:8b" ;;
     esac
 
     success "Selected: large=$LARGE_MODEL, small=$SMALL_MODEL"
@@ -279,68 +294,167 @@ setup_remote_ollama() {
 
     # Still need to pick models (they run on remote)
     if [[ -z "$LARGE_MODEL" ]]; then
-        LARGE_MODEL="qwen3-coder:70b"
+        LARGE_MODEL="devstral"
     fi
     if [[ -z "$SMALL_MODEL" ]]; then
-        SMALL_MODEL="qwen2.5-coder:7b"
+        SMALL_MODEL="qwen3:8b"
     fi
+}
+
+select_backend() {
+    # Skip if --yes flag (default to ollama)
+    if [[ "$YES_FLAG" == true ]]; then
+        return
+    fi
+
+    echo ""
+    echo "How would you like to run ralph-o-matic?"
+    echo ""
+    echo "  [1] Local models via Ollama (GPU/CPU — free, private, requires hardware)"
+    echo "  [2] Anthropic API via Claude Code (uses your Claude subscription/API credits)"
+    echo ""
+    read -p "Select [1-2]: " -n 1 -r
+    echo ""
+
+    case $REPLY in
+        2) BACKEND="anthropic" ;;
+        *) BACKEND="ollama" ;;
+    esac
+}
+
+validate_claude_auth() {
+    info "Validating Claude Code installation..."
+
+    if ! command -v claude &>/dev/null; then
+        error "Claude Code CLI not found. Install it first:
+  npm install -g @anthropic-ai/claude-code
+  Then run 'claude' to log in."
+    fi
+    success "Claude Code CLI found"
+
+    info "Checking authentication (this makes a quick API call)..."
+    if ! claude --print "respond with only the word OK" --model claude-haiku-4-5-20251001 2>/dev/null | grep -qi "ok"; then
+        error "Claude Code authentication failed. Run 'claude' to log in first."
+    fi
+    success "Claude Code authenticated"
+}
+
+select_anthropic_models() {
+    # Auto-select defaults with --yes flag
+    if [[ "$YES_FLAG" == true ]]; then
+        LARGE_MODEL="claude-sonnet-4-5-20250929"
+        SMALL_MODEL="claude-haiku-4-5-20251001"
+        return
+    fi
+
+    echo ""
+    echo "Select the LARGE model (used for main coding iterations):"
+    echo ""
+    echo "  [1] claude-opus-4-6               (most capable, slower, higher cost)"
+    echo "  [2] claude-sonnet-4-5-20250929     (strong balance of quality and speed)"
+    echo "  [3] Custom model ID"
+    echo ""
+    read -p "Select [1-3]: " -n 1 -r
+    echo ""
+    case $REPLY in
+        1) LARGE_MODEL="claude-opus-4-6" ;;
+        2) LARGE_MODEL="claude-sonnet-4-5-20250929" ;;
+        3)
+            read -p "Enter model ID: " -r LARGE_MODEL
+            if [[ -z "$LARGE_MODEL" ]]; then
+                warn "Empty model ID, using claude-sonnet-4-5-20250929"
+                LARGE_MODEL="claude-sonnet-4-5-20250929"
+            fi
+            ;;
+        *) warn "Invalid choice, using claude-sonnet-4-5-20250929"; LARGE_MODEL="claude-sonnet-4-5-20250929" ;;
+    esac
+
+    echo ""
+    echo "Select the SMALL model (used for quick checks and lightweight tasks):"
+    echo ""
+    echo "  [1] claude-haiku-4-5-20251001     (fast, efficient, low cost)"
+    echo "  [2] claude-sonnet-4-5-20250929     (higher quality for small tasks)"
+    echo "  [3] Custom model ID"
+    echo ""
+    read -p "Select [1-3]: " -n 1 -r
+    echo ""
+    case $REPLY in
+        1) SMALL_MODEL="claude-haiku-4-5-20251001" ;;
+        2) SMALL_MODEL="claude-sonnet-4-5-20250929" ;;
+        3)
+            read -p "Enter model ID: " -r SMALL_MODEL
+            if [[ -z "$SMALL_MODEL" ]]; then
+                warn "Empty model ID, using claude-haiku-4-5-20251001"
+                SMALL_MODEL="claude-haiku-4-5-20251001"
+            fi
+            ;;
+        *) warn "Invalid choice, using claude-haiku-4-5-20251001"; SMALL_MODEL="claude-haiku-4-5-20251001" ;;
+    esac
+
+    success "Selected: large=$LARGE_MODEL, small=$SMALL_MODEL"
 }
 
 select_models() {
     show_hardware_summary
 
     # Compute recommendation based on hardware
-    local rec_large="qwen2.5-coder:14b"
-    local rec_small="qwen2.5-coder:7b"
+    local rec_large="qwen3:14b"
+    local rec_small="qwen3:8b"
     local rec_mode="cpu_only"
 
     if [[ "$GPU_TYPE" == "apple" ]]; then
         # Apple Silicon unified memory
-        if [[ $RAM_GB -ge 64 ]]; then
-            rec_large="qwen3-coder:70b"
+        if [[ $RAM_GB -ge 48 ]]; then
+            rec_large="devstral"
             rec_mode="gpu_only"
         elif [[ $RAM_GB -ge 32 ]]; then
-            rec_large="qwen2.5-coder:32b"
+            rec_large="qwen3-coder:30b"
             rec_mode="gpu_only"
         elif [[ $RAM_GB -ge 16 ]]; then
-            rec_large="qwen2.5-coder:14b"
+            rec_large="qwen3:14b"
             rec_mode="gpu_only"
         else
-            rec_large="qwen2.5-coder:7b"
+            rec_large="qwen3:8b"
             rec_mode="gpu_only"
         fi
     elif [[ "$GPU_TYPE" == "nvidia" ]] || [[ "$GPU_TYPE" == "amd" ]]; then
         if [[ "$GPU_CAN_RUN_LARGE" == true ]]; then
-            rec_large="qwen3-coder:70b"
+            rec_large="devstral"
             rec_mode="gpu_only"
         elif [[ "$GPU_CAN_RUN_SMALL" == true ]]; then
             rec_mode="gpu_cpu_split"
-            if [[ $RAM_GB -ge 64 ]]; then
-                rec_large="qwen3-coder:70b"
+            if [[ $RAM_GB -ge 48 ]]; then
+                rec_large="devstral"
             elif [[ $RAM_GB -ge 32 ]]; then
-                rec_large="qwen2.5-coder:32b"
+                rec_large="qwen3-coder:30b"
+            elif [[ $RAM_GB -ge 16 ]]; then
+                rec_large="qwen3:14b"
             else
-                rec_large="qwen2.5-coder:14b"
+                rec_large="qwen3:8b"
             fi
         else
             rec_mode="cpu_only"
-            if [[ $RAM_GB -ge 64 ]]; then
-                rec_large="qwen3-coder:70b"
+            if [[ $RAM_GB -ge 48 ]]; then
+                rec_large="devstral"
             elif [[ $RAM_GB -ge 32 ]]; then
-                rec_large="qwen2.5-coder:32b"
+                rec_large="qwen3-coder:30b"
+            elif [[ $RAM_GB -ge 16 ]]; then
+                rec_large="qwen3:14b"
             else
-                rec_large="qwen2.5-coder:14b"
+                rec_large="qwen3:8b"
             fi
         fi
     else
         # No GPU
         rec_mode="cpu_only"
-        if [[ $RAM_GB -ge 64 ]]; then
-            rec_large="qwen3-coder:70b"
+        if [[ $RAM_GB -ge 48 ]]; then
+            rec_large="devstral"
         elif [[ $RAM_GB -ge 32 ]]; then
-            rec_large="qwen2.5-coder:32b"
+            rec_large="qwen3-coder:30b"
+        elif [[ $RAM_GB -ge 16 ]]; then
+            rec_large="qwen3:14b"
         else
-            rec_large="qwen2.5-coder:14b"
+            rec_large="qwen3:8b"
         fi
     fi
 
@@ -479,8 +593,8 @@ check_dependencies() {
         warn "gh (GitHub CLI) not installed"
     fi
 
-    # Ollama (only for server mode)
-    if [[ "$MODE" != "client" ]]; then
+    # Ollama (only for server mode with ollama backend)
+    if [[ "$MODE" != "client" ]] && [[ "$BACKEND" != "anthropic" ]]; then
         if command -v ollama &>/dev/null; then
             DEPS_INSTALLED[ollama]=true
             DEPS_VERSION[ollama]=$(ollama --version 2>/dev/null | awk '{print $NF}' || echo "unknown")
@@ -507,12 +621,16 @@ check_dependencies() {
 install_missing_dependencies() {
     local need_install=false
 
-    for dep in git gh ollama claude; do
+    for dep in git gh claude; do
         if [[ "${DEPS_INSTALLED[$dep]:-false}" == "false" ]]; then
             need_install=true
             break
         fi
     done
+    # Only check ollama for non-anthropic backend
+    if [[ "$MODE" != "client" ]] && [[ "$BACKEND" != "anthropic" ]] && [[ "${DEPS_INSTALLED[ollama]:-false}" == "false" ]]; then
+        need_install=true
+    fi
 
     if [[ "$need_install" == false ]]; then
         success "All dependencies installed"
@@ -556,8 +674,8 @@ install_missing_dependencies() {
         gh auth login
     fi
 
-    # Install Ollama (server mode only)
-    if [[ "$MODE" != "client" ]] && [[ "${DEPS_INSTALLED[ollama]}" == "false" ]]; then
+    # Install Ollama (server mode + ollama backend only)
+    if [[ "$MODE" != "client" ]] && [[ "$BACKEND" != "anthropic" ]] && [[ "${DEPS_INSTALLED[ollama]}" == "false" ]]; then
         info "Installing Ollama..."
         curl -fsSL https://ollama.ai/install.sh | sh
         success "Ollama installed"
@@ -654,19 +772,12 @@ install_binaries() {
     fi
 }
 
-install_plugins() {
-    info "Installing Claude Code plugins..."
+install_skill() {
+    info "Installing Claude Code skill..."
 
     if ! command -v claude &>/dev/null; then
-        warn "Claude Code not installed, skipping plugins"
+        warn "Claude Code not installed, skipping skill"
         return
-    fi
-
-    # Install ralph-wiggum plugin (pipe empty stdin to skip TUI trust dialog)
-    if echo "" | claude plugin install ralph-wiggum 2>/dev/null; then
-        success "ralph-wiggum plugin installed"
-    else
-        warn "Failed to install ralph-wiggum (may already be installed)"
     fi
 
     # Install brainstorm-to-ralph skill
@@ -710,35 +821,254 @@ default_max_iterations: 50
 EOF
         success "Client configured for $SERVER_URL"
     else
-        # Server config
-        local lan_ip
-        if [[ "$OS" == "darwin" ]]; then
-            lan_ip=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
-        else
-            lan_ip=$(hostname -I | awk '{print $1}' || echo "localhost")
-        fi
-
+        # Server/full mode: write CLI config (server reads config from database,
+        # not this file). Model config is pushed to the server API after startup
+        # via apply_model_config().
         cat > "$config_dir/config.yaml" <<EOF
-# Ralph-o-matic Server Configuration
-ollama:
-  url: $OLLAMA_URL
-  inference_mode: $INFERENCE_MODE
-large_model:
-  name: $LARGE_MODEL
-small_model:
-  name: $SMALL_MODEL
+server: http://localhost:9090
+default_priority: normal
 default_max_iterations: 50
-concurrent_jobs: 1
-bind_address: $lan_ip
-port: 9090
-workspace_dir: $config_dir/workspace
-job_retention_days: 30
 EOF
 
         mkdir -p "$config_dir/workspace"
         mkdir -p "$config_dir/data"
 
-        success "Server configured on $lan_ip:9090"
+        success "Server configured (CLI pointing to localhost:9090)"
+    fi
+}
+
+configure_notifications() {
+    # Only configure notifications for server/full mode
+    if [[ "$MODE" == "client" ]]; then
+        return
+    fi
+
+    # --yes flag skips notification setup (notifications are optional)
+    if [[ "$YES_FLAG" == true ]]; then
+        return
+    fi
+
+    echo ""
+    read -p "Would you like to configure notifications? [y/N] " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        return
+    fi
+
+    # SMTP email notifications
+    echo ""
+    read -p "Enable email (SMTP) notifications? [y/N] " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        NOTIFY_SMTP_ENABLED=true
+
+        read -p "SMTP host: " NOTIFY_SMTP_HOST
+        read -p "SMTP port [587]: " NOTIFY_SMTP_PORT
+        NOTIFY_SMTP_PORT="${NOTIFY_SMTP_PORT:-587}"
+        read -p "SMTP username: " NOTIFY_SMTP_USERNAME
+        read -sp "SMTP password: " NOTIFY_SMTP_PASSWORD
+        echo ""
+        read -p "From address: " NOTIFY_SMTP_FROM
+        read -p "Recipient addresses (comma-separated): " NOTIFY_SMTP_RECIPIENTS
+
+        success "SMTP notifications configured"
+    fi
+
+    # Teams webhook notifications
+    echo ""
+    read -p "Enable Teams webhook notifications? [y/N] " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        NOTIFY_TEAMS_ENABLED=true
+
+        read -p "Teams webhook URL: " NOTIFY_TEAMS_WEBHOOK_URL
+
+        success "Teams notifications configured"
+    fi
+}
+
+apply_model_config() {
+    info "Applying model configuration to server..."
+
+    # Wait for server to be ready (up to 15 seconds)
+    local retries=0
+    while ! curl -sf http://localhost:9090/api/config &>/dev/null; do
+        retries=$((retries + 1))
+        if [[ $retries -ge 15 ]]; then
+            warn "Server not responding — skipping model config"
+            warn "You can set model config later with: ralph-o-matic server-config set"
+            return
+        fi
+        sleep 1
+    done
+
+    # Fork based on backend
+    if [[ "$BACKEND" == "anthropic" ]]; then
+        local json_payload
+        json_payload=$(jq -n \
+            --arg large "$LARGE_MODEL" \
+            --arg small "$SMALL_MODEL" \
+            '{default_backend:"anthropic",anthropic:{large_model:$large,small_model:$small}}')
+
+        local http_code
+        http_code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH http://localhost:9090/api/config \
+            -H "Content-Type: application/json" \
+            -d "$json_payload")
+        if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+            warn "Config update failed (HTTP $http_code) — check server logs"
+            return
+        fi
+
+        success "Anthropic config applied (large=$LARGE_MODEL, small=$SMALL_MODEL)"
+        return
+    fi
+
+    # Map INFERENCE_MODE to device settings and is_remote flag
+    local is_remote=false
+    local large_device="cpu"
+    local small_device="gpu"
+
+    case "$INFERENCE_MODE" in
+        gpu_cpu_split)
+            large_device="cpu"
+            small_device="gpu"
+            ;;
+        gpu_only)
+            large_device="gpu"
+            small_device="gpu"
+            ;;
+        cpu_only)
+            large_device="cpu"
+            small_device="cpu"
+            ;;
+        remote)
+            is_remote=true
+            large_device="auto"
+            small_device="auto"
+            ;;
+    esac
+
+    local json_payload
+    json_payload=$(jq -n \
+        --arg host "$OLLAMA_URL" \
+        --argjson is_remote "$is_remote" \
+        --arg large_name "$LARGE_MODEL" \
+        --arg large_device "$large_device" \
+        --arg small_name "$SMALL_MODEL" \
+        --arg small_device "$small_device" \
+        '{ollama:{host:$host,is_remote:$is_remote},large_model:{name:$large_name,device:$large_device},small_model:{name:$small_name,device:$small_device}}')
+
+    curl -sf -X PATCH http://localhost:9090/api/config \
+        -H "Content-Type: application/json" \
+        -d "$json_payload" &>/dev/null
+
+    success "Model config applied (large=$LARGE_MODEL [$large_device], small=$SMALL_MODEL [$small_device])"
+}
+
+apply_notification_config() {
+    # Nothing to apply if no notifications configured
+    if [[ "$NOTIFY_SMTP_ENABLED" == false ]] && [[ "$NOTIFY_TEAMS_ENABLED" == false ]]; then
+        return
+    fi
+
+    info "Applying notification configuration..."
+
+    # Wait for server to be ready (up to 15 seconds)
+    local retries=0
+    while ! curl -sf http://localhost:9090/api/config &>/dev/null; do
+        retries=$((retries + 1))
+        if [[ $retries -ge 15 ]]; then
+            warn "Server not responding — skipping notification config"
+            warn "You can set notification config later with: ralph-o-matic server-config set"
+            return
+        fi
+        sleep 1
+    done
+
+    # Push config via a single PATCH request with nested JSON.
+    # The CLI now supports dotted keys, but batching into one request
+    # avoids intermediate validation failures for partial configs.
+    #
+    # NOTE: This sends credentials (SMTP password, Teams webhook URL) over
+    # unauthenticated HTTP to localhost. This is acceptable for local installs
+    # where the server is on the same machine, but credentials are visible to
+    # any process that can observe localhost traffic.
+    local patch_config
+    patch_config() {
+        local http_code
+        http_code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH http://localhost:9090/api/config \
+            -H "Content-Type: application/json" \
+            -d "$1")
+        if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+            warn "Config update failed (HTTP $http_code) — check server logs"
+            return 1
+        fi
+    }
+
+    if [[ "$NOTIFY_SMTP_ENABLED" == true ]]; then
+        # Build recipients as a JSON array using jq for safe escaping
+        local recipients_json
+        recipients_json=$(printf '%s' "$NOTIFY_SMTP_RECIPIENTS" \
+            | tr ',' '\n' | sed 's/^ *//;s/ *$//' \
+            | jq -R 'select(length > 0)' | jq -s '.')
+
+        local smtp_payload
+        smtp_payload=$(jq -n \
+            --arg host "$NOTIFY_SMTP_HOST" \
+            --argjson port "$NOTIFY_SMTP_PORT" \
+            --arg username "$NOTIFY_SMTP_USERNAME" \
+            --arg password "$NOTIFY_SMTP_PASSWORD" \
+            --arg from "$NOTIFY_SMTP_FROM" \
+            --argjson recipients "$recipients_json" \
+            '{notify:{smtp:{enabled:true,host:$host,port:$port,username:$username,password:$password,from:$from,recipients:$recipients}}}')
+
+        patch_config "$smtp_payload"
+        success "SMTP config applied"
+    fi
+
+    if [[ "$NOTIFY_TEAMS_ENABLED" == true ]]; then
+        local teams_payload
+        teams_payload=$(jq -n \
+            --arg url "$NOTIFY_TEAMS_WEBHOOK_URL" \
+            '{notify:{teams:{enabled:true,webhook_url:$url}}}')
+
+        patch_config "$teams_payload"
+        success "Teams config applied"
+    fi
+}
+
+test_notifications() {
+    # Nothing to test if no notifications configured
+    if [[ "$NOTIFY_SMTP_ENABLED" == false ]] && [[ "$NOTIFY_TEAMS_ENABLED" == false ]]; then
+        return
+    fi
+
+    echo ""
+
+    if [[ "$NOTIFY_SMTP_ENABLED" == true ]]; then
+        read -p "Send test email notification? [Y/n] " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            info "Sending test email..."
+            if ralph-o-matic test-notify smtp 2>/dev/null; then
+                success "Test email sent"
+            else
+                warn "Test email failed — check SMTP settings with: ralph-o-matic server-config list"
+            fi
+        fi
+    fi
+
+    if [[ "$NOTIFY_TEAMS_ENABLED" == true ]]; then
+        read -p "Send test Teams notification? [Y/n] " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            info "Sending test Teams notification..."
+            if ralph-o-matic test-notify teams 2>/dev/null; then
+                success "Test Teams notification sent"
+            else
+                warn "Test Teams notification failed — check webhook URL with: ralph-o-matic server-config list"
+            fi
+        fi
     fi
 }
 
@@ -942,6 +1272,8 @@ print_success() {
 
 # Main installation flow
 main() {
+    parse_args "$@"
+
     # Reopen stdin from terminal so interactive prompts work with curl | bash
     if [[ ! -t 0 ]]; then
         exec 0</dev/tty
@@ -949,21 +1281,33 @@ main() {
 
     print_banner
     detect_platform
-    check_ram_requirement
     prompt_mode
+    if [[ "$MODE" != "client" ]]; then
+        select_backend
+    fi
+    check_ram_requirement
     check_dependencies
     install_missing_dependencies
     if [[ "$MODE" != "client" ]]; then
-        detect_gpu
-        select_models
-        configure_ollama
-        pull_models
+        if [[ "$BACKEND" == "anthropic" ]]; then
+            validate_claude_auth
+            select_anthropic_models
+        else
+            detect_gpu
+            select_models
+            configure_ollama
+            pull_models
+        fi
     fi
     install_binaries
-    install_plugins
+    install_skill
     configure_ralph
     if [[ "$MODE" != "client" ]]; then
+        configure_notifications
         prompt_start_server
+        apply_model_config
+        apply_notification_config
+        test_notifications
     fi
     verify_installation
     print_success

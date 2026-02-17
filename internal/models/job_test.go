@@ -98,6 +98,31 @@ func TestJob_Validate(t *testing.T) {
 	})
 }
 
+func TestJob_Validate_Backend(t *testing.T) {
+	t.Run("empty backend is valid", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "fix bugs", 10)
+		assert.NoError(t, job.Validate())
+	})
+
+	t.Run("ollama backend is valid", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "fix bugs", 10)
+		job.Backend = BackendOllama
+		assert.NoError(t, job.Validate())
+	})
+
+	t.Run("anthropic backend is valid", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "fix bugs", 10)
+		job.Backend = BackendAnthropic
+		assert.NoError(t, job.Validate())
+	})
+
+	t.Run("unknown backend fails", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "fix bugs", 10)
+		job.Backend = "gpt"
+		assert.Error(t, job.Validate())
+	})
+}
+
 func TestJob_TransitionTo(t *testing.T) {
 	t.Run("valid transition updates status and timestamp", func(t *testing.T) {
 		job := NewJob("git@github.com:user/repo.git", "main", "test", 10)
@@ -189,6 +214,18 @@ func TestJob_JSON(t *testing.T) {
 	assert.Equal(t, job.Priority, decoded.Priority)
 	assert.Equal(t, job.WorkingDir, decoded.WorkingDir)
 	assert.Equal(t, job.Env, decoded.Env)
+}
+
+func TestNewJob_OwnerFieldsEmpty(t *testing.T) {
+	job := NewJob(
+		"git@github.com:user/repo.git",
+		"feature/test",
+		"Run all tests",
+		50,
+	)
+
+	assert.Empty(t, job.OwnerID)
+	assert.Empty(t, job.OwnerName)
 }
 
 func TestJob_Duration(t *testing.T) {

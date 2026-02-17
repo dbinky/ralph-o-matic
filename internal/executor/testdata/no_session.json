@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":false,"duration_ms":1000,"num_turns":1,"result":"Done.","total_cost_usd":0.05,"usage":{"input_tokens":10,"output_tokens":5},"permission_denials":[]}

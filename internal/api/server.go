@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/ryan/ralph-o-matic/internal/auth"
+	"github.com/ryan/ralph-o-matic/internal/broadcast"
 	"github.com/ryan/ralph-o-matic/internal/dashboard"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/queue"
@@ -19,16 +22,29 @@ import (
 
 // Server is the HTTP API server
 type Server struct {
-	db        *db.DB
-	queue     *queue.Queue
-	dashboard *dashboard.Dashboard
-	addr      string
-	router    chi.Router
-	server    *http.Server
+	db           *db.DB
+	queue        *queue.Queue
+	dashboard    *dashboard.Dashboard
+	addr         string
+	router       chi.Router
+	server       *http.Server
+	authProvider *auth.EntraProvider
+	sessions     *auth.SessionStore
+	secure       bool
+	broadcaster  *broadcast.Broadcaster
 }
 
-// NewServer creates a new API server
-func NewServer(database *db.DB, q *queue.Queue, addr string) *Server {
+// ServerOptions holds optional configuration for the server.
+// When nil is passed to NewServer, auth is disabled.
+type ServerOptions struct {
+	AuthProvider *auth.EntraProvider
+	Sessions     *auth.SessionStore
+	Secure       bool
+	Broadcaster  *broadcast.Broadcaster
+}
+
+// NewServer creates a new API server. Pass nil for opts to disable authentication.
+func NewServer(database *db.DB, q *queue.Queue, addr string, opts *ServerOptions) *Server {
 	templatesFS, err := fs.Sub(web.Templates, "templates")
 	if err != nil {
 		log.Fatalf("failed to load templates: %v", err)
@@ -41,6 +57,13 @@ func NewServer(database *db.DB, q *queue.Queue, addr string) *Server {
 		addr:      addr,
 	}
 
+	if opts != nil {
+		s.authProvider = opts.AuthProvider
+		s.sessions = opts.Sessions
+		s.secure = opts.Secure
+		s.broadcaster = opts.Broadcaster
+	}
+
 	s.setupRoutes()
 	return s
 }
@@ -48,48 +71,69 @@ func NewServer(database *db.DB, q *queue.Queue, addr string) *Server {
 func (s *Server) setupRoutes() {
 	r := chi.NewRouter()
 
-	// Middleware
+	// Middleware (applied to all routes)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(corsMiddleware)
 
-	// Health check
+	// Health and readiness — always accessible, no auth required.
+	// /readiness is intentionally unauthenticated so load balancers and
+	// monitoring probes can reach it without credentials. Bind to localhost
+	// or restrict via reverse proxy to prevent information leakage.
 	r.Get("/health", s.handleHealth)
+	r.Get("/readiness", s.handleReadiness)
 
-	// Dashboard
-	r.Get("/", s.dashboard.HandleIndex)
-	r.Get("/config", s.dashboard.HandleConfig)
-	r.Get("/jobs/{jobID}", func(w http.ResponseWriter, r *http.Request) {
-		idStr := chi.URLParam(r, "jobID")
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			http.Error(w, "Invalid job ID", http.StatusBadRequest)
-			return
-		}
-		s.dashboard.HandleJob(w, r, id)
-	})
+	// Auth routes — accessible without auth middleware
+	r.Mount("/auth", auth.NewAuthRoutes(s.authProvider, s.sessions, s.secure))
 
-	// API routes
-	r.Route("/api", func(r chi.Router) {
-		r.Route("/jobs", func(r chi.Router) {
-			r.Post("/", s.handleCreateJob)
-			r.Get("/", s.handleListJobs)
-			r.Put("/order", s.handleReorderJobs)
+	// Protected routes — wrapped in auth middleware
+	r.Group(func(r chi.Router) {
+		r.Use(auth.Middleware(s.authProvider, s.sessions))
 
-			r.Route("/{jobID}", func(r chi.Router) {
-				r.Get("/", s.handleGetJob)
-				r.Delete("/", s.handleCancelJob)
-				r.Patch("/", s.handleUpdateJob)
-				r.Get("/logs", s.handleGetJobLogs)
-				r.Post("/pause", s.handlePauseJob)
-				r.Post("/resume", s.handleResumeJob)
+		// SSE routes — no timeout (long-lived connections)
+		r.Get("/api/events", auth.RequireRole("Admin", s.handleSSEGlobal))
+		r.Get("/api/jobs/{jobID}/events", s.handleSSEJob)
+
+		// All other routes — with timeout
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Timeout(60 * time.Second))
+
+			// Dashboard
+			r.Get("/", s.dashboard.HandleIndex)
+			r.Get("/config", s.dashboard.HandleConfig)
+			r.Get("/jobs/{jobID}", func(w http.ResponseWriter, r *http.Request) {
+				idStr := chi.URLParam(r, "jobID")
+				id, err := strconv.ParseInt(idStr, 10, 64)
+				if err != nil {
+					http.Error(w, "Invalid job ID", http.StatusBadRequest)
+					return
+				}
+				s.dashboard.HandleJob(w, r, id)
 			})
-		})
 
-		r.Route("/config", func(r chi.Router) {
-			r.Get("/", s.handleGetConfig)
-			r.Patch("/", s.handleUpdateConfig)
+			// API routes
+			r.Route("/api", func(r chi.Router) {
+				r.Route("/jobs", func(r chi.Router) {
+					r.Post("/", s.handleCreateJob)
+					r.Get("/", s.handleListJobs)
+					r.Put("/order", auth.RequireRole("Admin", s.handleReorderJobs))
+
+					r.Route("/{jobID}", func(r chi.Router) {
+						r.Get("/", s.handleGetJob)
+						r.Delete("/", s.handleCancelJob)
+						r.Patch("/", s.handleUpdateJob)
+						r.Get("/logs", s.handleGetJobLogs)
+						r.Post("/pause", s.handlePauseJob)
+						r.Post("/resume", s.handleResumeJob)
+					})
+				})
+
+				r.Route("/config", func(r chi.Router) {
+					r.Get("/", s.handleGetConfig)
+					r.Patch("/", auth.RequireRole("Admin", s.handleUpdateConfig))
+					r.Post("/test-notify", auth.RequireRole("Admin", s.handleTestNotify))
+				})
+			})
 		})
 	})
 
@@ -136,6 +180,68 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
+func (s *Server) handleSSEGlobal(w http.ResponseWriter, r *http.Request) {
+	s.serveSSE(w, r, "global")
+}
+
+func (s *Server) handleSSEJob(w http.ResponseWriter, r *http.Request) {
+	if s.broadcaster == nil {
+		writeError(w, http.StatusServiceUnavailable, "SSE not configured")
+		return
+	}
+
+	// Check job access before subscribing
+	jobIDStr := chi.URLParam(r, "jobID")
+	jobID, err := strconv.ParseInt(jobIDStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid job ID")
+		return
+	}
+
+	if _, ok := s.authorizedJob(w, r, jobID); !ok {
+		return
+	}
+
+	s.serveSSE(w, r, "job:"+jobIDStr)
+}
+
+// serveSSE subscribes to a broadcaster topic and streams events to the client
+// until the request context is cancelled.
+func (s *Server) serveSSE(w http.ResponseWriter, r *http.Request, topic string) {
+	if s.broadcaster == nil {
+		writeError(w, http.StatusServiceUnavailable, "SSE not configured")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	// Subscribe before flushing headers so the client is registered
+	// by the time the caller receives the response.
+	clientID, ch := s.broadcaster.Subscribe(topic)
+	defer s.broadcaster.Unsubscribe(topic, clientID)
+
+	// Flush headers to unblock the HTTP client.
+	flusher.Flush()
+
+	for {
+		select {
+		case msg := <-ch:
+			fmt.Fprintf(w, "data: %s\n\n", msg)
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
 // CORS middleware
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -151,4 +257,3 @@ func corsMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-

@@ -1,12 +1,23 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/db"
+	"github.com/ryan/ralph-o-matic/internal/models"
+	"github.com/ryan/ralph-o-matic/internal/notify"
 )
+
+// newConfigResponse builds a redacted config response from a full ServerConfig.
+func newConfigResponse(cfg *models.ServerConfig) *models.ServerConfigResponse {
+	return models.NewServerConfigResponse(cfg)
+}
 
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	configRepo := db.NewConfigRepo(s.db)
@@ -17,11 +28,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, cfg)
+	writeJSON(w, http.StatusOK, newConfigResponse(cfg))
 }
 
 func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	configRepo := db.NewConfigRepo(s.db)
+
+	// Limit request body to 1 MB to prevent denial of service
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	// Get current config
 	current, err := configRepo.Get()
@@ -56,11 +70,92 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Warn if an API key is being persisted to the database
+	if merged.Anthropic.APIKey != "" && merged.Anthropic.APIKey != current.Anthropic.APIKey {
+		log.Printf("Warning: Anthropic API key stored in database. Consider using ANTHROPIC_API_KEY environment variable instead.")
+	}
+
 	// Save
 	if err := configRepo.Save(merged); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, merged)
+	resp := newConfigResponse(merged)
+	writeJSON(w, http.StatusOK, struct {
+		*models.ServerConfigResponse
+		Note string `json:"_note,omitempty"`
+	}{
+		ServerConfigResponse: resp,
+		Note:                 "Configuration saved. Some changes may require a server restart to take effect.",
+	})
+}
+
+func (s *Server) handleTestNotify(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Channel string `json:"channel"` // "smtp" or "teams"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Channel != "smtp" && req.Channel != "teams" {
+		writeError(w, http.StatusBadRequest, "channel must be 'smtp' or 'teams'")
+		return
+	}
+
+	configRepo := db.NewConfigRepo(s.db)
+	cfg, err := configRepo.Get()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load config: "+err.Error())
+		return
+	}
+
+	// Build a test job for the notification
+	testJob := &models.Job{
+		ID:            0,
+		RepoURL:       "https://github.com/example/test-repo.git",
+		Branch:        "test-branch",
+		OwnerName:     "Test User",
+		Iteration:     3,
+		MaxIterations: 10,
+		PRURL:         "https://github.com/example/test-repo/pull/1",
+	}
+	now := time.Now()
+	started := now.Add(-5 * time.Minute)
+	testJob.StartedAt = &started
+	testJob.CompletedAt = &now
+
+	var notifier notify.Notifier
+	switch req.Channel {
+	case "smtp":
+		if !cfg.Notify.SMTP.Enabled {
+			writeError(w, http.StatusBadRequest, "SMTP notifications are not enabled. Set notify.smtp.enabled to true first.")
+			return
+		}
+		notifier = notify.NewSMTPNotifier(cfg.Notify.SMTP)
+	case "teams":
+		if !cfg.Notify.Teams.Enabled {
+			writeError(w, http.StatusBadRequest, "Teams notifications are not enabled. Set notify.teams.enabled to true first.")
+			return
+		}
+		notifier = notify.NewTeamsNotifier(cfg.Notify.Teams)
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	if err := notifier.Notify(ctx, testJob, notify.EventCompleted); err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("%s notification failed: %v", req.Channel, err),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Test %s notification sent successfully", req.Channel),
+	})
 }

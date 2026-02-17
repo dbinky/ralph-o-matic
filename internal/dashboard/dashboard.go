@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ryan/ralph-o-matic/internal/auth"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/models"
 	"github.com/ryan/ralph-o-matic/internal/queue"
@@ -90,6 +91,7 @@ func New(database *db.DB, q *queue.Queue, templatesFS fs.FS) *Dashboard {
 // IndexData is the data for the dashboard index
 type IndexData struct {
 	QueueSize int
+	AuthUser  *auth.User
 	Running   []*models.Job
 	Paused    []*models.Job
 	Queued    []*models.Job
@@ -100,16 +102,24 @@ type IndexData struct {
 func (d *Dashboard) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	jobRepo := db.NewJobRepo(d.db)
 
-	running, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusRunning}})
-	paused, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusPaused}})
-	queued, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusQueued}})
+	// Filter by owner for non-admin users
+	var ownerID string
+	if user := auth.UserFromContext(r.Context()); user != nil && !user.IsAdmin() {
+		ownerID = user.ID
+	}
+
+	running, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusRunning}, OwnerID: ownerID})
+	paused, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusPaused}, OwnerID: ownerID})
+	queued, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusQueued}, OwnerID: ownerID})
 	completed, _, _ := jobRepo.List(db.ListOptions{
 		Statuses: []models.JobStatus{models.StatusCompleted, models.StatusFailed},
+		OwnerID:  ownerID,
 		Limit:    10,
 	})
 
 	data := IndexData{
 		QueueSize: len(queued),
+		AuthUser:  auth.UserFromContext(r.Context()),
 		Running:   running,
 		Paused:    paused,
 		Queued:    queued,
@@ -122,6 +132,7 @@ func (d *Dashboard) HandleIndex(w http.ResponseWriter, r *http.Request) {
 // JobData is the data for the job detail page
 type JobData struct {
 	QueueSize int
+	AuthUser  *auth.User
 	Job       *models.Job
 	Logs      []*db.JobLog
 }
@@ -134,11 +145,17 @@ func (d *Dashboard) HandleJob(w http.ResponseWriter, r *http.Request, jobID int6
 		return
 	}
 
+	if !auth.CanAccessJob(r, job.OwnerID) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	logRepo := db.NewLogRepo(d.db)
 	logs, _ := logRepo.GetForJob(jobID)
 
 	data := JobData{
 		QueueSize: d.queue.Size(),
+		AuthUser:  auth.UserFromContext(r.Context()),
 		Job:       job,
 		Logs:      logs,
 	}
@@ -155,11 +172,18 @@ type ConfigSetting struct {
 // ConfigData is the data for the config page
 type ConfigData struct {
 	QueueSize int
+	AuthUser  *auth.User
 	Settings  []ConfigSetting
 }
 
 // HandleConfig renders the config page
 func (d *Dashboard) HandleConfig(w http.ResponseWriter, r *http.Request) {
+	// Config is admin-only when auth is enabled
+	if user := auth.UserFromContext(r.Context()); user != nil && !user.IsAdmin() {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	configRepo := db.NewConfigRepo(d.db)
 	cfg, err := configRepo.Get()
 	if err != nil {
@@ -177,13 +201,13 @@ func (d *Dashboard) HandleConfig(w http.ResponseWriter, r *http.Request) {
 		{"small_model.device", cfg.SmallModel.Device},
 		{"small_model.memory_gb", fmt.Sprintf("%.0f", cfg.SmallModel.MemoryGB)},
 		{"default_max_iterations", fmt.Sprintf("%d", cfg.DefaultMaxIterations)},
-		{"concurrent_jobs", fmt.Sprintf("%d", cfg.ConcurrentJobs)},
 		{"workspace_dir", cfg.WorkspaceDir},
 		{"job_retention_days", fmt.Sprintf("%d", cfg.JobRetentionDays)},
 	}
 
 	data := ConfigData{
 		QueueSize: d.queue.Size(),
+		AuthUser:  auth.UserFromContext(r.Context()),
 		Settings:  settings,
 	}
 

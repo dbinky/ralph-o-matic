@@ -18,16 +18,21 @@ func newTestDB(t *testing.T) *db.DB {
 	return database
 }
 
-func TestRalphHandler_ShouldContinue(t *testing.T) {
-	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+func TestEffectiveBackend(t *testing.T) {
+	t.Run("job backend takes precedence", func(t *testing.T) {
+		result := effectiveBackend(models.BackendAnthropic, models.BackendOllama)
+		assert.Equal(t, models.BackendAnthropic, result)
+	})
 
-	// Not at max
-	job.Iteration = 5
-	assert.True(t, shouldContinue(job))
+	t.Run("falls back to server default", func(t *testing.T) {
+		result := effectiveBackend("", models.BackendAnthropic)
+		assert.Equal(t, models.BackendAnthropic, result)
+	})
 
-	// At max
-	job.Iteration = 10
-	assert.False(t, shouldContinue(job))
+	t.Run("falls back to ollama when both empty", func(t *testing.T) {
+		result := effectiveBackend("", "")
+		assert.Equal(t, models.BackendOllama, result)
+	})
 }
 
 func TestRalphHandler_UpdateIteration(t *testing.T) {

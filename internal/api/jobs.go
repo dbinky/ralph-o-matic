@@ -3,11 +3,14 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/ryan/ralph-o-matic/internal/auth"
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/models"
 )
@@ -21,6 +24,7 @@ type CreateJobRequest struct {
 	Priority      string            `json:"priority,omitempty"`
 	WorkingDir    string            `json:"working_dir,omitempty"`
 	Env           map[string]string `json:"env,omitempty"`
+	Backend       string            `json:"backend,omitempty"`
 }
 
 // ListJobsResponse is the response for listing jobs
@@ -37,15 +41,40 @@ type ReorderRequest struct {
 }
 
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
+	// Limit request body to 1 MB to prevent denial of service
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	var req CreateJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
 
+	// Sanitize working_dir to prevent path traversal
+	workingDir := req.WorkingDir
+	if workingDir != "" {
+		workingDir = filepath.Clean(workingDir)
+		if strings.Contains(workingDir, "..") {
+			writeError(w, http.StatusBadRequest, "working_dir cannot contain path traversal sequences")
+			return
+		}
+	}
+
+	// Validate env vars don't contain dangerous prefixes
+	if err := validateEnvVars(req.Env); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	job := models.NewJob(req.RepoURL, req.Branch, req.Prompt, req.MaxIterations)
-	job.WorkingDir = req.WorkingDir
+	job.WorkingDir = workingDir
 	job.Env = req.Env
+
+	// Set ownership from authenticated user
+	if user := auth.UserFromContext(r.Context()); user != nil {
+		job.OwnerID = user.ID
+		job.OwnerName = user.Name
+	}
 
 	if req.Priority != "" {
 		priority, err := models.ParsePriority(req.Priority)
@@ -56,6 +85,15 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		job.Priority = priority
 	}
 
+	if req.Backend != "" {
+		backend := models.Backend(req.Backend)
+		if !backend.Valid() {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid backend: %q", req.Backend))
+			return
+		}
+		job.Backend = backend
+	}
+
 	if err := s.queue.Enqueue(job); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -64,25 +102,51 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, job)
 }
 
+// defaultListLimit is the maximum number of jobs returned when no limit is specified.
+const defaultListLimit = 100
+
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	opts := db.ListOptions{}
 
-	// Parse status filter
+	// Filter by owner for non-admin users
+	if user := auth.UserFromContext(r.Context()); user != nil && !user.IsAdmin() {
+		opts.OwnerID = user.ID
+	}
+
+	// Parse and validate status filter
 	if statusStr := r.URL.Query().Get("status"); statusStr != "" {
 		statuses := strings.Split(statusStr, ",")
 		for _, s := range statuses {
-			opts.Statuses = append(opts.Statuses, models.JobStatus(s))
+			status := models.JobStatus(s)
+			if !status.Valid() {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid status filter: %q", s))
+				return
+			}
+			opts.Statuses = append(opts.Statuses, status)
 		}
 	}
 
-	// Parse pagination
+	// Parse pagination with validation
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		limit, _ := strconv.Atoi(limitStr)
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit < 0 {
+			writeError(w, http.StatusBadRequest, "invalid limit: must be a non-negative integer")
+			return
+		}
 		opts.Limit = limit
 	}
 	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
-		offset, _ := strconv.Atoi(offsetStr)
+		offset, err := strconv.Atoi(offsetStr)
+		if err != nil || offset < 0 {
+			writeError(w, http.StatusBadRequest, "invalid offset: must be a non-negative integer")
+			return
+		}
 		opts.Offset = offset
+	}
+
+	// Apply default limit when not specified or when explicitly set to 0.
+	if opts.Limit == 0 {
+		opts.Limit = defaultListLimit
 	}
 
 	jobs, total, err := db.NewJobRepo(s.db).List(opts)
@@ -106,13 +170,8 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -126,13 +185,8 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -151,20 +205,33 @@ func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
+
+	// Only allow updates on non-terminal jobs
+	if job.Status.IsTerminal() {
+		writeError(w, http.StatusConflict, fmt.Sprintf("cannot update job in %s state", job.Status))
+		return
+	}
+
+	// Limit request body to 1 MB to prevent denial of service
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	var updates map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
+	}
+
+	// Reject unknown fields to prevent silent typos (e.g. "max_iteration" vs "max_iterations")
+	allowedFields := map[string]bool{"priority": true, "max_iterations": true}
+	for key := range updates {
+		if !allowedFields[key] {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown field: %q (allowed: priority, max_iterations)", key))
+			return
+		}
 	}
 
 	// Apply updates
@@ -177,7 +244,12 @@ func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
 		job.Priority = p
 	}
 	if maxIter, ok := updates["max_iterations"].(float64); ok {
-		job.MaxIterations = int(maxIter)
+		v := int(maxIter)
+		if v <= 0 {
+			writeError(w, http.StatusBadRequest, "max_iterations must be positive")
+			return
+		}
+		job.MaxIterations = v
 	}
 
 	if err := s.queue.Update(job); err != nil {
@@ -195,13 +267,8 @@ func (s *Server) handlePauseJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -220,13 +287,8 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.queue.Get(jobID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	job, ok := s.authorizedJob(w, r, jobID)
+	if !ok {
 		return
 	}
 
@@ -239,6 +301,9 @@ func (s *Server) handleResumeJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReorderJobs(w http.ResponseWriter, r *http.Request) {
+	// Limit request body to 1 MB to prevent denial of service
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	var req ReorderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -260,6 +325,10 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := s.authorizedJob(w, r, jobID); !ok {
+		return
+	}
+
 	logRepo := db.NewLogRepo(s.db)
 	logs, err := logRepo.GetForJob(jobID)
 	if err != nil {
@@ -268,4 +337,56 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"logs": logs})
+}
+
+// authorizedJob fetches a job by ID and checks access control.
+// It writes the appropriate HTTP error response and returns nil, false if
+// the job is not found, an error occurs, or access is denied.
+func (s *Server) authorizedJob(w http.ResponseWriter, r *http.Request, jobID int64) (*models.Job, bool) {
+	job, err := s.queue.Get(jobID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "job not found")
+			return nil, false
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return nil, false
+	}
+
+	if !canAccessJob(r, job) {
+		writeError(w, http.StatusForbidden, "access denied")
+		return nil, false
+	}
+
+	return job, true
+}
+
+// canAccessJob checks whether the request's user is allowed to access the given job.
+func canAccessJob(r *http.Request, job *models.Job) bool {
+	return auth.CanAccessJob(r, job.OwnerID)
+}
+
+// envVarDenylist contains environment variable names and prefixes that should
+// not be overridden by job env settings for security reasons.
+var envVarDenylist = []string{
+	"LD_",        // Linux dynamic linker
+	"DYLD_",      // macOS dynamic linker
+	"PATH",       // executable search path
+	"HOME",       // home directory
+	"SHELL",      // shell executable
+	"ANTHROPIC_", // Anthropic API config
+	"CLAUDE_",    // Claude CLI config
+}
+
+// validateEnvVars checks that no env vars match the denylist.
+func validateEnvVars(env map[string]string) error {
+	for key := range env {
+		upperKey := strings.ToUpper(key)
+		for _, denied := range envVarDenylist {
+			if strings.HasPrefix(upperKey, denied) || upperKey == denied {
+				return fmt.Errorf("environment variable %q is not allowed", key)
+			}
+		}
+	}
+	return nil
 }
