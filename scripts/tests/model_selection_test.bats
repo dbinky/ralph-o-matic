@@ -249,3 +249,76 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"not responding"* ]]
 }
+
+# --- Tests added for comprehensive Anthropic path coverage ---
+
+@test "select_backend defaults to ollama with --yes" {
+    YES_FLAG=true
+    BACKEND="ollama"
+
+    select_backend
+
+    [ "$BACKEND" = "ollama" ]
+}
+
+@test "select_backend sets anthropic with choice 2" {
+    YES_FLAG=false
+    BACKEND="ollama"
+
+    select_backend <<< "2"
+
+    [ "$BACKEND" = "anthropic" ]
+}
+
+@test "validate_claude_auth succeeds with valid auth" {
+    claude() { echo "OK"; }
+    export -f claude
+
+    run validate_claude_auth
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"authenticated"* ]]
+}
+
+@test "check_ram_requirement skips for anthropic backend" {
+    MODE="server"
+    BACKEND="anthropic"
+    RAM_GB=4  # Would normally fail
+
+    run check_ram_requirement
+    [ "$status" -eq 0 ]
+}
+
+@test "apply_model_config sends ollama payload when backend is ollama" {
+    BACKEND="ollama"
+    OLLAMA_URL="http://localhost:11434"
+    LARGE_MODEL="devstral"
+    SMALL_MODEL="qwen3:8b"
+    INFERENCE_MODE="gpu_only"
+
+    curl() {
+        # Server health check
+        if [[ "$1" == "-sf" ]] && [[ "$2" != "-X" ]]; then
+            return 0
+        fi
+        # PATCH call — return success
+        return 0
+    }
+    jq() { echo '{"ollama":{"host":"test"}}'; }
+    export -f curl jq
+
+    run apply_model_config
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Model config applied"* ]]
+}
+
+@test "select_anthropic_models defaults on invalid input" {
+    YES_FLAG=false
+    LARGE_MODEL=""
+    SMALL_MODEL=""
+
+    # Send "9" for large (invalid) and "9" for small (invalid)
+    select_anthropic_models <<< $'99'
+
+    [ "$LARGE_MODEL" = "claude-sonnet-4-5-20250929" ]
+    [ "$SMALL_MODEL" = "claude-haiku-4-5-20251001" ]
+}
