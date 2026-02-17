@@ -30,6 +30,7 @@ LARGE_MODEL=""
 SMALL_MODEL=""
 OLLAMA_URL="http://localhost:11434"
 INFERENCE_MODE=""  # gpu_cpu_split, gpu_only, cpu_only, remote
+BACKEND="ollama"  # ollama or anthropic
 
 # Notification configuration
 NOTIFY_SMTP_ENABLED=false
@@ -47,6 +48,7 @@ parse_args() {
         case $1 in
             --yes|-y) YES_FLAG=true; shift ;;
             --mode=*) MODE="${1#*=}"; MODE_SET=true; shift ;;
+            --backend=*) BACKEND="${1#*=}"; shift ;;
             --server=*) SERVER_URL="${1#*=}"; shift ;;
             --large-model=*) LARGE_MODEL="${1#*=}"; shift ;;
             --small-model=*) SMALL_MODEL="${1#*=}"; shift ;;
@@ -116,8 +118,8 @@ detect_platform() {
 check_ram_requirement() {
     local MIN_RAM=16
 
-    if [[ "$MODE" == "client" ]]; then
-        # Client doesn't need much RAM
+    if [[ "$MODE" == "client" ]] || [[ "$BACKEND" == "anthropic" ]]; then
+        # Client doesn't need much RAM; anthropic backend runs models in the cloud
         return 0
     fi
 
@@ -297,6 +299,99 @@ setup_remote_ollama() {
     if [[ -z "$SMALL_MODEL" ]]; then
         SMALL_MODEL="qwen3:8b"
     fi
+}
+
+select_backend() {
+    # Skip if --yes flag (default to ollama)
+    if [[ "$YES_FLAG" == true ]]; then
+        return
+    fi
+
+    echo ""
+    echo "How would you like to run ralph-o-matic?"
+    echo ""
+    echo "  [1] Local models via Ollama (GPU/CPU — free, private, requires hardware)"
+    echo "  [2] Anthropic API via Claude Code (uses your Claude subscription/API credits)"
+    echo ""
+    read -p "Select [1-2]: " -n 1 -r
+    echo ""
+
+    case $REPLY in
+        2) BACKEND="anthropic" ;;
+        *) BACKEND="ollama" ;;
+    esac
+}
+
+validate_claude_auth() {
+    info "Validating Claude Code installation..."
+
+    if ! command -v claude &>/dev/null; then
+        error "Claude Code CLI not found. Install it first:
+  npm install -g @anthropic-ai/claude-code
+  Then run 'claude' to log in."
+    fi
+    success "Claude Code CLI found"
+
+    info "Checking authentication (this makes a quick API call)..."
+    if ! claude --print "respond with only the word OK" --model claude-haiku-4-5-20251001 2>/dev/null | grep -qi "ok"; then
+        error "Claude Code authentication failed. Run 'claude' to log in first."
+    fi
+    success "Claude Code authenticated"
+}
+
+select_anthropic_models() {
+    # Auto-select defaults with --yes flag
+    if [[ "$YES_FLAG" == true ]]; then
+        LARGE_MODEL="claude-sonnet-4-5-20250929"
+        SMALL_MODEL="claude-haiku-4-5-20251001"
+        return
+    fi
+
+    echo ""
+    echo "Select the LARGE model (used for main coding iterations):"
+    echo ""
+    echo "  [1] claude-opus-4-6               (most capable, slower, higher cost)"
+    echo "  [2] claude-sonnet-4-5-20250929     (strong balance of quality and speed)"
+    echo "  [3] Custom model ID"
+    echo ""
+    read -p "Select [1-3]: " -n 1 -r
+    echo ""
+    case $REPLY in
+        1) LARGE_MODEL="claude-opus-4-6" ;;
+        2) LARGE_MODEL="claude-sonnet-4-5-20250929" ;;
+        3)
+            read -p "Enter model ID: " -r LARGE_MODEL
+            if [[ -z "$LARGE_MODEL" ]]; then
+                warn "Empty model ID, using claude-sonnet-4-5-20250929"
+                LARGE_MODEL="claude-sonnet-4-5-20250929"
+            fi
+            ;;
+        *) warn "Invalid choice, using claude-sonnet-4-5-20250929"; LARGE_MODEL="claude-sonnet-4-5-20250929" ;;
+    esac
+
+    echo ""
+    echo "Select the SMALL model (used for quick checks and lightweight tasks):"
+    echo ""
+    echo "  [1] claude-haiku-4-5-20251001     (fast, efficient, low cost)"
+    echo "  [2] claude-sonnet-4-5-20250929     (higher quality for small tasks)"
+    echo "  [3] Custom model ID"
+    echo ""
+    read -p "Select [1-3]: " -n 1 -r
+    echo ""
+    case $REPLY in
+        1) SMALL_MODEL="claude-haiku-4-5-20251001" ;;
+        2) SMALL_MODEL="claude-sonnet-4-5-20250929" ;;
+        3)
+            read -p "Enter model ID: " -r SMALL_MODEL
+            if [[ -z "$SMALL_MODEL" ]]; then
+                warn "Empty model ID, using claude-haiku-4-5-20251001"
+                SMALL_MODEL="claude-haiku-4-5-20251001"
+            fi
+            ;;
+        *) warn "Invalid choice, using claude-haiku-4-5-20251001"; SMALL_MODEL="claude-haiku-4-5-20251001" ;;
+    esac
+
+    success "Selected: large=$LARGE_MODEL, small=$SMALL_MODEL"
 }
 
 select_models() {
@@ -498,8 +593,8 @@ check_dependencies() {
         warn "gh (GitHub CLI) not installed"
     fi
 
-    # Ollama (only for server mode)
-    if [[ "$MODE" != "client" ]]; then
+    # Ollama (only for server mode with ollama backend)
+    if [[ "$MODE" != "client" ]] && [[ "$BACKEND" != "anthropic" ]]; then
         if command -v ollama &>/dev/null; then
             DEPS_INSTALLED[ollama]=true
             DEPS_VERSION[ollama]=$(ollama --version 2>/dev/null | awk '{print $NF}' || echo "unknown")
@@ -526,12 +621,16 @@ check_dependencies() {
 install_missing_dependencies() {
     local need_install=false
 
-    for dep in git gh ollama claude; do
+    for dep in git gh claude; do
         if [[ "${DEPS_INSTALLED[$dep]:-false}" == "false" ]]; then
             need_install=true
             break
         fi
     done
+    # Only check ollama for non-anthropic backend
+    if [[ "$MODE" != "client" ]] && [[ "$BACKEND" != "anthropic" ]] && [[ "${DEPS_INSTALLED[ollama]:-false}" == "false" ]]; then
+        need_install=true
+    fi
 
     if [[ "$need_install" == false ]]; then
         success "All dependencies installed"
@@ -575,8 +674,8 @@ install_missing_dependencies() {
         gh auth login
     fi
 
-    # Install Ollama (server mode only)
-    if [[ "$MODE" != "client" ]] && [[ "${DEPS_INSTALLED[ollama]}" == "false" ]]; then
+    # Install Ollama (server mode + ollama backend only)
+    if [[ "$MODE" != "client" ]] && [[ "$BACKEND" != "anthropic" ]] && [[ "${DEPS_INSTALLED[ollama]}" == "false" ]]; then
         info "Installing Ollama..."
         curl -fsSL https://ollama.ai/install.sh | sh
         success "Ollama installed"
@@ -802,6 +901,27 @@ apply_model_config() {
         fi
         sleep 1
     done
+
+    # Fork based on backend
+    if [[ "$BACKEND" == "anthropic" ]]; then
+        local json_payload
+        json_payload=$(jq -n \
+            --arg large "$LARGE_MODEL" \
+            --arg small "$SMALL_MODEL" \
+            '{default_backend:"anthropic",anthropic:{large_model:$large,small_model:$small}}')
+
+        local http_code
+        http_code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH http://localhost:9090/api/config \
+            -H "Content-Type: application/json" \
+            -d "$json_payload")
+        if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+            warn "Config update failed (HTTP $http_code) — check server logs"
+            return
+        fi
+
+        success "Anthropic config applied (large=$LARGE_MODEL, small=$SMALL_MODEL)"
+        return
+    fi
 
     # Map INFERENCE_MODE to device settings and is_remote flag
     local is_remote=false
@@ -1161,15 +1281,23 @@ main() {
 
     print_banner
     detect_platform
-    check_ram_requirement
     prompt_mode
+    if [[ "$MODE" != "client" ]]; then
+        select_backend
+    fi
+    check_ram_requirement
     check_dependencies
     install_missing_dependencies
     if [[ "$MODE" != "client" ]]; then
-        detect_gpu
-        select_models
-        configure_ollama
-        pull_models
+        if [[ "$BACKEND" == "anthropic" ]]; then
+            validate_claude_auth
+            select_anthropic_models
+        else
+            detect_gpu
+            select_models
+            configure_ollama
+            pull_models
+        fi
     fi
     install_binaries
     install_skill

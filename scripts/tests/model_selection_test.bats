@@ -133,6 +133,108 @@ setup() {
     rm -rf "$HOME"
 }
 
+@test "validate_claude_auth fails when claude not installed" {
+    # Override command to simulate claude not found
+    command() {
+        if [[ "$2" == "claude" ]]; then return 1; fi
+        builtin command "$@"
+    }
+    export -f command
+
+    run validate_claude_auth
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not found"* ]]
+}
+
+@test "validate_claude_auth fails when auth check fails" {
+    # claude exists but auth fails
+    claude() { return 1; }
+    export -f claude
+
+    run validate_claude_auth
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"auth"* ]] || [[ "$output" == *"failed"* ]]
+}
+
+@test "select_anthropic_models picks opus with choice 1" {
+    LARGE_MODEL=""
+    SMALL_MODEL=""
+    YES_FLAG=false
+
+    # With -n 1, read consumes one character at a time (no newlines needed)
+    select_anthropic_models <<< $'11'
+
+    [ "$LARGE_MODEL" = "claude-opus-4-6" ]
+    [ "$SMALL_MODEL" = "claude-haiku-4-5-20251001" ]
+}
+
+@test "select_anthropic_models picks sonnet for both with choices 2,2" {
+    LARGE_MODEL=""
+    SMALL_MODEL=""
+    YES_FLAG=false
+
+    # With -n 1, read consumes one character at a time (no newlines needed)
+    select_anthropic_models <<< $'22'
+
+    [ "$LARGE_MODEL" = "claude-sonnet-4-5-20250929" ]
+    [ "$SMALL_MODEL" = "claude-sonnet-4-5-20250929" ]
+}
+
+@test "select_anthropic_models auto-selects defaults with --yes flag" {
+    LARGE_MODEL=""
+    SMALL_MODEL=""
+    YES_FLAG=true
+
+    select_anthropic_models
+
+    [ "$LARGE_MODEL" = "claude-sonnet-4-5-20250929" ]
+    [ "$SMALL_MODEL" = "claude-haiku-4-5-20251001" ]
+}
+
+@test "apply_model_config sends anthropic payload when backend is anthropic" {
+    BACKEND="anthropic"
+    LARGE_MODEL="claude-opus-4-6"
+    SMALL_MODEL="claude-haiku-4-5-20251001"
+
+    curl() {
+        # Server health check (curl -sf URL)
+        if [[ "$1" == "-sf" ]] && [[ "$2" != "-X" ]]; then
+            return 0
+        fi
+        # PATCH call - return HTTP 200 status code (mimics -w '%{http_code}')
+        printf "200"
+        return 0
+    }
+    export -f curl
+
+    run apply_model_config
+    [ "$status" -eq 0 ]
+    # Must use Anthropic-specific success message, not the Ollama one
+    [[ "$output" == *"Anthropic config applied"* ]]
+    # Must NOT contain Ollama-style device config
+    [[ "$output" != *"[cpu]"* ]]
+    [[ "$output" != *"[gpu]"* ]]
+}
+
+@test "apply_model_config warns on anthropic config HTTP failure" {
+    BACKEND="anthropic"
+    LARGE_MODEL="claude-opus-4-6"
+    SMALL_MODEL="claude-haiku-4-5-20251001"
+
+    curl() {
+        if [[ "$1" == "-sf" ]] && [[ "$2" != "-X" ]]; then
+            return 0  # health check passes
+        fi
+        printf "500"
+        return 0
+    }
+    export -f curl
+
+    run apply_model_config
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Config update failed (HTTP 500)"* ]]
+}
+
 @test "apply_model_config fails gracefully when server unreachable" {
     OLLAMA_URL="http://localhost:11434"
     LARGE_MODEL="qwen3:14b"
@@ -146,4 +248,77 @@ setup() {
     run apply_model_config
     [ "$status" -eq 0 ]
     [[ "$output" == *"not responding"* ]]
+}
+
+# --- Tests added for comprehensive Anthropic path coverage ---
+
+@test "select_backend defaults to ollama with --yes" {
+    YES_FLAG=true
+    BACKEND="ollama"
+
+    select_backend
+
+    [ "$BACKEND" = "ollama" ]
+}
+
+@test "select_backend sets anthropic with choice 2" {
+    YES_FLAG=false
+    BACKEND="ollama"
+
+    select_backend <<< "2"
+
+    [ "$BACKEND" = "anthropic" ]
+}
+
+@test "validate_claude_auth succeeds with valid auth" {
+    claude() { echo "OK"; }
+    export -f claude
+
+    run validate_claude_auth
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"authenticated"* ]]
+}
+
+@test "check_ram_requirement skips for anthropic backend" {
+    MODE="server"
+    BACKEND="anthropic"
+    RAM_GB=4  # Would normally fail
+
+    run check_ram_requirement
+    [ "$status" -eq 0 ]
+}
+
+@test "apply_model_config sends ollama payload when backend is ollama" {
+    BACKEND="ollama"
+    OLLAMA_URL="http://localhost:11434"
+    LARGE_MODEL="devstral"
+    SMALL_MODEL="qwen3:8b"
+    INFERENCE_MODE="gpu_only"
+
+    curl() {
+        # Server health check
+        if [[ "$1" == "-sf" ]] && [[ "$2" != "-X" ]]; then
+            return 0
+        fi
+        # PATCH call — return success
+        return 0
+    }
+    jq() { echo '{"ollama":{"host":"test"}}'; }
+    export -f curl jq
+
+    run apply_model_config
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Model config applied"* ]]
+}
+
+@test "select_anthropic_models defaults on invalid input" {
+    YES_FLAG=false
+    LARGE_MODEL=""
+    SMALL_MODEL=""
+
+    # Send "9" for large (invalid) and "9" for small (invalid)
+    select_anthropic_models <<< $'99'
+
+    [ "$LARGE_MODEL" = "claude-sonnet-4-5-20250929" ]
+    [ "$SMALL_MODEL" = "claude-haiku-4-5-20251001" ]
 }
