@@ -25,6 +25,7 @@ error() { echo -e "${RED}✗${NC} $1"; exit 1; }
 MODE="full"  # full, server, client
 MODE_SET=false
 YES_FLAG=false
+UPDATE_FLAG=false
 SERVER_URL=""
 LARGE_MODEL=""
 SMALL_MODEL=""
@@ -52,6 +53,7 @@ parse_args() {
             --server=*) SERVER_URL="${1#*=}"; shift ;;
             --large-model=*) LARGE_MODEL="${1#*=}"; shift ;;
             --small-model=*) SMALL_MODEL="${1#*=}"; shift ;;
+            --update) UPDATE_FLAG=true; shift ;;
             *) error "Unknown option: $1" ;;
         esac
     done
@@ -1153,18 +1155,29 @@ EOF
     fi
 }
 
+stop_server() {
+    info "Stopping ralph-o-matic server..."
+
+    if [[ "$OS" == "darwin" ]]; then
+        launchctl bootout "gui/$(id -u)/com.ralph-o-matic.server" 2>/dev/null || true
+    elif [[ "$OS" == "linux" ]]; then
+        systemctl --user stop ralph-o-matic.service 2>/dev/null || true
+    fi
+
+    sleep 1
+}
+
 start_server() {
+    stop_server
+
     info "Starting ralph-o-matic server..."
 
     if [[ "$OS" == "darwin" ]]; then
-        # Unload first (ignore errors if not loaded)
-        launchctl bootout "gui/$(id -u)" "com.ralph-o-matic.server" 2>/dev/null || true
-        sleep 1
         launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.ralph-o-matic.server.plist" || true
         sleep 2
 
     elif [[ "$OS" == "linux" ]]; then
-        systemctl --user restart ralph-o-matic.service || true
+        systemctl --user start ralph-o-matic.service || true
         sleep 2
     fi
 
