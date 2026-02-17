@@ -156,6 +156,41 @@ setup() {
     [[ "$output" == *"auth"* ]] || [[ "$output" == *"failed"* ]]
 }
 
+@test "select_anthropic_models picks opus with choice 1" {
+    LARGE_MODEL=""
+    SMALL_MODEL=""
+    YES_FLAG=false
+
+    # With -n 1, read consumes one character at a time (no newlines needed)
+    select_anthropic_models <<< $'11'
+
+    [ "$LARGE_MODEL" = "claude-opus-4-6" ]
+    [ "$SMALL_MODEL" = "claude-haiku-4-5-20251001" ]
+}
+
+@test "select_anthropic_models picks sonnet for both with choices 2,2" {
+    LARGE_MODEL=""
+    SMALL_MODEL=""
+    YES_FLAG=false
+
+    # With -n 1, read consumes one character at a time (no newlines needed)
+    select_anthropic_models <<< $'22'
+
+    [ "$LARGE_MODEL" = "claude-sonnet-4-5-20250929" ]
+    [ "$SMALL_MODEL" = "claude-sonnet-4-5-20250929" ]
+}
+
+@test "select_anthropic_models auto-selects defaults with --yes flag" {
+    LARGE_MODEL=""
+    SMALL_MODEL=""
+    YES_FLAG=true
+
+    select_anthropic_models
+
+    [ "$LARGE_MODEL" = "claude-sonnet-4-5-20250929" ]
+    [ "$SMALL_MODEL" = "claude-haiku-4-5-20251001" ]
+}
+
 @test "apply_model_config fails gracefully when server unreachable" {
     OLLAMA_URL="http://localhost:11434"
     LARGE_MODEL="qwen3:14b"
