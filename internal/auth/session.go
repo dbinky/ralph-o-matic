@@ -138,12 +138,17 @@ func SetSessionCookie(w http.ResponseWriter, sessionID string, secure bool) {
 }
 
 // ClearSessionCookie removes the session cookie by setting MaxAge=-1.
-func ClearSessionCookie(w http.ResponseWriter) {
+// It mirrors the security flags from SetSessionCookie to ensure the
+// browser matches and removes the correct cookie.
+func ClearSessionCookie(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name:   cookieName,
-		Value:  "",
-		Path:   "/",
-		MaxAge: -1,
+		Name:     cookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 

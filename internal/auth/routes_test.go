@@ -188,3 +188,25 @@ func TestAuthRoutes_Callback_StateMismatch_Returns400(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+func TestIsValidRedirect(t *testing.T) {
+	tests := []struct {
+		input string
+		valid bool
+	}{
+		{"/dashboard", true},
+		{"/", true},
+		{"/foo/bar?q=1", true},
+		{"", false},
+		{"http://evil.com", false},
+		{"//evil.com", false},
+		{"/\\evil.com", false},
+		{"relative", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.valid, isValidRedirect(tt.input))
+		})
+	}
+}

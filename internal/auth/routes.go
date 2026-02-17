@@ -36,7 +36,7 @@ func NewAuthRoutes(provider *EntraProvider, store *SessionStore, secure bool) ch
 	r.With(configLimiter.Middleware).Get("/config", handleAuthConfig(provider))
 	r.With(authFlowLimiter.Middleware).Get("/login", handleLogin(provider, secure))
 	r.With(authFlowLimiter.Middleware).Get("/callback", handleCallback(provider, store, secure))
-	r.Post("/logout", handleLogout(store))
+	r.Post("/logout", handleLogout(store, secure))
 
 	return r
 }
@@ -163,10 +163,13 @@ func handleCallback(provider *EntraProvider, store *SessionStore, secure bool) h
 
 		// Clear state cookie
 		http.SetCookie(w, &http.Cookie{
-			Name:   stateCookieName,
-			Value:  "",
-			Path:   "/auth",
-			MaxAge: -1,
+			Name:     stateCookieName,
+			Value:    "",
+			Path:     "/auth",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   secure,
+			SameSite: http.SameSiteLaxMode,
 		})
 
 		// Redirect to the original URL or "/"
@@ -179,7 +182,7 @@ func handleCallback(provider *EntraProvider, store *SessionStore, secure bool) h
 }
 
 // handleLogout destroys the session and clears cookies.
-func handleLogout(store *SessionStore) http.HandlerFunc {
+func handleLogout(store *SessionStore, secure bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if store != nil {
 			if sessionID := GetSessionID(r); sessionID != "" {
@@ -187,14 +190,14 @@ func handleLogout(store *SessionStore) http.HandlerFunc {
 			}
 		}
 
-		ClearSessionCookie(w)
+		ClearSessionCookie(w, secure)
 		w.WriteHeader(http.StatusOK)
 	}
 }
 
 // isValidRedirect checks that a redirect URL is a safe relative path.
-// It must start with "/" and must not start with "//" (protocol-relative URL)
-// to prevent open redirect attacks.
+// It must start with "/" and must not start with "//" or "/\" to prevent
+// open redirect attacks (browsers treat both as absolute URLs).
 func isValidRedirect(redirect string) bool {
 	if redirect == "" {
 		return false
@@ -202,7 +205,7 @@ func isValidRedirect(redirect string) bool {
 	if !strings.HasPrefix(redirect, "/") {
 		return false
 	}
-	if strings.HasPrefix(redirect, "//") {
+	if len(redirect) > 1 && (redirect[1] == '/' || redirect[1] == '\\') {
 		return false
 	}
 	return true

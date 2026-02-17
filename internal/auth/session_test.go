@@ -344,7 +344,7 @@ func TestSetSessionCookie_NotSecure(t *testing.T) {
 
 func TestClearSessionCookie(t *testing.T) {
 	w := httptest.NewRecorder()
-	ClearSessionCookie(w)
+	ClearSessionCookie(w, false)
 
 	resp := w.Result()
 	defer resp.Body.Close()
@@ -356,6 +356,24 @@ func TestClearSessionCookie(t *testing.T) {
 	assert.Equal(t, cookieName, c.Name)
 	assert.Equal(t, "", c.Value)
 	assert.Equal(t, -1, c.MaxAge)
+	assert.True(t, c.HttpOnly)
+	assert.Equal(t, http.SameSiteLaxMode, c.SameSite)
+	assert.Equal(t, "/", c.Path)
+}
+
+func TestClearSessionCookie_Secure(t *testing.T) {
+	w := httptest.NewRecorder()
+	ClearSessionCookie(w, true)
+
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	cookies := resp.Cookies()
+	require.Len(t, cookies, 1)
+
+	c := cookies[0]
+	assert.True(t, c.Secure)
+	assert.True(t, c.HttpOnly)
 }
 
 func TestGetSessionID_WithCookie(t *testing.T) {
