@@ -246,6 +246,10 @@ func (w *Worker) checkExternalStop(ctx context.Context, job *models.Job) bool {
 		log.Printf("Worker: job #%d was paused externally at iteration %d, stopping", job.ID, job.Iteration)
 		return true
 	default:
+		// Sync mutable fields that may have been updated via the API.
+		if fresh.MaxIterations > 0 {
+			job.MaxIterations = fresh.MaxIterations
+		}
 		return false
 	}
 }

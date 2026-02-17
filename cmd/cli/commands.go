@@ -47,6 +47,9 @@ func submitCmd() *cobra.Command {
 			if priority == "" {
 				priority = cfg.DefaultPriority
 			}
+			if cmd.Flags().Changed("max-iterations") && maxIterations <= 0 {
+				return fmt.Errorf("--max-iterations must be a positive integer, got %d", maxIterations)
+			}
 			if maxIterations == 0 {
 				maxIterations = cfg.DefaultMaxIterations
 			}
@@ -180,6 +183,13 @@ func logsCmd() *cobra.Command {
 					fmt.Printf("[iter %v] %v\n", allLogs[i]["iteration"], allLogs[i]["message"])
 				}
 				lastCount = len(allLogs)
+
+				// Re-check job status to avoid hanging if the SSE
+				// connection stays open after the job finishes.
+				if j, err := client.GetJob(id); err == nil && j.Status.IsTerminal() {
+					cancel()
+					return nil
+				}
 			}
 
 			return nil
@@ -276,6 +286,9 @@ func updateCmd() *cobra.Command {
 				updates["priority"] = priority
 			}
 			if cmd.Flags().Changed("max-iterations") {
+				if maxIterations <= 0 {
+					return fmt.Errorf("--max-iterations must be a positive integer, got %d", maxIterations)
+				}
 				updates["max_iterations"] = maxIterations
 			}
 
@@ -480,7 +493,7 @@ Use dotted keys for nested values, e.g.: large_model.name, notify.smtp.host`,
 				fmt.Println("# Anthropic")
 				fmt.Printf("anthropic.large_model: %s\n", serverCfg.Anthropic.LargeModel)
 				fmt.Printf("anthropic.small_model: %s\n", serverCfg.Anthropic.SmallModel)
-					fmt.Printf("anthropic.api_key_set: %v\n", serverCfg.Anthropic.APIConfigured)
+				fmt.Printf("anthropic.api_key_set: %v\n", serverCfg.Anthropic.APIConfigured)
 				fmt.Println()
 				fmt.Println("# Execution")
 				fmt.Printf("default_max_iterations: %d\n", serverCfg.DefaultMaxIterations)

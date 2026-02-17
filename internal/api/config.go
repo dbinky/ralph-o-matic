@@ -14,85 +14,9 @@ import (
 	"github.com/ryan/ralph-o-matic/internal/notify"
 )
 
-// anthropicConfigResponse redacts the API key, exposing only whether one is set.
-type anthropicConfigResponse struct {
-	APIConfigured bool `json:"api_key_set"`
-	LargeModel string `json:"large_model"`
-	SmallModel string `json:"small_model"`
-}
-
-// smtpConfigResponse mirrors SMTPConfig but redacts the password.
-type smtpConfigResponse struct {
-	Enabled     bool     `json:"enabled"`
-	Host        string   `json:"host"`
-	Port        int      `json:"port"`
-	Username    string   `json:"username"`
-	PasswordSet bool     `json:"password_set"`
-	From        string   `json:"from"`
-	Recipients  []string `json:"recipients"`
-}
-
-// teamsConfigResponse mirrors TeamsConfig but redacts the webhook URL.
-type teamsConfigResponse struct {
-	Enabled       bool `json:"enabled"`
-	WebhookURLSet bool `json:"webhook_url_set"`
-}
-
-// notifyConfigResponse mirrors NotifyConfig with redacted secrets.
-type notifyConfigResponse struct {
-	SMTP  smtpConfigResponse  `json:"smtp"`
-	Teams teamsConfigResponse `json:"teams"`
-}
-
-// configResponse mirrors ServerConfig but redacts sensitive fields.
-type configResponse struct {
-	Ollama               models.OllamaConfig     `json:"ollama"`
-	LargeModel           models.ModelPlacement   `json:"large_model"`
-	SmallModel           models.ModelPlacement   `json:"small_model"`
-	DefaultMaxIterations int                     `json:"default_max_iterations"`
-	WorkspaceDir         string                  `json:"workspace_dir,omitempty"`
-	JobRetentionDays     int                     `json:"job_retention_days"`
-	DefaultBackend       models.Backend          `json:"default_backend"`
-	Anthropic            anthropicConfigResponse `json:"anthropic"`
-	MaxClaudeRetries     int                     `json:"max_claude_retries"`
-	MaxGitRetries        int                     `json:"max_git_retries"`
-	GitRetryBackoffMs    int                     `json:"git_retry_backoff_ms"`
-	Notify               notifyConfigResponse    `json:"notify"`
-}
-
-func newConfigResponse(cfg *models.ServerConfig) *configResponse {
-	return &configResponse{
-		Ollama:               cfg.Ollama,
-		LargeModel:           cfg.LargeModel,
-		SmallModel:           cfg.SmallModel,
-		DefaultMaxIterations: cfg.DefaultMaxIterations,
-		WorkspaceDir:         cfg.WorkspaceDir,
-		JobRetentionDays:     cfg.JobRetentionDays,
-		DefaultBackend:       cfg.DefaultBackend,
-		Anthropic: anthropicConfigResponse{
-			APIConfigured: cfg.Anthropic.APIKey != "",
-			LargeModel: cfg.Anthropic.LargeModel,
-			SmallModel: cfg.Anthropic.SmallModel,
-		},
-		MaxClaudeRetries:  cfg.MaxClaudeRetries,
-		MaxGitRetries:     cfg.MaxGitRetries,
-		GitRetryBackoffMs: cfg.GitRetryBackoffMs,
-		Notify: notifyConfigResponse{
-			SMTP: smtpConfigResponse{
-				Enabled:     cfg.Notify.SMTP.Enabled,
-				Host:        cfg.Notify.SMTP.Host,
-				Port:        cfg.Notify.SMTP.Port,
-				Username:    cfg.Notify.SMTP.Username,
-				PasswordSet: cfg.Notify.SMTP.Password != "",
-				From:        cfg.Notify.SMTP.From,
-				Recipients:  cfg.Notify.SMTP.Recipients,
-			},
-			Teams: teamsConfigResponse{
-				Enabled:       cfg.Notify.Teams.Enabled,
-				WebhookURLSet: cfg.Notify.Teams.WebhookURL != "",
-			},
-		},
-	}
+// newConfigResponse builds a redacted config response from a full ServerConfig.
+func newConfigResponse(cfg *models.ServerConfig) *models.ServerConfigResponse {
+	return models.NewServerConfigResponse(cfg)
 }
 
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
@@ -159,11 +83,11 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	resp := newConfigResponse(merged)
 	writeJSON(w, http.StatusOK, struct {
-		*configResponse
+		*models.ServerConfigResponse
 		Note string `json:"_note,omitempty"`
 	}{
-		configResponse: resp,
-		Note:           "Configuration saved. Some changes may require a server restart to take effect.",
+		ServerConfigResponse: resp,
+		Note:                 "Configuration saved. Some changes may require a server restart to take effect.",
 	})
 }
 

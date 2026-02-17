@@ -127,9 +127,7 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse pagination with validation
-	limitSpecified := false
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		limitSpecified = true
 		limit, err := strconv.Atoi(limitStr)
 		if err != nil || limit < 0 {
 			writeError(w, http.StatusBadRequest, "invalid limit: must be a non-negative integer")
@@ -146,9 +144,8 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		opts.Offset = offset
 	}
 
-	// Apply default limit only when the parameter was not specified.
-	// An explicit limit=0 means "return all results" (preserves backward compatibility).
-	if !limitSpecified {
+	// Apply default limit when not specified or when explicitly set to 0.
+	if opts.Limit == 0 {
 		opts.Limit = defaultListLimit
 	}
 
@@ -226,6 +223,15 @@ func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
+	}
+
+	// Reject unknown fields to prevent silent typos (e.g. "max_iteration" vs "max_iterations")
+	allowedFields := map[string]bool{"priority": true, "max_iterations": true}
+	for key := range updates {
+		if !allowedFields[key] {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown field: %q (allowed: priority, max_iterations)", key))
+			return
+		}
 	}
 
 	// Apply updates

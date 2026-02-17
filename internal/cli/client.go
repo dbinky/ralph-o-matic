@@ -141,62 +141,9 @@ func (c *Client) ReorderJobs(jobIDs []int64) error {
 	return c.put("/api/jobs/order", req, nil)
 }
 
-// ServerConfigResponse matches the redacted JSON shape returned by GET /api/config.
-// It differs from models.ServerConfig in that sensitive fields are replaced
-// with boolean indicators (api_key_set, password_set, webhook_url_set).
-// SYNC: mirrors api.configResponse in internal/api/config.go
-type ServerConfigResponse struct {
-	Ollama               models.OllamaConfig        `json:"ollama"`
-	LargeModel           models.ModelPlacement       `json:"large_model"`
-	SmallModel           models.ModelPlacement       `json:"small_model"`
-	DefaultMaxIterations int                         `json:"default_max_iterations"`
-	WorkspaceDir         string                      `json:"workspace_dir,omitempty"`
-	JobRetentionDays     int                         `json:"job_retention_days"`
-	DefaultBackend       models.Backend              `json:"default_backend"`
-	Anthropic            AnthropicConfigResponse     `json:"anthropic"`
-	MaxClaudeRetries     int                         `json:"max_claude_retries"`
-	MaxGitRetries        int                         `json:"max_git_retries"`
-	GitRetryBackoffMs    int                         `json:"git_retry_backoff_ms"`
-	Notify               NotifyConfigResponse        `json:"notify"`
-}
-
-// AnthropicConfigResponse matches the redacted Anthropic config from the API.
-// SYNC: mirrors api.anthropicConfigResponse in internal/api/config.go
-type AnthropicConfigResponse struct {
-	APIConfigured bool `json:"api_key_set"`
-	LargeModel string `json:"large_model"`
-	SmallModel string `json:"small_model"`
-}
-
-// SMTPConfigResponse matches the redacted SMTP config from the API.
-// SYNC: mirrors api.smtpConfigResponse in internal/api/config.go
-type SMTPConfigResponse struct {
-	Enabled     bool     `json:"enabled"`
-	Host        string   `json:"host"`
-	Port        int      `json:"port"`
-	Username    string   `json:"username"`
-	PasswordSet bool     `json:"password_set"`
-	From        string   `json:"from"`
-	Recipients  []string `json:"recipients"`
-}
-
-// TeamsConfigResponse matches the redacted Teams config from the API.
-// SYNC: mirrors api.teamsConfigResponse in internal/api/config.go
-type TeamsConfigResponse struct {
-	Enabled       bool `json:"enabled"`
-	WebhookURLSet bool `json:"webhook_url_set"`
-}
-
-// NotifyConfigResponse matches the redacted notification config from the API.
-// SYNC: mirrors api.notifyConfigResponse in internal/api/config.go
-type NotifyConfigResponse struct {
-	SMTP  SMTPConfigResponse  `json:"smtp"`
-	Teams TeamsConfigResponse `json:"teams"`
-}
-
 // GetConfig retrieves server config
-func (c *Client) GetConfig() (*ServerConfigResponse, error) {
-	var cfg ServerConfigResponse
+func (c *Client) GetConfig() (*models.ServerConfigResponse, error) {
+	var cfg models.ServerConfigResponse
 	if err := c.get("/api/config", &cfg); err != nil {
 		return nil, err
 	}
@@ -204,8 +151,8 @@ func (c *Client) GetConfig() (*ServerConfigResponse, error) {
 }
 
 // UpdateConfig updates server config
-func (c *Client) UpdateConfig(updates map[string]interface{}) (*ServerConfigResponse, error) {
-	var cfg ServerConfigResponse
+func (c *Client) UpdateConfig(updates map[string]interface{}) (*models.ServerConfigResponse, error) {
+	var cfg models.ServerConfigResponse
 	if err := c.patch("/api/config", updates, &cfg); err != nil {
 		return nil, err
 	}
@@ -270,17 +217,11 @@ func (c *Client) StreamJobEvents(ctx context.Context, jobID int64) (<-chan struc
 	}
 
 	ch := make(chan struct{})
-	// Close the response body when context is cancelled to unblock scanner.Scan().
-	// Go's HTTP transport handles this via context cancellation, but the explicit
-	// close makes the shutdown contract visible in the code.
-	go func() {
-		<-ctx.Done()
-		resp.Body.Close()
-	}()
 	go func() {
 		defer close(ch)
 		defer resp.Body.Close()
 		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1<<20) // cap at 1 MB per line
 		for scanner.Scan() {
 			line := scanner.Text()
 			if strings.HasPrefix(line, "data:") {
