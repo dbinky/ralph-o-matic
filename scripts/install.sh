@@ -1296,6 +1296,19 @@ main() {
 
     print_banner
     detect_platform
+
+    # --update: quick software-only update path
+    if [[ "$UPDATE_FLAG" == true ]]; then
+        info "Updating ralph-o-matic software..."
+        stop_server
+        install_binaries
+        install_skill
+        start_server
+        verify_installation
+        print_success
+        return
+    fi
+
     prompt_mode
     if [[ "$MODE" != "client" ]]; then
         select_backend
@@ -1314,6 +1327,7 @@ main() {
             pull_models
         fi
     fi
+    stop_server
     install_binaries
     install_skill
     configure_ralph
