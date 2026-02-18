@@ -273,7 +273,7 @@ func TestSSE_GlobalEvents_AdminCanAccess(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestSSE_GlobalEvents_NonAdminGetsForbidden(t *testing.T) {
+func TestSSE_GlobalEvents_NonAdminCanAccess(t *testing.T) {
 	srv, _, _ := newTestServerWithBroadcaster(t)
 
 	req := httptest.NewRequest("GET", "/api/events", nil)
@@ -282,9 +282,21 @@ func TestSSE_GlobalEvents_NonAdminGetsForbidden(t *testing.T) {
 	}))
 	w := httptest.NewRecorder()
 
-	srv.Router().ServeHTTP(w, req)
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+	req = req.WithContext(ctx)
 
-	assert.Equal(t, http.StatusForbidden, w.Code)
+	done := make(chan struct{})
+	go func() {
+		srv.Router().ServeHTTP(w, req)
+		close(done)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	<-done
+
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestSSE_GlobalEvents_NoAuth_CanAccess(t *testing.T) {

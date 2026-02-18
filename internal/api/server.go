@@ -91,7 +91,7 @@ func (s *Server) setupRoutes() {
 		r.Use(auth.Middleware(s.authProvider, s.sessions))
 
 		// SSE routes — no timeout (long-lived connections)
-		r.Get("/api/events", auth.RequireRole("Admin", s.handleSSEGlobal))
+		r.Get("/api/events", s.handleSSEGlobal)
 		r.Get("/api/jobs/{jobID}/events", s.handleSSEJob)
 
 		// All other routes — with timeout
@@ -110,6 +110,9 @@ func (s *Server) setupRoutes() {
 				}
 				s.dashboard.HandleJob(w, r, id)
 			})
+
+			// Dashboard state (for SSE reconnect reconciliation)
+			r.Get("/api/dashboard-state", s.handleDashboardState)
 
 			// API routes
 			r.Route("/api", func(r chi.Router) {
