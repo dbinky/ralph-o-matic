@@ -11,22 +11,36 @@
     <div class="job-card running" data-job-id="{{.ID}}">
         <div class="job-header">
             <div>
+                <button class="job-expand-toggle" onclick="toggleJobPanel({{.ID}})" data-job-id="{{.ID}}">&#9654;</button>
                 <span class="job-id">#{{.ID}}</span>
                 <span class="job-branch">{{.Branch}}</span>
             </div>
-            <span>iter {{.Iteration}}/{{.MaxIterations}}</span>
+            <span class="job-iter" data-job-id="{{.ID}}">iter {{.Iteration}}/{{.MaxIterations}}</span>
         </div>
         <div class="job-progress">
-            <div class="job-progress-bar" style="width: {{printf "%.0f" (multiply .Progress 100)}}%"></div>
+            <div class="job-progress-bar" data-job-id="{{.ID}}" style="width: {{printf "%.0f" (multiply .Progress 100)}}%"></div>
         </div>
         <div class="job-meta">
             <span>{{.Prompt | truncate 50}}</span>
-            <span>Running {{.Duration | duration}}</span>
+            <span class="job-elapsed" data-job-id="{{.ID}}">Running {{.Duration | duration}}</span>
             {{if .OwnerName}}<span>by {{.OwnerName}}</span>{{end}}
         </div>
         <div class="job-actions">
             <button class="btn btn-secondary" onclick="pauseJob({{.ID}})">Pause</button>
             <button class="btn btn-danger" onclick="cancelJob({{.ID}})">Cancel</button>
+        </div>
+        <div class="job-detail-panel" id="panel-{{.ID}}">
+            <dl class="job-details-grid">
+                <dt>Repository</dt><dd>{{.RepoURL}}</dd>
+                <dt>Branch</dt><dd>{{.Branch}}</dd>
+                <dt>User</dt><dd>{{if .OwnerName}}{{.OwnerName}}{{else}}—{{end}}</dd>
+                <dt>Priority</dt><dd>{{.Priority}}</dd>
+                <dt>Iterations</dt><dd>{{.Iteration}}/{{.MaxIterations}}</dd>
+                <dt>Started</dt><dd>{{.StartedAt | timeago}}</dd>
+            </dl>
+            <div class="job-terminal" id="terminal-{{.ID}}">
+                <span class="job-terminal-empty">Connecting to live output...</span>
+            </div>
         </div>
     </div>
     {{end}}

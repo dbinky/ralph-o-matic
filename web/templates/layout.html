@@ -163,6 +163,68 @@
         .auth-user a:hover {
             color: #fff;
         }
+
+        /* Expandable panel */
+        .job-expand-toggle {
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 0.875rem;
+            padding: 4px 8px;
+            transition: color 0.2s;
+        }
+        .job-expand-toggle:hover {
+            color: #fff;
+        }
+        .job-detail-panel {
+            display: none;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #333;
+        }
+        .job-detail-panel.expanded {
+            display: block;
+        }
+        .job-details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-size: 0.875rem;
+        }
+        .job-details-grid dt {
+            color: #888;
+        }
+        .job-details-grid dd {
+            color: #eee;
+            margin: 0;
+        }
+
+        /* Terminal window */
+        .job-terminal {
+            background: #0d1117;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 10px;
+            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+            font-size: 0.8rem;
+            line-height: 1.4;
+            color: #c9d1d9;
+            height: 420px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .job-terminal .terminal-line {
+            display: block;
+        }
+        .job-terminal-empty {
+            color: #555;
+            font-style: italic;
+            text-align: center;
+            padding: 20px;
+        }
     </style>
 </head>
 <body>
