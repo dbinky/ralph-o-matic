@@ -270,6 +270,21 @@ func TestQueue_GetPaused(t *testing.T) {
 	assert.Len(t, paused, 1)
 }
 
+// assertPublishesStatus reads one event from ch and asserts it is a job_status
+// event with the given status string. Fails the test on timeout or mismatch.
+func assertPublishesStatus(t *testing.T, ch <-chan []byte, expectedStatus string) {
+	t.Helper()
+	select {
+	case msg := <-ch:
+		var evt map[string]interface{}
+		require.NoError(t, json.Unmarshal(msg, &evt))
+		assert.Equal(t, "job_status", evt["type"])
+		assert.Equal(t, expectedStatus, evt["status"])
+	case <-time.After(time.Second):
+		t.Fatalf("timed out waiting for %s event", expectedStatus)
+	}
+}
+
 func TestQueue_Enqueue_PublishesJobStatusEvent(t *testing.T) {
 	db := newTestDB(t)
 	b := broadcast.New()
@@ -281,6 +296,7 @@ func TestQueue_Enqueue_PublishesJobStatusEvent(t *testing.T) {
 	job := models.NewJob("https://github.com/user/repo.git", "main", "test prompt", 10)
 	require.NoError(t, q.Enqueue(job))
 
+	// Verify full payload on enqueue (assertPublishesStatus covers type+status)
 	select {
 	case msg := <-ch:
 		var evt map[string]interface{}
@@ -311,15 +327,7 @@ func TestQueue_Dequeue_PublishesRunningEvent(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, dequeuedJob)
 
-	select {
-	case msg := <-ch:
-		var evt map[string]interface{}
-		require.NoError(t, json.Unmarshal(msg, &evt))
-		assert.Equal(t, "job_status", evt["type"])
-		assert.Equal(t, "running", evt["status"])
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for event")
-	}
+	assertPublishesStatus(t, ch, "running")
 }
 
 func TestQueue_Complete_PublishesCompletedEvent(t *testing.T) {
@@ -336,15 +344,7 @@ func TestQueue_Complete_PublishesCompletedEvent(t *testing.T) {
 	_, ch := b.Subscribe("global")
 	require.NoError(t, q.Complete(dequeuedJob))
 
-	select {
-	case msg := <-ch:
-		var evt map[string]interface{}
-		require.NoError(t, json.Unmarshal(msg, &evt))
-		assert.Equal(t, "job_status", evt["type"])
-		assert.Equal(t, "completed", evt["status"])
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for event")
-	}
+	assertPublishesStatus(t, ch, "completed")
 }
 
 func TestQueue_Fail_PublishesFailedEvent(t *testing.T) {
@@ -361,15 +361,7 @@ func TestQueue_Fail_PublishesFailedEvent(t *testing.T) {
 	_, ch := b.Subscribe("global")
 	require.NoError(t, q.Fail(dequeuedJob, "something broke"))
 
-	select {
-	case msg := <-ch:
-		var evt map[string]interface{}
-		require.NoError(t, json.Unmarshal(msg, &evt))
-		assert.Equal(t, "job_status", evt["type"])
-		assert.Equal(t, "failed", evt["status"])
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for event")
-	}
+	assertPublishesStatus(t, ch, "failed")
 }
 
 func TestQueue_Cancel_PublishesCancelledEvent(t *testing.T) {
@@ -384,15 +376,7 @@ func TestQueue_Cancel_PublishesCancelledEvent(t *testing.T) {
 	_, ch := b.Subscribe("global")
 	require.NoError(t, q.Cancel(job))
 
-	select {
-	case msg := <-ch:
-		var evt map[string]interface{}
-		require.NoError(t, json.Unmarshal(msg, &evt))
-		assert.Equal(t, "job_status", evt["type"])
-		assert.Equal(t, "cancelled", evt["status"])
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for event")
-	}
+	assertPublishesStatus(t, ch, "cancelled")
 }
 
 func TestQueue_Pause_PublishesPausedEvent(t *testing.T) {
@@ -409,15 +393,7 @@ func TestQueue_Pause_PublishesPausedEvent(t *testing.T) {
 	_, ch := b.Subscribe("global")
 	require.NoError(t, q.Pause(dequeuedJob))
 
-	select {
-	case msg := <-ch:
-		var evt map[string]interface{}
-		require.NoError(t, json.Unmarshal(msg, &evt))
-		assert.Equal(t, "job_status", evt["type"])
-		assert.Equal(t, "paused", evt["status"])
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for event")
-	}
+	assertPublishesStatus(t, ch, "paused")
 }
 
 func TestQueue_Resume_PublishesQueuedEvent(t *testing.T) {
@@ -435,15 +411,7 @@ func TestQueue_Resume_PublishesQueuedEvent(t *testing.T) {
 	_, ch := b.Subscribe("global")
 	require.NoError(t, q.Resume(dequeuedJob))
 
-	select {
-	case msg := <-ch:
-		var evt map[string]interface{}
-		require.NoError(t, json.Unmarshal(msg, &evt))
-		assert.Equal(t, "job_status", evt["type"])
-		assert.Equal(t, "queued", evt["status"])
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for event")
-	}
+	assertPublishesStatus(t, ch, "queued")
 }
 
 func TestQueue_NoBroadcaster_NoPublish(t *testing.T) {

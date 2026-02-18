@@ -45,6 +45,7 @@ func (r *LogRepo) Append(jobID int64, iteration int, message string) error {
 
 	if r.broadcaster != nil {
 		// Publish to job-specific topic (backward compatible — keeps "log" type)
+		// Marshal cannot fail: all values are primitive types.
 		jobPayload, _ := json.Marshal(map[string]interface{}{
 			"type":      "log",
 			"iteration": iteration,
@@ -53,6 +54,7 @@ func (r *LogRepo) Append(jobID int64, iteration int, message string) error {
 		r.broadcaster.Publish(fmt.Sprintf("job:%d", jobID), jobPayload)
 
 		// Publish to global topic (includes jobID for dashboard routing)
+		// Marshal cannot fail: all values are primitive types.
 		globalPayload, _ := json.Marshal(map[string]interface{}{
 			"type":      "job_log",
 			"jobID":     jobID,

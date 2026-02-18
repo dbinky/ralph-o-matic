@@ -11,6 +11,12 @@ import (
 	"github.com/ryan/ralph-o-matic/internal/models"
 )
 
+// SSE event type constants.
+const (
+	EventJobStatus    = "job_status"
+	EventQueueReorder = "queue_reorder"
+)
+
 // Queue manages job scheduling and state transitions
 type Queue struct {
 	db          *db.DB
@@ -37,7 +43,7 @@ func (q *Queue) publishJobStatus(job *models.Job) {
 		return
 	}
 	payload, err := json.Marshal(map[string]interface{}{
-		"type":      "job_status",
+		"type":      EventJobStatus,
 		"jobID":     job.ID,
 		"status":    job.Status,
 		"repo":      job.RepoURL,
@@ -185,7 +191,9 @@ func (q *Queue) Cancel(job *models.Job) error {
 	return nil
 }
 
-// Reorder changes the order of queued jobs
+// Reorder changes the order of queued jobs.
+// Publishes its own event type (queue_reorder) instead of using publishJobStatus
+// because the operation affects multiple jobs and has no single job reference.
 func (q *Queue) Reorder(jobIDs []int64) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -195,7 +203,7 @@ func (q *Queue) Reorder(jobIDs []int64) error {
 	}
 	if q.broadcaster != nil {
 		payload, _ := json.Marshal(map[string]interface{}{
-			"type": "queue_reorder",
+			"type": EventQueueReorder,
 		})
 		q.broadcaster.Publish("global", payload)
 	}

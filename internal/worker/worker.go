@@ -175,6 +175,7 @@ func (w *Worker) poll(ctx context.Context) {
 		}
 
 		job.IncrementIteration()
+		pr.SetIteration(job.Iteration)
 		log.Printf("Worker: job #%d starting iteration %d/%d", job.ID, job.Iteration, job.MaxIterations)
 
 		if err := w.queue.Update(job); err != nil {

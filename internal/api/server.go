@@ -91,6 +91,9 @@ func (s *Server) setupRoutes() {
 		r.Use(auth.Middleware(s.authProvider, s.sessions))
 
 		// SSE routes — no timeout (long-lived connections)
+		// Global SSE is open to all authenticated users (no admin guard) for
+		// small-team transparency. Auth middleware still gates access. Revisit
+		// if the tool is deployed in a multi-tenant or untrusted-user context.
 		r.Get("/api/events", s.handleSSEGlobal)
 		r.Get("/api/jobs/{jobID}/events", s.handleSSEJob)
 

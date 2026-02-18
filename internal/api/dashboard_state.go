@@ -1,7 +1,9 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/db"
 	"github.com/ryan/ralph-o-matic/internal/models"
@@ -16,7 +18,7 @@ type DashboardJob struct {
 	User      string           `json:"user"`
 	Priority  models.Priority  `json:"priority"`
 	Iteration int              `json:"iteration"`
-	CreatedAt string           `json:"createdAt"`
+	CreatedAt time.Time         `json:"createdAt"`
 }
 
 func (s *Server) handleDashboardState(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +36,8 @@ func (s *Server) handleDashboardState(w http.ResponseWriter, r *http.Request) {
 		Limit:    100,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("dashboard-state: failed to list active jobs", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to load dashboard state")
 		return
 	}
 
@@ -48,11 +51,14 @@ func (s *Server) handleDashboardState(w http.ResponseWriter, r *http.Request) {
 		Limit: 10,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("dashboard-state: failed to list terminal jobs", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to load dashboard state")
 		return
 	}
 
-	allJobs := append(jobs, terminal...)
+	allJobs := make([]*models.Job, 0, len(jobs)+len(terminal))
+	allJobs = append(allJobs, jobs...)
+	allJobs = append(allJobs, terminal...)
 
 	result := make([]DashboardJob, 0, len(allJobs))
 	for _, j := range allJobs {
@@ -64,7 +70,7 @@ func (s *Server) handleDashboardState(w http.ResponseWriter, r *http.Request) {
 			User:      j.OwnerName,
 			Priority:  j.Priority,
 			Iteration: j.Iteration,
-			CreatedAt: j.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt: j.CreatedAt,
 		})
 	}
 

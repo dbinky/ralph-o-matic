@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"sync/atomic"
 	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/broadcast"
@@ -17,6 +18,7 @@ const defaultProgressInterval = 5 * time.Second
 type ProgressReporter struct {
 	broadcaster *broadcast.Broadcaster
 	interval    time.Duration
+	iteration   atomic.Int64
 }
 
 // NewProgressReporter creates a new ProgressReporter.
@@ -27,8 +29,17 @@ func NewProgressReporter(b *broadcast.Broadcaster) *ProgressReporter {
 	}
 }
 
+// SetIteration updates the iteration counter (safe for concurrent use).
+func (p *ProgressReporter) SetIteration(n int) {
+	p.iteration.Store(int64(n))
+}
+
 // Start emits progress events until ctx is cancelled.
 // Blocks until done — call in a goroutine.
+//
+// Concurrency invariant: job.ID, job.StartedAt, and job.MaxIterations are set
+// before Start is called and never modified after. The mutable iteration count
+// is read via p.iteration (atomic.Int64), updated by the worker via SetIteration.
 func (p *ProgressReporter) Start(ctx context.Context, job *models.Job) {
 	if p.broadcaster == nil {
 		<-ctx.Done()
@@ -55,10 +66,11 @@ func (p *ProgressReporter) emit(job *models.Job) {
 	}
 
 	payload, err := json.Marshal(map[string]interface{}{
-		"type":       "job_progress",
-		"jobID":      job.ID,
-		"iteration":  job.Iteration,
-		"elapsedSec": elapsed,
+		"type":          "job_progress",
+		"jobID":         job.ID,
+		"iteration":     p.iteration.Load(),
+		"maxIterations": job.MaxIterations,
+		"elapsedSec":    elapsed,
 	})
 	if err != nil {
 		return

@@ -17,10 +17,11 @@ func TestProgressReporter_EmitsProgress(t *testing.T) {
 	_, ch := b.Subscribe("global")
 
 	now := time.Now()
-	job := &models.Job{ID: 42, Iteration: 3, StartedAt: &now}
+	job := &models.Job{ID: 42, Iteration: 3, MaxIterations: 10, StartedAt: &now}
 
 	pr := NewProgressReporter(b)
 	pr.interval = 50 * time.Millisecond
+	pr.SetIteration(3)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -34,6 +35,7 @@ func TestProgressReporter_EmitsProgress(t *testing.T) {
 		assert.Equal(t, "job_progress", evt["type"])
 		assert.Equal(t, float64(42), evt["jobID"])
 		assert.Equal(t, float64(3), evt["iteration"])
+		assert.Equal(t, float64(10), evt["maxIterations"])
 		assert.True(t, evt["elapsedSec"].(float64) >= 0)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for progress event")

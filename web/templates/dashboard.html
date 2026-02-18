@@ -286,19 +286,19 @@
     function handleStatusChange(data) {
         // Reload the page for status changes — simplest correct approach
         // for moving cards between sections, creating/removing panels, etc.
+        // TODO: replace with DOM updates to avoid losing terminal buffer state,
+        // expanded panel state, and log backfill on status transitions.
         location.reload();
     }
 
     function handleProgress(data) {
         var jobId = data.jobID;
+        var maxIter = data.maxIterations;
 
         // Update iteration text
         var iterEl = document.querySelector('.job-iter[data-job-id="' + jobId + '"]');
         if (iterEl) {
-            var match = iterEl.textContent.match(/iter \d+\/(\d+)/);
-            if (match) {
-                iterEl.textContent = 'iter ' + data.iteration + '/' + match[1];
-            }
+            iterEl.textContent = 'iter ' + data.iteration + '/' + maxIter;
         }
 
         // Update elapsed time
@@ -318,21 +318,15 @@
 
         // Update progress bar
         var barEl = document.querySelector('.job-progress-bar[data-job-id="' + jobId + '"]');
-        if (barEl && iterEl) {
-            var iterMatch = iterEl.textContent.match(/iter (\d+)\/(\d+)/);
-            if (iterMatch) {
-                var pct = (parseInt(iterMatch[1]) / parseInt(iterMatch[2])) * 100;
-                barEl.style.width = pct + '%';
-            }
+        if (barEl && maxIter > 0) {
+            var pct = (data.iteration / maxIter) * 100;
+            barEl.style.width = pct + '%';
         }
 
         // Update iteration in detail panel if expanded
         var panelIterDd = document.querySelector('#panel-' + jobId + ' dd:nth-of-type(5)');
         if (panelIterDd) {
-            var ddMatch = panelIterDd.textContent.match(/\d+\/(\d+)/);
-            if (ddMatch) {
-                panelIterDd.textContent = data.iteration + '/' + ddMatch[1];
-            }
+            panelIterDd.textContent = data.iteration + '/' + maxIter;
         }
     }
 
