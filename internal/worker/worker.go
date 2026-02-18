@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/ryan/ralph-o-matic/internal/broadcast"
 	"github.com/ryan/ralph-o-matic/internal/executor"
 	"github.com/ryan/ralph-o-matic/internal/models"
 	"github.com/ryan/ralph-o-matic/internal/notify"
@@ -45,6 +46,9 @@ type Worker struct {
 	// Notifications (nil = disabled)
 	notifier JobNotifier
 
+	// SSE broadcaster for progress events (nil = disabled)
+	broadcaster *broadcast.Broadcaster
+
 	// Circuit breaker thresholds (0 = disabled)
 	circuitBreakerNoProgress int
 	circuitBreakerSameError  int
@@ -58,6 +62,9 @@ type Worker struct {
 
 	// Watchdog interval for checking external pause/cancel during iteration execution.
 	watchdogInterval time.Duration
+
+	// Progress reporting interval (0 = use default 5s)
+	progressInterval time.Duration
 }
 
 // New creates a worker that polls the queue at the given interval.
@@ -77,6 +84,11 @@ func New(q JobQueue, handler JobHandler, interval time.Duration) *Worker {
 // SetNotifier sets the notification dispatcher. Nil disables notifications.
 func (w *Worker) SetNotifier(n JobNotifier) {
 	w.notifier = n
+}
+
+// SetBroadcaster sets the SSE broadcaster for progress events.
+func (w *Worker) SetBroadcaster(b *broadcast.Broadcaster) {
+	w.broadcaster = b
 }
 
 // notify sends a notification if a notifier is configured. Never panics.
@@ -142,6 +154,13 @@ func (w *Worker) poll(ctx context.Context) {
 	defer jobCancel()
 
 	go w.watchExternalStop(jobCtx, job.ID, jobCancel)
+
+	// Start progress reporter (emits job_progress events while job runs)
+	pr := NewProgressReporter(w.broadcaster)
+	if w.progressInterval > 0 {
+		pr.interval = w.progressInterval
+	}
+	go pr.Start(jobCtx, job)
 
 	completedBySignal := false
 	for {

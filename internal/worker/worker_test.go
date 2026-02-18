@@ -2,11 +2,13 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/ryan/ralph-o-matic/internal/broadcast"
 	"github.com/ryan/ralph-o-matic/internal/executor"
 	"github.com/ryan/ralph-o-matic/internal/models"
 	"github.com/ryan/ralph-o-matic/internal/notify"
@@ -1048,4 +1050,46 @@ func TestDetectProgress_NilMetadata_WithCloser(t *testing.T) {
 		Output: "Done.\n<promise>CLOSER</promise>",
 	}
 	assert.True(t, detectProgress(result), "CLOSER without metadata should still count")
+}
+
+func TestWorker_StartsProgressReporter(t *testing.T) {
+	b := broadcast.New()
+	_, ch := b.Subscribe("global")
+
+	now := time.Now()
+	job := newTestJob(2)
+	job.StartedAt = &now
+
+	handler := &mockHandler{
+		handleFn: func(ctx context.Context, job *models.Job) (*executor.ExecutionResult, error) {
+			time.Sleep(200 * time.Millisecond) // Give progress reporter time to tick
+			return &executor.ExecutionResult{Completed: true}, nil
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{job}}
+
+	w := New(q, handler, time.Second)
+	w.SetBroadcaster(b)
+	w.progressInterval = 50 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Use poll() directly to avoid waiting for the ticker interval
+	go w.poll(ctx)
+
+	// Should receive at least one job_progress event
+	var gotProgress bool
+	timeout := time.After(time.Second)
+	for !gotProgress {
+		select {
+		case msg := <-ch:
+			var evt map[string]interface{}
+			if json.Unmarshal(msg, &evt) == nil && evt["type"] == "job_progress" {
+				gotProgress = true
+			}
+		case <-timeout:
+			t.Fatal("timed out waiting for job_progress event")
+		}
+	}
 }

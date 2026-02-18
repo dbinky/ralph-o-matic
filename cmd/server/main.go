@@ -123,6 +123,7 @@ func run() error {
 	handler := executor.NewRalphHandler(database, config, workspaceDir)
 	handler.SetLogBroadcaster(b)
 	w := worker.New(q, handler, 5*time.Second)
+	w.SetBroadcaster(b)
 
 	// Set up workspace and job retention cleaner
 	repoMgr := git.NewRepoManager(workspaceDir)
