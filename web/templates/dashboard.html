@@ -139,48 +139,254 @@
 {{define "scripts"}}
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 <script>
-    // Initialize sortable for queued jobs
-    new Sortable(document.getElementById('queued-jobs'), {
-        animation: 150,
-        handle: '.drag-handle',
-        ghostClass: 'sortable-ghost',
-        onEnd: function(evt) {
-            const jobCards = document.querySelectorAll('#queued-jobs .job-card');
-            const jobIds = Array.from(jobCards).map(card => parseInt(card.dataset.jobId));
-            reorderJobs(jobIds);
-        }
-    });
+(function() {
+    'use strict';
 
-    async function pauseJob(id) {
-        await fetch(`/api/jobs/${id}/pause`, { method: 'POST' });
-        location.reload();
+    // --- State ---
+    var logBuffers = {};  // jobID -> string[]
+    var MAX_LOG_LINES = 300;
+    var expandedPanels = {};  // jobID -> true
+    var backfilledJobs = {};  // jobID -> true
+
+    // --- Sortable (existing) ---
+    var queuedEl = document.getElementById('queued-jobs');
+    if (queuedEl) {
+        new Sortable(queuedEl, {
+            animation: 150,
+            handle: '.drag-handle',
+            ghostClass: 'sortable-ghost',
+            onEnd: function() {
+                var ids = Array.from(queuedEl.querySelectorAll('.job-card'))
+                    .map(function(c) { return parseInt(c.dataset.jobId); });
+                reorderJobs(ids);
+            }
+        });
     }
 
-    async function resumeJob(id) {
-        await fetch(`/api/jobs/${id}/resume`, { method: 'POST' });
-        location.reload();
-    }
-
-    async function cancelJob(id) {
+    // --- Job actions ---
+    window.pauseJob = function(id) {
+        fetch('/api/jobs/' + id + '/pause', { method: 'POST' });
+    };
+    window.resumeJob = function(id) {
+        fetch('/api/jobs/' + id + '/resume', { method: 'POST' });
+    };
+    window.cancelJob = function(id) {
         if (confirm('Cancel this job?')) {
-            await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
-            location.reload();
+            fetch('/api/jobs/' + id, { method: 'DELETE' });
         }
-    }
-
-    async function reorderJobs(jobIds) {
-        await fetch('/api/jobs/order', {
+    };
+    function reorderJobs(jobIds) {
+        fetch('/api/jobs/order', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ job_ids: jobIds })
         });
     }
 
-    // SSE for live updates
-    const evtSource = new EventSource('/api/events');
-    evtSource.onmessage = function(event) {
-        // Simple refresh on any update
-        location.reload();
+    // --- Expand/collapse ---
+    window.toggleJobPanel = function(jobId) {
+        var panel = document.getElementById('panel-' + jobId);
+        var toggle = document.querySelector('.job-expand-toggle[data-job-id="' + jobId + '"]');
+        if (!panel) return;
+
+        if (expandedPanels[jobId]) {
+            panel.classList.remove('expanded');
+            delete expandedPanels[jobId];
+            if (toggle) toggle.innerHTML = '&#9654;'; // right arrow
+        } else {
+            panel.classList.add('expanded');
+            expandedPanels[jobId] = true;
+            if (toggle) toggle.innerHTML = '&#9660;'; // down arrow
+
+            // Backfill logs on first expand
+            if (!backfilledJobs[jobId]) {
+                backfilledJobs[jobId] = true;
+                backfillLogs(jobId);
+            } else {
+                renderTerminal(jobId);
+            }
+        }
     };
+
+    // --- Log backfill ---
+    function backfillLogs(jobId) {
+        fetch('/api/jobs/' + jobId + '/logs')
+            .then(function(resp) { return resp.json(); })
+            .then(function(data) {
+                if (data.logs && data.logs.length > 0) {
+                    if (!logBuffers[jobId]) logBuffers[jobId] = [];
+                    var existing = logBuffers[jobId];
+                    var historical = data.logs.map(function(l) { return l.message; });
+                    logBuffers[jobId] = historical.concat(existing).slice(-MAX_LOG_LINES);
+                }
+                renderTerminal(jobId);
+            })
+            .catch(function(e) {
+                console.error('Failed to backfill logs:', e);
+                renderTerminal(jobId);
+            });
+    }
+
+    // --- Terminal rendering ---
+    function renderTerminal(jobId) {
+        var terminal = document.getElementById('terminal-' + jobId);
+        if (!terminal) return;
+
+        var lines = logBuffers[jobId] || [];
+        if (lines.length === 0) {
+            terminal.innerHTML = '<span class="job-terminal-empty">No output yet...</span>';
+            return;
+        }
+
+        terminal.innerHTML = lines.map(function(line) {
+            return '<span class="terminal-line">' + escapeHtml(line) + '</span>';
+        }).join('');
+
+        terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // --- Ring buffer append ---
+    function appendLog(jobId, message) {
+        if (!logBuffers[jobId]) logBuffers[jobId] = [];
+        logBuffers[jobId].push(message);
+        if (logBuffers[jobId].length > MAX_LOG_LINES) {
+            logBuffers[jobId].shift();
+        }
+
+        // Only render if panel is expanded
+        if (expandedPanels[jobId]) {
+            var terminal = document.getElementById('terminal-' + jobId);
+            if (terminal) {
+                // Append single line instead of re-rendering all
+                var emptyMsg = terminal.querySelector('.job-terminal-empty');
+                if (emptyMsg) emptyMsg.remove();
+
+                var span = document.createElement('span');
+                span.className = 'terminal-line';
+                span.textContent = message;
+                terminal.appendChild(span);
+
+                // Prune DOM if over limit
+                while (terminal.children.length > MAX_LOG_LINES) {
+                    terminal.removeChild(terminal.firstChild);
+                }
+
+                terminal.scrollTop = terminal.scrollHeight;
+            }
+        }
+    }
+
+    // --- SSE event handling ---
+    function handleStatusChange(data) {
+        // Reload the page for status changes — simplest correct approach
+        // for moving cards between sections, creating/removing panels, etc.
+        location.reload();
+    }
+
+    function handleProgress(data) {
+        var jobId = data.jobID;
+
+        // Update iteration text
+        var iterEl = document.querySelector('.job-iter[data-job-id="' + jobId + '"]');
+        if (iterEl) {
+            var match = iterEl.textContent.match(/iter \d+\/(\d+)/);
+            if (match) {
+                iterEl.textContent = 'iter ' + data.iteration + '/' + match[1];
+            }
+        }
+
+        // Update elapsed time
+        var elapsedEl = document.querySelector('.job-elapsed[data-job-id="' + jobId + '"]');
+        if (elapsedEl) {
+            var secs = Math.round(data.elapsedSec);
+            var mins = Math.floor(secs / 60);
+            var hours = Math.floor(mins / 60);
+            if (hours > 0) {
+                elapsedEl.textContent = 'Running ' + hours + 'h' + (mins % 60) + 'm';
+            } else if (mins > 0) {
+                elapsedEl.textContent = 'Running ' + mins + 'm';
+            } else {
+                elapsedEl.textContent = 'Running < 1m';
+            }
+        }
+
+        // Update progress bar
+        var barEl = document.querySelector('.job-progress-bar[data-job-id="' + jobId + '"]');
+        if (barEl && iterEl) {
+            var iterMatch = iterEl.textContent.match(/iter (\d+)\/(\d+)/);
+            if (iterMatch) {
+                var pct = (parseInt(iterMatch[1]) / parseInt(iterMatch[2])) * 100;
+                barEl.style.width = pct + '%';
+            }
+        }
+
+        // Update iteration in detail panel if expanded
+        var panelIterDd = document.querySelector('#panel-' + jobId + ' dd:nth-of-type(5)');
+        if (panelIterDd) {
+            var ddMatch = panelIterDd.textContent.match(/\d+\/(\d+)/);
+            if (ddMatch) {
+                panelIterDd.textContent = data.iteration + '/' + ddMatch[1];
+            }
+        }
+    }
+
+    function handleLog(data) {
+        appendLog(data.jobID, data.message);
+    }
+
+    // --- SSE connection ---
+    var evtSource;
+
+    function connectSSE() {
+        evtSource = new EventSource('/api/events');
+
+        evtSource.onmessage = function(event) {
+            try {
+                var data = JSON.parse(event.data);
+                switch (data.type) {
+                    case 'job_status':
+                        handleStatusChange(data);
+                        break;
+                    case 'job_progress':
+                        handleProgress(data);
+                        break;
+                    case 'job_log':
+                        handleLog(data);
+                        break;
+                }
+            } catch (e) {
+                // Ignore malformed events (including legacy "{}" events)
+            }
+        };
+
+        evtSource.onerror = function() {
+            // EventSource auto-reconnects. On reconnect, reconcile state.
+            if (evtSource.readyState === EventSource.CONNECTING) {
+                reconcileDashboard();
+            }
+        };
+    }
+
+    function reconcileDashboard() {
+        fetch('/api/dashboard-state')
+            .then(function(resp) {
+                if (resp.ok) {
+                    // Simple reconciliation: reload if state might have changed
+                    location.reload();
+                }
+            })
+            .catch(function() {
+                // Network still down, EventSource will retry
+            });
+    }
+
+    connectSSE();
+})();
 </script>
 {{end}}
