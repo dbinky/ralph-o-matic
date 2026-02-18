@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -156,14 +157,18 @@ func (h *RalphHandler) updateIteration(job *models.Job, iteration int) {
 
 // resolveWorkDir returns the working directory for a job. For direct mode
 // (absolute WorkingDir), it returns the path as-is. For standard mode, it
-// returns the workspace path with any relative WorkingDir appended.
-// This does NOT clone; use setupWorkDir for initial setup.
+// returns the workspace path only if a clone exists (has .git directory).
+// Returns "" if the workspace needs initial setup via setupWorkDir.
 func (h *RalphHandler) resolveWorkDir(job *models.Job) string {
 	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
 		return job.WorkingDir
 	}
 	base := h.repoManager.WorkspacePath(job.ID)
 	if base == "" {
+		return ""
+	}
+	// Verify the workspace has a cloned repo, not just a computed path
+	if _, err := os.Stat(filepath.Join(base, ".git")); err != nil {
 		return ""
 	}
 	if job.WorkingDir != "" {

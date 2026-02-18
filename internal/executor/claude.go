@@ -171,13 +171,11 @@ type ExecutionResult struct {
 type OutputCallback func(line string)
 
 // Execute runs Claude Code with the given prompt.
-// For the ollama backend, --dangerously-skip-permissions is enabled by default.
-// For the anthropic backend, it is OFF by default due to the elevated risk of
-// unattended code execution with a frontier model.
+// Permissions are always skipped because --print mode is automated
+// with no human to approve interactive prompts.
 // If session is non-nil and valid, --resume is passed for continuity.
 func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, backend models.Backend, env map[string]string, session *Session, onOutput OutputCallback) (*ExecutionResult, error) {
-	skipPerms := backend != models.BackendAnthropic
-	args := buildClaudeArgs(skipPerms, session)
+	args := buildClaudeArgs(true, session)
 	cmd := exec.CommandContext(ctx, e.claudePath, args...) //nolint:gosec // claude is a trusted CLI tool
 	cmd.Dir = workDir
 	cmd.Env = e.BuildEnv(backend, env)

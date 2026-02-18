@@ -87,12 +87,12 @@ func TestBuildArgs_IncludesJSONFormat(t *testing.T) {
 	assert.Contains(t, args, "json")
 }
 
-func TestBuildArgs_SkipPermissionsForOllama(t *testing.T) {
+func TestBuildArgs_SkipPermissions(t *testing.T) {
 	args := buildClaudeArgs(true, nil)
 	assert.Contains(t, args, "--dangerously-skip-permissions")
 }
 
-func TestBuildArgs_NoSkipPermissionsForAnthropic(t *testing.T) {
+func TestBuildArgs_NoSkipPermissionsWhenFalse(t *testing.T) {
 	args := buildClaudeArgs(false, nil)
 	assert.NotContains(t, args, "--dangerously-skip-permissions")
 }
