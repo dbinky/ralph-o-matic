@@ -353,37 +353,41 @@ select_anthropic_models() {
     echo "Select the LARGE model (used for main coding iterations):"
     echo ""
     echo "  [1] claude-opus-4-6               (most capable, slower, higher cost)"
-    echo "  [2] claude-sonnet-4-5-20250929     (strong balance of quality and speed)"
-    echo "  [3] Custom model ID"
+    echo "  [2] claude-sonnet-4-6              (latest sonnet, fast and capable)"
+    echo "  [3] claude-sonnet-4-5-20250929     (strong balance of quality and speed)"
+    echo "  [4] Custom model ID"
     echo ""
-    read -p "Select [1-3]: " -n 1 -r
+    read -p "Select [1-4]: " -n 1 -r
     echo ""
     case $REPLY in
         1) LARGE_MODEL="claude-opus-4-6" ;;
-        2) LARGE_MODEL="claude-sonnet-4-5-20250929" ;;
-        3)
+        2) LARGE_MODEL="claude-sonnet-4-6" ;;
+        3) LARGE_MODEL="claude-sonnet-4-5-20250929" ;;
+        4)
             read -p "Enter model ID: " -r LARGE_MODEL
             if [[ -z "$LARGE_MODEL" ]]; then
-                warn "Empty model ID, using claude-sonnet-4-5-20250929"
-                LARGE_MODEL="claude-sonnet-4-5-20250929"
+                warn "Empty model ID, using claude-sonnet-4-6"
+                LARGE_MODEL="claude-sonnet-4-6"
             fi
             ;;
-        *) warn "Invalid choice, using claude-sonnet-4-5-20250929"; LARGE_MODEL="claude-sonnet-4-5-20250929" ;;
+        *) warn "Invalid choice, using claude-sonnet-4-6"; LARGE_MODEL="claude-sonnet-4-6" ;;
     esac
 
     echo ""
     echo "Select the SMALL model (used for quick checks and lightweight tasks):"
     echo ""
     echo "  [1] claude-haiku-4-5-20251001     (fast, efficient, low cost)"
-    echo "  [2] claude-sonnet-4-5-20250929     (higher quality for small tasks)"
-    echo "  [3] Custom model ID"
+    echo "  [2] claude-sonnet-4-6              (latest sonnet, fast and capable)"
+    echo "  [3] claude-sonnet-4-5-20250929     (higher quality for small tasks)"
+    echo "  [4] Custom model ID"
     echo ""
-    read -p "Select [1-3]: " -n 1 -r
+    read -p "Select [1-4]: " -n 1 -r
     echo ""
     case $REPLY in
         1) SMALL_MODEL="claude-haiku-4-5-20251001" ;;
-        2) SMALL_MODEL="claude-sonnet-4-5-20250929" ;;
-        3)
+        2) SMALL_MODEL="claude-sonnet-4-6" ;;
+        3) SMALL_MODEL="claude-sonnet-4-5-20250929" ;;
+        4)
             read -p "Enter model ID: " -r SMALL_MODEL
             if [[ -z "$SMALL_MODEL" ]]; then
                 warn "Empty model ID, using claude-haiku-4-5-20251001"
@@ -1122,6 +1126,8 @@ install_service() {
     <dict>
         <key>RALPH_DB</key>
         <string>${config_dir}/data/ralph.db</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:${HOME}/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
     <key>StandardOutPath</key>
     <string>${log_dir}/server.log</string>
@@ -1145,6 +1151,7 @@ Type=simple
 ExecStart=/usr/local/bin/ralph-o-matic-server
 WorkingDirectory=${config_dir}
 Environment=RALPH_DB=${config_dir}/data/ralph.db
+Environment=PATH=/usr/local/bin:/opt/homebrew/bin:%h/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 Restart=on-failure
 RestartSec=5
 

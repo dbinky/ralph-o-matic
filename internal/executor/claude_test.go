@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -153,6 +154,59 @@ func envToMap(env []string) map[string]string {
 		}
 	}
 	return m
+}
+
+func TestResolveClaudeBinary_FindsAbsolutePath(t *testing.T) {
+	path := resolveClaudeBinary()
+	// In a dev environment, claude should be found
+	// The resolved path should be absolute (not bare "claude")
+	if path != "claude" {
+		assert.True(t, strings.HasPrefix(path, "/"), "resolved path should be absolute: %s", path)
+	}
+}
+
+func TestAugmentPath_AddsExistingDirs(t *testing.T) {
+	env := []string{"HOME=/tmp", "PATH=/usr/bin:/bin"}
+	result := augmentPath(env)
+
+	// Should still contain original PATH entries
+	var pathVal string
+	for _, e := range result {
+		if strings.HasPrefix(e, "PATH=") {
+			pathVal = strings.TrimPrefix(e, "PATH=")
+			break
+		}
+	}
+	assert.Contains(t, pathVal, "/usr/bin")
+	assert.Contains(t, pathVal, "/bin")
+	// /usr/local/bin exists on macOS/Linux, should be added
+	if _, err := os.Stat("/usr/local/bin"); err == nil {
+		assert.Contains(t, pathVal, "/usr/local/bin")
+	}
+}
+
+func TestAugmentPath_NoDuplicates(t *testing.T) {
+	// PATH already contains /usr/local/bin — should not duplicate
+	env := []string{"PATH=/usr/bin:/usr/local/bin:/bin"}
+	result := augmentPath(env)
+
+	var pathVal string
+	for _, e := range result {
+		if strings.HasPrefix(e, "PATH=") {
+			pathVal = strings.TrimPrefix(e, "PATH=")
+			break
+		}
+	}
+	// Count occurrences of /usr/local/bin
+	count := strings.Count(pathVal, "/usr/local/bin")
+	assert.Equal(t, 1, count, "should not duplicate existing dirs")
+}
+
+func TestAugmentPath_NoPATH(t *testing.T) {
+	// If there's no PATH entry, augmentPath should not crash
+	env := []string{"HOME=/tmp", "CUSTOM=value"}
+	result := augmentPath(env)
+	assert.Equal(t, env, result)
 }
 
 func TestClaudeExecutor_BuildEnv_DeniedEnvVarsFiltered(t *testing.T) {

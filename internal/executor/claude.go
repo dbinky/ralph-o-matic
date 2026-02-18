@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -18,12 +19,43 @@ import (
 
 // ClaudeExecutor manages Claude Code subprocess execution
 type ClaudeExecutor struct {
-	config *models.ServerConfig
+	config     *models.ServerConfig
+	claudePath string // absolute path to claude binary
 }
 
-// NewClaudeExecutor creates a new executor
+// NewClaudeExecutor creates a new executor with automatic binary resolution
 func NewClaudeExecutor(config *models.ServerConfig) *ClaudeExecutor {
-	return &ClaudeExecutor{config: config}
+	return &ClaudeExecutor{
+		config:     config,
+		claudePath: resolveClaudeBinary(),
+	}
+}
+
+// resolveClaudeBinary finds the claude CLI binary by checking PATH first,
+// then common installation directories. This handles launchd/systemd services
+// that run with a minimal PATH (e.g. /usr/bin:/bin:/usr/sbin:/sbin).
+func resolveClaudeBinary() string {
+	// Try PATH first (works when run interactively or with full PATH)
+	if p, err := exec.LookPath("claude"); err == nil {
+		return p
+	}
+
+	// Search common installation directories
+	home, _ := os.UserHomeDir()
+	candidates := []string{
+		filepath.Join(home, ".local", "bin", "claude"),
+		"/usr/local/bin/claude",
+		"/opt/homebrew/bin/claude",
+	}
+
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+
+	// Fall back to bare name — will produce a clear error at exec time
+	return "claude"
 }
 
 // BuildEnv creates the environment variables for Claude Code based on backend
@@ -67,6 +99,37 @@ func (e *ClaudeExecutor) BuildEnv(backend models.Backend, extra map[string]strin
 			continue
 		}
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	// Augment PATH so child processes can find git, gh, etc.
+	// even when the server runs under launchd/systemd with a minimal PATH.
+	env = augmentPath(env)
+
+	return env
+}
+
+// augmentPath ensures common binary directories are in PATH for child processes.
+func augmentPath(env []string) []string {
+	home, _ := os.UserHomeDir()
+	extraDirs := []string{
+		filepath.Join(home, ".local", "bin"),
+		"/usr/local/bin",
+		"/opt/homebrew/bin",
+	}
+
+	for i, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			current := strings.TrimPrefix(e, "PATH=")
+			for _, dir := range extraDirs {
+				if !strings.Contains(current, dir) {
+					if _, err := os.Stat(dir); err == nil {
+						current += ":" + dir
+					}
+				}
+			}
+			env[i] = "PATH=" + current
+			return env
+		}
 	}
 
 	return env
@@ -125,7 +188,7 @@ type OutputCallback func(line string)
 func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, backend models.Backend, env map[string]string, session *Session, onOutput OutputCallback) (*ExecutionResult, error) {
 	skipPerms := backend != models.BackendAnthropic
 	args := buildClaudeArgs(skipPerms, session)
-	cmd := exec.CommandContext(ctx, "claude", args...) //nolint:gosec // claude is a trusted CLI tool
+	cmd := exec.CommandContext(ctx, e.claudePath, args...) //nolint:gosec // claude is a trusted CLI tool
 	cmd.Dir = workDir
 	cmd.Env = e.BuildEnv(backend, env)
 
@@ -243,6 +306,6 @@ func ContainsPromise(output, promiseText string) bool {
 
 // IsClaudeInstalled checks if claude CLI is available
 func IsClaudeInstalled() bool {
-	_, err := exec.LookPath("claude")
-	return err == nil
+	p := resolveClaudeBinary()
+	return p != "claude" // resolved to an absolute path
 }
