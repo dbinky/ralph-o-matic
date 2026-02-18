@@ -55,6 +55,9 @@ type Worker struct {
 
 	// Rate limiting (recreated per job based on backend)
 	rateLimiter *RateLimiter
+
+	// Watchdog interval for checking external pause/cancel during iteration execution.
+	watchdogInterval time.Duration
 }
 
 // New creates a worker that polls the queue at the given interval.
@@ -67,6 +70,7 @@ func New(q JobQueue, handler JobHandler, interval time.Duration) *Worker {
 		circuitBreakerSameError:  5,
 		maxRetries:               3,
 		retryBaseDelay:           5 * time.Second,
+		watchdogInterval:         5 * time.Second,
 	}
 }
 
@@ -132,12 +136,22 @@ func (w *Worker) poll(ctx context.Context) {
 	cb := executor.NewCircuitBreaker(loopConfig.CircuitBreakerNoProgress, loopConfig.CircuitBreakerSameError)
 	w.rateLimiter = NewRateLimiter(loopConfig.MaxCallsPerHour)
 
+	// Create a per-job context so the watchdog can interrupt the subprocess
+	// when pause/cancel is detected mid-iteration.
+	jobCtx, jobCancel := context.WithCancel(ctx)
+	defer jobCancel()
+
+	go w.watchExternalStop(jobCtx, job.ID, jobCancel)
+
 	completedBySignal := false
 	for {
-		if ctx.Err() != nil {
-			log.Printf("Worker: context cancelled, stopping job #%d", job.ID)
-			// Clean up session to prevent memory leak (use background context since ctx is cancelled)
-			_ = w.handler.Finalize(context.Background(), job, false)
+		if jobCtx.Err() != nil {
+			if ctx.Err() != nil {
+				log.Printf("Worker: context cancelled, stopping job #%d", job.ID)
+				_ = w.handler.Finalize(context.Background(), job, false)
+			} else {
+				w.handleExternalInterrupt(job)
+			}
 			return
 		}
 
@@ -148,15 +162,24 @@ func (w *Worker) poll(ctx context.Context) {
 			log.Printf("Worker: failed to update job #%d iteration: %v", job.ID, err)
 		}
 
-		if err := w.waitForRateLimit(ctx, job); err != nil {
-			_ = w.handler.Finalize(context.Background(), job, false)
+		if err := w.waitForRateLimit(jobCtx, job); err != nil {
+			if ctx.Err() != nil {
+				_ = w.handler.Finalize(context.Background(), job, false)
+			} else {
+				w.handleExternalInterrupt(job)
+			}
 			return
 		}
 
-		result, err := w.executeWithRetry(ctx, job)
+		result, err := w.executeWithRetry(jobCtx, job)
 		if err != nil {
+			// Check if this was a watchdog interruption (job context cancelled
+			// but server context still active).
+			if jobCtx.Err() != nil && ctx.Err() == nil {
+				w.handleExternalInterrupt(job)
+				return
+			}
 			log.Printf("Worker: job #%d failed at iteration %d: %v", job.ID, job.Iteration, err)
-			// Clean up session to prevent memory leak
 			_ = w.handler.Finalize(ctx, job, false)
 			if fErr := w.queue.Fail(job, err.Error()); fErr != nil {
 				log.Printf("Worker: failed to mark job #%d as failed: %v", job.ID, fErr)
@@ -178,7 +201,6 @@ func (w *Worker) poll(ctx context.Context) {
 
 		if cbState == executor.CircuitOpen {
 			log.Printf("Worker: job #%d circuit breaker opened after %d iterations", job.ID, job.Iteration)
-			// Clean up session to prevent memory leak
 			_ = w.handler.Finalize(ctx, job, false)
 			if fErr := w.queue.Fail(job, fmt.Sprintf("circuit breaker: no progress after %d iterations", job.Iteration)); fErr != nil {
 				log.Printf("Worker: failed to mark job #%d as failed: %v", job.ID, fErr)
@@ -222,6 +244,55 @@ func (w *Worker) poll(ctx context.Context) {
 			log.Printf("Worker: failed to mark job #%d as failed: %v", job.ID, fErr)
 		}
 		w.sendNotification(ctx, job, notify.EventFailed)
+	}
+}
+
+// watchExternalStop polls the database during iteration execution to detect
+// pause or cancel requests. When detected, it cancels jobCtx which kills the
+// running subprocess (via exec.CommandContext) instead of waiting for the
+// iteration to finish. This is complementary to checkExternalStop, which
+// runs between iterations.
+func (w *Worker) watchExternalStop(jobCtx context.Context, jobID int64, cancel context.CancelFunc) {
+	ticker := time.NewTicker(w.watchdogInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-jobCtx.Done():
+			return
+		case <-ticker.C:
+			fresh, err := w.queue.Get(jobID)
+			if err != nil {
+				continue
+			}
+			switch fresh.Status {
+			case models.StatusCancelled, models.StatusPaused:
+				log.Printf("Worker: job #%d detected %s externally, interrupting subprocess", jobID, fresh.Status)
+				cancel()
+				return
+			}
+		}
+	}
+}
+
+// handleExternalInterrupt handles the case where the watchdog cancelled the
+// job context mid-iteration. It re-reads the job status to determine whether
+// it was paused or cancelled, and acts accordingly (no Finalize, no failure mark).
+func (w *Worker) handleExternalInterrupt(job *models.Job) {
+	fresh, err := w.queue.Get(job.ID)
+	if err != nil {
+		log.Printf("Worker: job #%d interrupted but failed to read status: %v", job.ID, err)
+		return
+	}
+
+	switch fresh.Status {
+	case models.StatusPaused:
+		log.Printf("Worker: job #%d paused externally at iteration %d, subprocess interrupted", job.ID, job.Iteration)
+	case models.StatusCancelled:
+		log.Printf("Worker: job #%d cancelled externally at iteration %d, subprocess interrupted", job.ID, job.Iteration)
+		w.sendNotification(context.Background(), job, notify.EventCancelled)
+	default:
+		log.Printf("Worker: job #%d interrupted with unexpected status %s", job.ID, fresh.Status)
 	}
 }
 

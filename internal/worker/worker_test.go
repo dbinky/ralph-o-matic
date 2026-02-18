@@ -862,6 +862,160 @@ func TestWorker_RateLimiter_RecreatedPerJob(t *testing.T) {
 	assert.Equal(t, 0, w.rateLimiter.maxPerHour, "rate limiter should be recreated for Ollama job")
 }
 
+// --- Watchdog Mid-Iteration Interrupt Tests ---
+
+func TestWorker_Watchdog_CancelDuringHandle(t *testing.T) {
+	// Handler blocks until context is cancelled (simulates long claude subprocess).
+	// Watchdog detects external cancel and kills the subprocess.
+	handler := &mockHandler{
+		handleFn: func(ctx context.Context, job *models.Job) (*executor.ExecutionResult, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{newTestJob(10)}}
+
+	// Set external status after watchdog has a chance to fire
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		q.mu.Lock()
+		q.externalStatus = models.StatusCancelled
+		q.mu.Unlock()
+	}()
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.watchdogInterval = 10 * time.Millisecond
+	w.maxRetries = 0
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	assert.Equal(t, 1, handler.callCount(), "should have called Handle once before interrupt")
+	assert.Empty(t, q.failed, "cancelled job should not be marked failed")
+	assert.Empty(t, q.completed, "cancelled job should not be marked completed")
+}
+
+func TestWorker_Watchdog_PauseDuringHandle(t *testing.T) {
+	// Handler blocks until context is cancelled (simulates long claude subprocess).
+	// Watchdog detects external pause and kills the subprocess.
+	handler := &mockHandler{
+		handleFn: func(ctx context.Context, job *models.Job) (*executor.ExecutionResult, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{newTestJob(10)}}
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		q.mu.Lock()
+		q.externalStatus = models.StatusPaused
+		q.mu.Unlock()
+	}()
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.watchdogInterval = 10 * time.Millisecond
+	w.maxRetries = 0
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	assert.Equal(t, 1, handler.callCount(), "should have called Handle once before interrupt")
+	assert.Empty(t, q.failed, "paused job should not be marked failed")
+	assert.Empty(t, q.completed, "paused job should not be marked completed")
+}
+
+func TestWorker_Watchdog_CancelSendsNotification(t *testing.T) {
+	handler := &mockHandler{
+		handleFn: func(ctx context.Context, job *models.Job) (*executor.ExecutionResult, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{newTestJob(10)}}
+	mn := &mockNotifier{}
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		q.mu.Lock()
+		q.externalStatus = models.StatusCancelled
+		q.mu.Unlock()
+	}()
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.watchdogInterval = 10 * time.Millisecond
+	w.maxRetries = 0
+	w.SetNotifier(mn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	calls := mn.getCalls()
+	require.Len(t, calls, 1, "should send cancel notification")
+	assert.Equal(t, notify.EventCancelled, calls[0].Event)
+}
+
+func TestWorker_Watchdog_PauseNoNotification(t *testing.T) {
+	handler := &mockHandler{
+		handleFn: func(ctx context.Context, job *models.Job) (*executor.ExecutionResult, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{newTestJob(10)}}
+	mn := &mockNotifier{}
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		q.mu.Lock()
+		q.externalStatus = models.StatusPaused
+		q.mu.Unlock()
+	}()
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.watchdogInterval = 10 * time.Millisecond
+	w.maxRetries = 0
+	w.SetNotifier(mn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	calls := mn.getCalls()
+	assert.Empty(t, calls, "pause should not trigger notification")
+}
+
+func TestWorker_Watchdog_NoFinalize(t *testing.T) {
+	// Watchdog-interrupted jobs should not call Finalize (no PR creation)
+	handler := &mockHandler{
+		handleFn: func(ctx context.Context, job *models.Job) (*executor.ExecutionResult, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	q := &mockQueue{jobs: []*models.Job{newTestJob(10)}}
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		q.mu.Lock()
+		q.externalStatus = models.StatusCancelled
+		q.mu.Unlock()
+	}()
+
+	w := New(q, handler, 50*time.Millisecond)
+	w.watchdogInterval = 10 * time.Millisecond
+	w.maxRetries = 0
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	assert.Nil(t, handler.getFinalizeSuccess(), "Finalize should not be called for watchdog-interrupted jobs")
+}
+
 func TestDetectProgress_FilesModified(t *testing.T) {
 	result := &executor.ExecutionResult{
 		Metadata: &executor.ResponseMetadata{FilesModified: 3},

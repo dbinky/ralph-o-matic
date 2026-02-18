@@ -112,7 +112,7 @@ func (d *Dashboard) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	paused, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusPaused}, OwnerID: ownerID})
 	queued, _, _ := jobRepo.List(db.ListOptions{Statuses: []models.JobStatus{models.StatusQueued}, OwnerID: ownerID})
 	completed, _, _ := jobRepo.List(db.ListOptions{
-		Statuses: []models.JobStatus{models.StatusCompleted, models.StatusFailed},
+		Statuses: []models.JobStatus{models.StatusCompleted, models.StatusFailed, models.StatusCancelled},
 		OwnerID:  ownerID,
 		Limit:    10,
 	})
