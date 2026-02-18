@@ -75,7 +75,6 @@ func (e *ClaudeExecutor) BuildEnv(backend models.Backend, extra map[string]strin
 	switch backend {
 	case models.BackendAnthropic:
 		backendEnv = map[string]string{
-			"ANTHROPIC_API_KEY":             e.resolveAnthropicKey(),
 			"ANTHROPIC_MODEL":               e.config.Anthropic.LargeModel,
 			"ANTHROPIC_DEFAULT_HAIKU_MODEL": e.config.Anthropic.SmallModel,
 		}
@@ -83,7 +82,6 @@ func (e *ClaudeExecutor) BuildEnv(backend models.Backend, extra map[string]strin
 		backendEnv = map[string]string{
 			"ANTHROPIC_BASE_URL":            e.config.Ollama.Host,
 			"ANTHROPIC_AUTH_TOKEN":          "ollama",
-			"ANTHROPIC_API_KEY":             "",
 			"ANTHROPIC_MODEL":               e.config.LargeModel.Name,
 			"ANTHROPIC_DEFAULT_HAIKU_MODEL": e.config.SmallModel.Name,
 		}
@@ -156,14 +154,6 @@ func isDeniedEnvVar(key string) bool {
 		}
 	}
 	return false
-}
-
-// resolveAnthropicKey returns the API key, preferring env var over config
-func (e *ClaudeExecutor) resolveAnthropicKey() string {
-	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		return key
-	}
-	return e.config.Anthropic.APIKey
 }
 
 // ExecutionResult contains the results of running Claude Code

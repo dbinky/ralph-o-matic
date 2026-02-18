@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -68,11 +67,6 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	if err := merged.Validate(); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
-	}
-
-	// Warn if an API key is being persisted to the database
-	if merged.Anthropic.APIKey != "" && merged.Anthropic.APIKey != current.Anthropic.APIKey {
-		log.Printf("Warning: Anthropic API key stored in database. Consider using ANTHROPIC_API_KEY environment variable instead.")
 	}
 
 	// Save

@@ -119,7 +119,6 @@ func TestDefaultServerConfig_AnthropicDefaults(t *testing.T) {
 	assert.Equal(t, BackendOllama, cfg.DefaultBackend)
 	assert.Equal(t, "claude-opus-4-5-20251101", cfg.Anthropic.LargeModel)
 	assert.Equal(t, "claude-haiku-4-5-20251001", cfg.Anthropic.SmallModel)
-	assert.Empty(t, cfg.Anthropic.APIKey)
 }
 
 func TestServerConfig_Validate(t *testing.T) {

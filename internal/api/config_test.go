@@ -30,7 +30,6 @@ func TestAPI_GetConfig(t *testing.T) {
 	assert.Equal(t, "devstral", resp.LargeModel.Name)
 	assert.Equal(t, "cpu", resp.LargeModel.Device)
 	assert.Equal(t, "http://localhost:11434", resp.Ollama.Host)
-	assert.False(t, resp.Anthropic.APIConfigured)
 }
 
 func TestAPI_UpdateConfig(t *testing.T) {
@@ -182,14 +181,14 @@ func TestAPI_ConfigRoundTrip_OllamaRemote(t *testing.T) {
 func TestAPI_ConfigRoundTrip_Anthropic(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	body := []byte(`{"default_backend":"anthropic","anthropic":{"api_key":"sk-test","large_model":"claude-sonnet-4-20250514","small_model":"claude-haiku-4-5-20251001"}}`)
+	body := []byte(`{"default_backend":"anthropic","anthropic":{"large_model":"claude-sonnet-4-20250514","small_model":"claude-haiku-4-5-20251001"}}`)
 	req := httptest.NewRequest("PATCH", "/api/config", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	// GET and verify -- API key should be redacted
+	// GET and verify models
 	req = httptest.NewRequest("GET", "/api/config", nil)
 	w = httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
@@ -200,12 +199,8 @@ func TestAPI_ConfigRoundTrip_Anthropic(t *testing.T) {
 
 	var anthropic map[string]interface{}
 	require.NoError(t, json.Unmarshal(raw["anthropic"], &anthropic))
-	assert.Equal(t, true, anthropic["api_key_set"])
 	assert.Equal(t, "claude-sonnet-4-20250514", anthropic["large_model"])
 	assert.Equal(t, "claude-haiku-4-5-20251001", anthropic["small_model"])
-	// api_key must NOT be present in response
-	_, hasAPIKey := anthropic["api_key"]
-	assert.False(t, hasAPIKey, "API key must not be returned in GET response")
 }
 
 func TestAPI_GetConfig_IncludesAnthropicDefaults(t *testing.T) {
@@ -221,7 +216,6 @@ func TestAPI_GetConfig_IncludesAnthropicDefaults(t *testing.T) {
 	assert.Equal(t, models.BackendOllama, resp.DefaultBackend)
 	assert.Equal(t, "claude-opus-4-5-20251101", resp.Anthropic.LargeModel)
 	assert.Equal(t, "claude-haiku-4-5-20251001", resp.Anthropic.SmallModel)
-	assert.False(t, resp.Anthropic.APIConfigured)
 }
 
 func TestAPI_GetConfig_NoConcurrentJobsField(t *testing.T) {

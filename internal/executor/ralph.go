@@ -78,13 +78,6 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) (*ExecutionR
 	// Resolve backend: job > server default > ollama
 	backend := effectiveBackend(job.Backend, h.config.DefaultBackend)
 
-	// Pre-flight: validate Anthropic API key before running
-	if backend == models.BackendAnthropic {
-		if key := h.executor.resolveAnthropicKey(); key == "" {
-			return nil, fmt.Errorf("anthropic backend requires an API key; set ANTHROPIC_API_KEY env var or configure via API")
-		}
-	}
-
 	// Get session for continuity across iterations
 	session := h.getSession(job.ID)
 

@@ -58,9 +58,9 @@ func (oc *OllamaConfig) Validate() error {
 	return nil
 }
 
-// AnthropicConfig holds settings for the Anthropic API backend
+// AnthropicConfig holds settings for the Anthropic API backend.
+// Authentication is handled by Claude Code's built-in auth (no API key needed).
 type AnthropicConfig struct {
-	APIKey     string `json:"api_key,omitempty"`
 	LargeModel string `json:"large_model"`
 	SmallModel string `json:"small_model"`
 }
@@ -234,9 +234,6 @@ func (c *ServerConfig) Merge(updates *ServerConfig) *ServerConfig {
 	}
 
 	// Anthropic: merge individual fields
-	if updates.Anthropic.APIKey != "" {
-		result.Anthropic.APIKey = updates.Anthropic.APIKey
-	}
 	if updates.Anthropic.LargeModel != "" {
 		result.Anthropic.LargeModel = updates.Anthropic.LargeModel
 	}
@@ -327,9 +324,6 @@ func (c *ServerConfig) MergeJSON(raw json.RawMessage) (*ServerConfig, error) {
 	if anthropicRaw, ok := rawMap["anthropic"]; ok {
 		var anthropicMap map[string]json.RawMessage
 		if err := json.Unmarshal(anthropicRaw, &anthropicMap); err == nil {
-			if _, ok := anthropicMap["api_key"]; ok {
-				result.Anthropic.APIKey = updates.Anthropic.APIKey
-			}
 			if _, ok := anthropicMap["large_model"]; ok {
 				result.Anthropic.LargeModel = updates.Anthropic.LargeModel
 			}

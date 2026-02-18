@@ -218,7 +218,6 @@ func TestConfigRepo_SaveAnthropic(t *testing.T) {
 
 	cfg := models.DefaultServerConfig()
 	cfg.DefaultBackend = models.BackendAnthropic
-	cfg.Anthropic.APIKey = "sk-test-key"
 	cfg.Anthropic.LargeModel = "claude-sonnet-4-20250514"
 	cfg.Anthropic.SmallModel = "claude-haiku-4-5-20251001"
 
@@ -229,7 +228,6 @@ func TestConfigRepo_SaveAnthropic(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, models.BackendAnthropic, fetched.DefaultBackend)
-	assert.Equal(t, "sk-test-key", fetched.Anthropic.APIKey)
 	assert.Equal(t, "claude-sonnet-4-20250514", fetched.Anthropic.LargeModel)
 	assert.Equal(t, "claude-haiku-4-5-20251001", fetched.Anthropic.SmallModel)
 }

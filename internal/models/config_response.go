@@ -1,11 +1,9 @@
 package models
 
-// AnthropicConfigResponse is the redacted Anthropic config returned by the API.
-// The raw API key is replaced with a boolean indicating whether one is configured.
+// AnthropicConfigResponse is the Anthropic config returned by the API.
 type AnthropicConfigResponse struct {
-	APIConfigured bool   `json:"api_key_set"`
-	LargeModel    string `json:"large_model"`
-	SmallModel    string `json:"small_model"`
+	LargeModel string `json:"large_model"`
+	SmallModel string `json:"small_model"`
 }
 
 // SMTPConfigResponse is the redacted SMTP config returned by the API.
@@ -62,9 +60,8 @@ func NewServerConfigResponse(cfg *ServerConfig) *ServerConfigResponse {
 		JobRetentionDays:     cfg.JobRetentionDays,
 		DefaultBackend:       cfg.DefaultBackend,
 		Anthropic: AnthropicConfigResponse{
-			APIConfigured: cfg.Anthropic.APIKey != "",
-			LargeModel:    cfg.Anthropic.LargeModel,
-			SmallModel:    cfg.Anthropic.SmallModel,
+			LargeModel: cfg.Anthropic.LargeModel,
+			SmallModel: cfg.Anthropic.SmallModel,
 		},
 		MaxClaudeRetries:  cfg.MaxClaudeRetries,
 		MaxGitRetries:     cfg.MaxGitRetries,

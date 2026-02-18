@@ -58,8 +58,7 @@ func TestClient_CreateJob(t *testing.T) {
 func TestClient_GetConfig_DeserializesRedactedFields(t *testing.T) {
 	// This test verifies that the CLI correctly deserializes the redacted
 	// API response. The API sends boolean _set indicators for sensitive
-	// fields (api_key_set, password_set, webhook_url_set) rather than
-	// the actual secrets.
+	// fields (password_set, webhook_url_set) rather than the actual secrets.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/config", r.URL.Path)
 
@@ -72,7 +71,6 @@ func TestClient_GetConfig_DeserializesRedactedFields(t *testing.T) {
 			"job_retention_days":     30,
 			"default_backend":        "ollama",
 			"anthropic": map[string]interface{}{
-				"api_key_set":  true,
 				"large_model": "claude-sonnet-4-20250514",
 				"small_model": "claude-haiku-3-20240307",
 			},
@@ -104,8 +102,7 @@ func TestClient_GetConfig_DeserializesRedactedFields(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// Verify redacted boolean fields are properly deserialized
-	assert.True(t, cfg.Anthropic.APIConfigured, "api_key_set should be true")
+	// Verify anthropic model fields are properly deserialized
 	assert.Equal(t, "claude-sonnet-4-20250514", cfg.Anthropic.LargeModel)
 	assert.Equal(t, "claude-haiku-3-20240307", cfg.Anthropic.SmallModel)
 
