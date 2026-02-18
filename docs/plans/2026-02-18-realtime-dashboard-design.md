@@ -104,3 +104,59 @@ All JS inline in `dashboard.html` — no build step, no external dependencies.
 - **Multiple running jobs**: each gets a card, only first gets expandable terminal (revisit if concurrent execution added)
 - **No running jobs**: empty state in Running section, no log/progress events fire
 - **Long-running jobs**: 300-line ring buffer caps memory regardless of duration
+
+## Testing Strategy
+
+Strict TDD: every change is test-first. Tests cover happy path, success, failure, error, and edge case scenarios.
+
+### Backend: Queue Status Event Publishing (`internal/queue`)
+
+| Scenario | Type | Description |
+|---|---|---|
+| Happy: each transition publishes | Happy path | Enqueue, Dequeue, Pause, Resume, Complete, Fail, Cancel each publish a `job_status` event to `global` topic |
+| Payload contains full metadata | Success | Published JSON includes jobID, status, repo, branch, user, priority, iteration, createdAt |
+| No broadcaster configured | Failure | All queue operations succeed without panic when broadcaster is nil |
+| RecoverOrphaned publishes | Edge case | Bulk recovery of orphaned jobs emits status events |
+
+### Backend: Dual-Topic Log Publishing (`internal/db/logs.go`)
+
+| Scenario | Type | Description |
+|---|---|---|
+| Append publishes to both topics | Happy path | `Append()` publishes `job_log` to both `job:{id}` and `global` |
+| Global payload includes jobID | Success | Global topic event includes the jobID field (job-specific topic omits it since it's implicit) |
+| No broadcaster | Failure | Append still writes to DB when broadcaster is nil |
+| DB write fails | Error | Broadcast is skipped when DB insert fails (no partial publish) |
+
+### Backend: ProgressReporter (`internal/worker`)
+
+| Scenario | Type | Description |
+|---|---|---|
+| Emits progress on tick | Happy path | Running job emits `job_progress` with jobID, iteration, elapsedSec |
+| Stops on context cancel | Success | Reporter stops emitting when context is cancelled |
+| No running job | Failure | Reporter is a no-op when no job is active |
+| Overlapping ticks skipped | Edge case | TryLock prevents concurrent ticks from double-publishing |
+| Elapsed time accuracy | Edge case | `elapsedSec` reflects wall clock since job started |
+
+### Backend: API Route Changes (`internal/api`)
+
+| Scenario | Type | Description |
+|---|---|---|
+| Global SSE accessible to all | Happy path | Non-admin users can subscribe to `/api/events` (admin guard removed) |
+| Dashboard state returns jobs | Success | `GET /api/dashboard-state` returns JSON with all active jobs and metadata |
+| Dashboard state empty queue | Failure | Returns `{"jobs":[]}` when no jobs exist |
+| No ownership filtering | Edge case | Authenticated non-admin sees all jobs in dashboard-state |
+| SSE admin tests updated | Edge case | Existing tests that assert admin-only behavior are updated to reflect open access |
+
+### Frontend: SSE Event Handling (manual + integration tests)
+
+| Scenario | Type | Description |
+|---|---|---|
+| Status event moves card | Happy path | `job_status` event causes card to move to correct section |
+| Progress event updates display | Happy path | `job_progress` updates iteration badge and elapsed time |
+| Log event appends to terminal | Happy path | `job_log` appends line to terminal div |
+| Ring buffer caps at 300 | Success | 301st line causes oldest line to be pruned |
+| Expand triggers backfill | Success | First expand fetches `/api/jobs/{id}/logs?limit=300` |
+| SSE reconnect reconciles | Error | After disconnect/reconnect, dashboard fetches `/api/dashboard-state` and reconciles DOM |
+| Orphaned log buffering | Edge case | `job_log` events for unknown jobID are buffered, attached when `job_status` creates the card |
+| Collapsed panel buffers only | Edge case | Log events while collapsed are buffered but not rendered; expand renders them instantly |
+| No running jobs shows empty state | Edge case | Running section displays empty state message when last running job completes |
