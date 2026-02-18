@@ -293,11 +293,22 @@ func (w *Worker) executeWithRetry(ctx context.Context, job *models.Job) (*execut
 }
 
 // detectProgress checks whether an iteration made meaningful progress.
+// Progress is detected via RALPH_STATUS file counts, git commit fallback,
+// or <promise>CLOSER</promise> tags (explicit progress signals from the prompt).
 func detectProgress(result *executor.ExecutionResult) bool {
-	if result == nil || result.Metadata == nil {
+	if result == nil {
 		return false
 	}
-	return result.Metadata.FilesModified > 0
+	if result.Metadata != nil && result.Metadata.FilesModified > 0 {
+		return true
+	}
+	// CLOSER is an explicit progress signal — the loop made improvements
+	// but isn't done yet. This catches cases where Claude commits files
+	// itself (so ralph's own git commit finds nothing).
+	if executor.ContainsPromise(result.Output, "CLOSER") {
+		return true
+	}
+	return false
 }
 
 // extractErrorSummary returns a summary error string from the result.

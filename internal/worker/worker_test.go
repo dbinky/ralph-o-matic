@@ -861,3 +861,37 @@ func TestWorker_RateLimiter_RecreatedPerJob(t *testing.T) {
 	w.poll(ctx)
 	assert.Equal(t, 0, w.rateLimiter.maxPerHour, "rate limiter should be recreated for Ollama job")
 }
+
+func TestDetectProgress_FilesModified(t *testing.T) {
+	result := &executor.ExecutionResult{
+		Metadata: &executor.ResponseMetadata{FilesModified: 3},
+	}
+	assert.True(t, detectProgress(result))
+}
+
+func TestDetectProgress_CloserPromise(t *testing.T) {
+	result := &executor.ExecutionResult{
+		Output:   "Fixed the bug.\n<promise>CLOSER</promise>\n",
+		Metadata: &executor.ResponseMetadata{FilesModified: 0},
+	}
+	assert.True(t, detectProgress(result), "CLOSER promise should count as progress")
+}
+
+func TestDetectProgress_NoSignal(t *testing.T) {
+	result := &executor.ExecutionResult{
+		Output:   "I couldn't find anything to fix.",
+		Metadata: &executor.ResponseMetadata{FilesModified: 0},
+	}
+	assert.False(t, detectProgress(result))
+}
+
+func TestDetectProgress_NilResult(t *testing.T) {
+	assert.False(t, detectProgress(nil))
+}
+
+func TestDetectProgress_NilMetadata_WithCloser(t *testing.T) {
+	result := &executor.ExecutionResult{
+		Output: "Done.\n<promise>CLOSER</promise>",
+	}
+	assert.True(t, detectProgress(result), "CLOSER without metadata should still count")
+}
