@@ -168,7 +168,7 @@ setup() {
     [ "$SMALL_MODEL" = "claude-haiku-4-5-20251001" ]
 }
 
-@test "select_anthropic_models picks sonnet for both with choices 2,2" {
+@test "select_anthropic_models picks sonnet-4-6 for both with choices 2,2" {
     LARGE_MODEL=""
     SMALL_MODEL=""
     YES_FLAG=false
@@ -176,8 +176,8 @@ setup() {
     # With -n 1, read consumes one character at a time (no newlines needed)
     select_anthropic_models <<< $'22'
 
-    [ "$LARGE_MODEL" = "claude-sonnet-4-5-20250929" ]
-    [ "$SMALL_MODEL" = "claude-sonnet-4-5-20250929" ]
+    [ "$LARGE_MODEL" = "claude-sonnet-4-6" ]
+    [ "$SMALL_MODEL" = "claude-sonnet-4-6" ]
 }
 
 @test "select_anthropic_models auto-selects defaults with --yes flag" {
@@ -319,6 +319,6 @@ setup() {
     # Send "9" for large (invalid) and "9" for small (invalid)
     select_anthropic_models <<< $'99'
 
-    [ "$LARGE_MODEL" = "claude-sonnet-4-5-20250929" ]
+    [ "$LARGE_MODEL" = "claude-sonnet-4-6" ]
     [ "$SMALL_MODEL" = "claude-haiku-4-5-20251001" ]
 }
