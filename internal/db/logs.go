@@ -44,12 +44,22 @@ func (r *LogRepo) Append(jobID int64, iteration int, message string) error {
 	}
 
 	if r.broadcaster != nil {
-		payload, _ := json.Marshal(map[string]interface{}{
+		// Publish to job-specific topic (backward compatible — keeps "log" type)
+		jobPayload, _ := json.Marshal(map[string]interface{}{
 			"type":      "log",
 			"iteration": iteration,
 			"message":   message,
 		})
-		r.broadcaster.Publish(fmt.Sprintf("job:%d", jobID), payload)
+		r.broadcaster.Publish(fmt.Sprintf("job:%d", jobID), jobPayload)
+
+		// Publish to global topic (includes jobID for dashboard routing)
+		globalPayload, _ := json.Marshal(map[string]interface{}{
+			"type":      "job_log",
+			"jobID":     jobID,
+			"iteration": iteration,
+			"message":   message,
+		})
+		r.broadcaster.Publish("global", globalPayload)
 	}
 
 	return nil

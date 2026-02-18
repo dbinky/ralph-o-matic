@@ -184,3 +184,70 @@ func TestLogRepo_Append_NilBroadcaster(t *testing.T) {
 	err := logRepo.Append(job.ID, 1, "Hello")
 	require.NoError(t, err)
 }
+
+func TestLogRepo_Append_PublishesToGlobalTopic(t *testing.T) {
+	db := newTestDB(t)
+	jobRepo := NewJobRepo(db)
+	b := broadcast.New()
+	repo := NewLogRepo(db)
+	repo.SetBroadcaster(b)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, jobRepo.Create(job))
+
+	_, globalCh := b.Subscribe("global")
+
+	require.NoError(t, repo.Append(job.ID, 1, "hello world"))
+
+	select {
+	case msg := <-globalCh:
+		var evt map[string]interface{}
+		require.NoError(t, json.Unmarshal(msg, &evt))
+		assert.Equal(t, "job_log", evt["type"])
+		assert.Equal(t, float64(job.ID), evt["jobID"])
+		assert.Equal(t, float64(1), evt["iteration"])
+		assert.Equal(t, "hello world", evt["message"])
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for global event")
+	}
+}
+
+func TestLogRepo_Append_PublishesToJobTopic(t *testing.T) {
+	db := newTestDB(t)
+	jobRepo := NewJobRepo(db)
+	b := broadcast.New()
+	repo := NewLogRepo(db)
+	repo.SetBroadcaster(b)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, jobRepo.Create(job))
+
+	_, jobCh := b.Subscribe(fmt.Sprintf("job:%d", job.ID))
+
+	require.NoError(t, repo.Append(job.ID, 1, "hello world"))
+
+	select {
+	case msg := <-jobCh:
+		var evt map[string]interface{}
+		require.NoError(t, json.Unmarshal(msg, &evt))
+		assert.Equal(t, "log", evt["type"]) // Job topic keeps existing "log" type for backward compat
+		assert.Equal(t, "hello world", evt["message"])
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for job event")
+	}
+}
+
+func TestLogRepo_Append_NoBroadcaster_StillWritesDB(t *testing.T) {
+	db := newTestDB(t)
+	jobRepo := NewJobRepo(db)
+	repo := NewLogRepo(db) // No broadcaster
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, jobRepo.Create(job))
+
+	require.NoError(t, repo.Append(job.ID, 1, "test"))
+
+	logs, err := repo.GetForJob(job.ID)
+	require.NoError(t, err)
+	assert.Len(t, logs, 1)
+}
