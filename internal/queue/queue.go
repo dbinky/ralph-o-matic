@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -31,10 +32,25 @@ func (q *Queue) SetBroadcaster(b *broadcast.Broadcaster) {
 	q.broadcaster = b
 }
 
-func (q *Queue) publish() {
-	if q.broadcaster != nil {
-		q.broadcaster.Publish("global", []byte("{}"))
+func (q *Queue) publishJobStatus(job *models.Job) {
+	if q.broadcaster == nil {
+		return
 	}
+	payload, err := json.Marshal(map[string]interface{}{
+		"type":      "job_status",
+		"jobID":     job.ID,
+		"status":    job.Status,
+		"repo":      job.RepoURL,
+		"branch":    job.Branch,
+		"user":      job.OwnerName,
+		"priority":  job.Priority,
+		"iteration": job.Iteration,
+		"createdAt": job.CreatedAt,
+	})
+	if err != nil {
+		return
+	}
+	q.broadcaster.Publish("global", payload)
 }
 
 // Enqueue adds a new job to the queue
@@ -50,7 +66,7 @@ func (q *Queue) Enqueue(job *models.Job) error {
 	if err := q.jobRepo.Create(job); err != nil {
 		return err
 	}
-	q.publish()
+	q.publishJobStatus(job)
 	return nil
 }
 
@@ -77,7 +93,7 @@ func (q *Queue) Dequeue() (*models.Job, error) {
 		return nil, fmt.Errorf("failed to update job: %w", err)
 	}
 
-	q.publish()
+	q.publishJobStatus(job)
 	return job, nil
 }
 
@@ -93,7 +109,7 @@ func (q *Queue) Pause(job *models.Job) error {
 	if err := q.jobRepo.Update(job); err != nil {
 		return err
 	}
-	q.publish()
+	q.publishJobStatus(job)
 	return nil
 }
 
@@ -116,7 +132,7 @@ func (q *Queue) Resume(job *models.Job) error {
 	if err := q.jobRepo.Update(job); err != nil {
 		return err
 	}
-	q.publish()
+	q.publishJobStatus(job)
 	return nil
 }
 
@@ -132,7 +148,7 @@ func (q *Queue) Complete(job *models.Job) error {
 	if err := q.jobRepo.Update(job); err != nil {
 		return err
 	}
-	q.publish()
+	q.publishJobStatus(job)
 	return nil
 }
 
@@ -149,7 +165,7 @@ func (q *Queue) Fail(job *models.Job, errMsg string) error {
 	if err := q.jobRepo.Update(job); err != nil {
 		return err
 	}
-	q.publish()
+	q.publishJobStatus(job)
 	return nil
 }
 
@@ -165,7 +181,7 @@ func (q *Queue) Cancel(job *models.Job) error {
 	if err := q.jobRepo.Update(job); err != nil {
 		return err
 	}
-	q.publish()
+	q.publishJobStatus(job)
 	return nil
 }
 
@@ -177,7 +193,12 @@ func (q *Queue) Reorder(jobIDs []int64) error {
 	if err := q.jobRepo.UpdatePositions(jobIDs); err != nil {
 		return err
 	}
-	q.publish()
+	if q.broadcaster != nil {
+		payload, _ := json.Marshal(map[string]interface{}{
+			"type": "queue_reorder",
+		})
+		q.broadcaster.Publish("global", payload)
+	}
 	return nil
 }
 
@@ -274,11 +295,8 @@ func (q *Queue) RecoverOrphaned() (int, error) {
 			slog.Warn("failed to append recovery log entry", "job_id", job.ID, "error", err)
 		}
 
+		q.publishJobStatus(job)
 		recovered++
-	}
-
-	if recovered > 0 {
-		q.publish()
 	}
 
 	return recovered, nil

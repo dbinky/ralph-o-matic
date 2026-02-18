@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -274,7 +275,10 @@ func TestRecoverOrphaned_PublishesBroadcast(t *testing.T) {
 
 	select {
 	case msg := <-ch:
-		assert.Equal(t, []byte("{}"), msg)
+		var evt map[string]interface{}
+		require.NoError(t, json.Unmarshal(msg, &evt))
+		assert.Equal(t, "job_status", evt["type"])
+		assert.Equal(t, "queued", evt["status"])
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for broadcast after recovery")
 	}
