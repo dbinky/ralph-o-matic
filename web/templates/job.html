@@ -106,9 +106,17 @@
     evtSource.onmessage = function(event) {
         const data = JSON.parse(event.data);
         if (data.type === 'log') {
+            const iterSpan = document.createElement('span');
+            iterSpan.style.color = '#888';
+            iterSpan.textContent = '[iter ' + data.iteration + ']';
+
+            const msgSpan = document.createElement('span');
+            msgSpan.textContent = ' ' + data.message;
+
             const logLine = document.createElement('div');
             logLine.style.marginBottom = '4px';
-            logLine.innerHTML = `<span style="color: #888;">[iter ${data.iteration}]</span> <span>${data.message}</span>`;
+            logLine.appendChild(iterSpan);
+            logLine.appendChild(msgSpan);
             logsDiv.appendChild(logLine);
             logsDiv.scrollTop = logsDiv.scrollHeight;
         }
