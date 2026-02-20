@@ -284,10 +284,27 @@
 
     // --- SSE event handling ---
     function handleStatusChange(data) {
-        // Reload the page for status changes — simplest correct approach
-        // for moving cards between sections, creating/removing panels, etc.
-        // TODO: replace with DOM updates to avoid losing terminal buffer state,
-        // expanded panel state, and log backfill on status transitions.
+        // If a panel is expanded, don't reload — preserve terminal state.
+        // Status changes will be reflected on next page load or manual refresh.
+        if (Object.keys(expandedPanels).length > 0) {
+            // If the expanded job reached a terminal state, notify in terminal
+            if (expandedPanels[data.jobID]) {
+                var status = data.status;
+                if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+                    appendLog(data.jobID, '--- Job ' + status + ' ---');
+                    // Update card styling to reflect terminal state
+                    var card = document.querySelector('.job-card[data-job-id="' + data.jobID + '"]');
+                    if (card) {
+                        card.className = 'job-card ' + status;
+                        card.setAttribute('data-job-id', data.jobID);
+                    }
+                    // Hide action buttons
+                    var actions = card && card.querySelector('.job-actions');
+                    if (actions) actions.style.display = 'none';
+                }
+            }
+            return;
+        }
         location.reload();
     }
 
@@ -368,10 +385,11 @@
     }
 
     function reconcileDashboard() {
+        // Don't reload while a panel is expanded — preserve terminal state
+        if (Object.keys(expandedPanels).length > 0) return;
         fetch('/api/dashboard-state')
             .then(function(resp) {
                 if (resp.ok) {
-                    // Simple reconciliation: reload if state might have changed
                     location.reload();
                 }
             })
