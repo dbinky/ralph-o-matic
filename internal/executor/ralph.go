@@ -231,7 +231,18 @@ func (h *RalphHandler) finalize(ctx context.Context, job *models.Job, success bo
 		log.Printf("Final commit: %s", hash)
 	}
 
-	// Push and create PR
+	// Direct mode (local repo): push current branch, skip PR creation.
+	// The user manages their own branch and PR workflow.
+	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
+		if pushErr := h.repoManager.Push(ctx, workDir); pushErr != nil {
+			log.Printf("Warning: final push failed for job %d: %v", job.ID, pushErr)
+		} else {
+			log.Printf("Job %d: final push complete (direct mode)", job.ID)
+		}
+		return nil
+	}
+
+	// Standard mode: push result branch and create PR
 	prURL, err := h.repoManager.PushAndCreatePR(ctx, workDir, job.Branch, job.Iteration, success, "")
 	if err != nil {
 		return fmt.Errorf("failed to create PR: %w", err)

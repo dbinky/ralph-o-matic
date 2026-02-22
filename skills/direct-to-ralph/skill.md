@@ -80,7 +80,7 @@ Ask only what isn't already provided via flags. Use AskUserQuestion for each.
 
 **Priority** (ask if `--priority` not provided): Offer high / normal (default) / low.
 
-**Max iterations** (ask if `--max-iterations` not provided): Default 50. Offer 25 / 50 / 100.
+**Max iterations** (ask if `--max-iterations` not provided): Ask conversationally (do NOT use AskUserQuestion — numeric input conflicts with option selection). Suggest common values: 25, 50, 100, 200, 500, 1000. Default 50. Accept any number the user provides.
 
 ---
 
