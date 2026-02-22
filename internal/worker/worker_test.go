@@ -1022,7 +1022,7 @@ func TestDetectProgress_FilesModified(t *testing.T) {
 	result := &executor.ExecutionResult{
 		Metadata: &executor.ResponseMetadata{FilesModified: 3},
 	}
-	assert.True(t, detectProgress(result))
+	assert.True(t, detectProgress(result, "FINIT"))
 }
 
 func TestDetectProgress_CloserPromise(t *testing.T) {
@@ -1030,7 +1030,7 @@ func TestDetectProgress_CloserPromise(t *testing.T) {
 		Output:   "Fixed the bug.\n<promise>CLOSER</promise>\n",
 		Metadata: &executor.ResponseMetadata{FilesModified: 0},
 	}
-	assert.True(t, detectProgress(result), "CLOSER promise should count as progress")
+	assert.True(t, detectProgress(result, "FINIT"), "CLOSER promise should count as progress")
 }
 
 func TestDetectProgress_NoSignal(t *testing.T) {
@@ -1038,18 +1038,34 @@ func TestDetectProgress_NoSignal(t *testing.T) {
 		Output:   "I couldn't find anything to fix.",
 		Metadata: &executor.ResponseMetadata{FilesModified: 0},
 	}
-	assert.False(t, detectProgress(result))
+	assert.False(t, detectProgress(result, "FINIT"))
 }
 
 func TestDetectProgress_NilResult(t *testing.T) {
-	assert.False(t, detectProgress(nil))
+	assert.False(t, detectProgress(nil, "FINIT"))
 }
 
 func TestDetectProgress_NilMetadata_WithCloser(t *testing.T) {
 	result := &executor.ExecutionResult{
 		Output: "Done.\n<promise>CLOSER</promise>",
 	}
-	assert.True(t, detectProgress(result), "CLOSER without metadata should still count")
+	assert.True(t, detectProgress(result, "FINIT"), "CLOSER without metadata should still count")
+}
+
+func TestDetectProgress_ExitPromiseNotProgress(t *testing.T) {
+	result := &executor.ExecutionResult{
+		Output:   "All done!\n<promise>FINIT</promise>\n",
+		Metadata: &executor.ResponseMetadata{FilesModified: 0},
+	}
+	assert.False(t, detectProgress(result, "FINIT"), "exit promise should not count as progress")
+}
+
+func TestDetectProgress_NonExitPromiseIsProgress(t *testing.T) {
+	result := &executor.ExecutionResult{
+		Output:   "Review done.\n<promise>REVIEW COMPLETE</promise>\n",
+		Metadata: &executor.ResponseMetadata{FilesModified: 0},
+	}
+	assert.True(t, detectProgress(result, "FINIT"), "non-exit promise should count as progress")
 }
 
 func TestWorker_StartsProgressReporter(t *testing.T) {

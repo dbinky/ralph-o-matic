@@ -105,6 +105,7 @@ func run() error {
 		serverOpts = &api.ServerOptions{}
 	}
 	serverOpts.Broadcaster = b
+	serverOpts.Version = version
 
 	srv := api.NewServer(database, q, addr, serverOpts)
 

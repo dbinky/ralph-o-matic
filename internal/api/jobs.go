@@ -23,6 +23,7 @@ type CreateJobRequest struct {
 	MaxIterations int               `json:"max_iterations"`
 	Priority      string            `json:"priority,omitempty"`
 	WorkingDir    string            `json:"working_dir,omitempty"`
+	ExitPromise   string            `json:"exit_promise,omitempty"`
 	Env           map[string]string `json:"env,omitempty"`
 	Backend       string            `json:"backend,omitempty"`
 }
@@ -69,6 +70,9 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	job := models.NewJob(req.RepoURL, req.Branch, req.Prompt, req.MaxIterations)
 	job.WorkingDir = workingDir
 	job.Env = req.Env
+	if req.ExitPromise != "" {
+		job.ExitPromise = req.ExitPromise
+	}
 
 	// Set ownership from authenticated user
 	if user := auth.UserFromContext(r.Context()); user != nil {

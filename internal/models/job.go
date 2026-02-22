@@ -5,6 +5,9 @@ import (
 	"time"
 )
 
+// DefaultExitPromise is the default promise tag that signals job completion.
+const DefaultExitPromise = "FINIT"
+
 // Job represents a ralph loop job in the queue
 type Job struct {
 	ID       int64     `json:"id"`
@@ -21,6 +24,7 @@ type Job struct {
 	// Execution config
 	Prompt        string            `json:"prompt"`
 	MaxIterations int               `json:"max_iterations"`
+	ExitPromise   string            `json:"exit_promise,omitempty"`
 	Backend       Backend           `json:"backend,omitempty"`
 	Env           map[string]string `json:"env,omitempty"`
 
@@ -53,6 +57,7 @@ func NewJob(repoURL, branch, prompt string, maxIterations int) *Job {
 		ResultBranch:  GenerateResultBranch(branch),
 		Prompt:        prompt,
 		MaxIterations: maxIterations,
+		ExitPromise:   DefaultExitPromise,
 		Iteration:     0,
 		RetryCount:    0,
 		CreatedAt:     time.Now(),

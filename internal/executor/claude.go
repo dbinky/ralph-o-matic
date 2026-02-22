@@ -174,7 +174,7 @@ type OutputCallback func(line string)
 // Permissions are always skipped because --print mode is automated
 // with no human to approve interactive prompts.
 // If session is non-nil and valid, --resume is passed for continuity.
-func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, backend models.Backend, env map[string]string, session *Session, onOutput OutputCallback) (*ExecutionResult, error) {
+func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, backend models.Backend, env map[string]string, session *Session, exitPromise string, onOutput OutputCallback) (*ExecutionResult, error) {
 	args := buildClaudeArgs(true, session)
 	cmd := exec.CommandContext(ctx, e.claudePath, args...) //nolint:gosec // claude is a trusted CLI tool
 	cmd.Dir = workDir
@@ -235,7 +235,7 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, ba
 		Output:     output,
 		RawJSON:    outputBuf.Bytes(),
 		Iterations: ParseIterations(output),
-		Completed:  ContainsPromise(output, "COMPLETE") || ContainsPromise(output, "DONE"),
+		Completed:  ContainsPromise(output, exitPromise),
 	}
 
 	// Parse JSON response for metadata
@@ -252,6 +252,9 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, ba
 
 func (e *ClaudeExecutor) readOutput(r io.Reader, buf *bytes.Buffer, callback OutputCallback) {
 	scanner := bufio.NewScanner(r)
+	// stream-json events can be large (tool results with file contents);
+	// increase from default 64KB to 1MB per line.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		buf.WriteString(line + "\n")
@@ -290,6 +293,22 @@ func ContainsPromise(output, promiseText string) bool {
 	pattern := fmt.Sprintf(`<promise>%s</promise>`, regexp.QuoteMeta(promiseText))
 	matched, _ := regexp.MatchString(pattern, output)
 	return matched
+}
+
+// promiseTagPattern matches <promise>X</promise> tags in output.
+var promiseTagPattern = regexp.MustCompile(`<promise>(.*?)</promise>`)
+
+// HasNonExitPromise returns true if output contains any <promise>X</promise>
+// tag where X is NOT the exit promise. These tags are progress signals
+// from the ralph loop script (e.g. CLOSER, REVIEW COMPLETE).
+func HasNonExitPromise(output, exitPromise string) bool {
+	matches := promiseTagPattern.FindAllStringSubmatch(output, -1)
+	for _, match := range matches {
+		if len(match) >= 2 && match[1] != exitPromise {
+			return true
+		}
+	}
+	return false
 }
 
 // IsClaudeInstalled checks if claude CLI is available

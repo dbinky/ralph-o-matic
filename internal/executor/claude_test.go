@@ -51,10 +51,69 @@ func TestClaudeExecutor_ParseOutput_Promise(t *testing.T) {
 	assert.False(t, ContainsPromise(output, "DONE"))
 }
 
+func TestContainsPromise_FINIT(t *testing.T) {
+	output := "All tests passing!\n<promise>FINIT</promise>\n"
+	assert.True(t, ContainsPromise(output, "FINIT"))
+	assert.False(t, ContainsPromise(output, "COMPLETE"))
+}
+
 func TestClaudeExecutor_ParseOutput_NoPromise(t *testing.T) {
 	output := "Still working on tests..."
 
 	assert.False(t, ContainsPromise(output, "COMPLETE"))
+}
+
+func TestHasNonExitPromise(t *testing.T) {
+	tests := []struct {
+		name        string
+		output      string
+		exitPromise string
+		want        bool
+	}{
+		{
+			name:        "CLOSER is progress when exit is FINIT",
+			output:      "Fixed.\n<promise>CLOSER</promise>\n",
+			exitPromise: "FINIT",
+			want:        true,
+		},
+		{
+			name:        "REVIEW COMPLETE is progress when exit is FINIT",
+			output:      "Done reviewing.\n<promise>REVIEW COMPLETE</promise>\n",
+			exitPromise: "FINIT",
+			want:        true,
+		},
+		{
+			name:        "exit promise only — no progress",
+			output:      "Done!\n<promise>FINIT</promise>\n",
+			exitPromise: "FINIT",
+			want:        false,
+		},
+		{
+			name:        "no promise tags at all",
+			output:      "Still working on things...",
+			exitPromise: "FINIT",
+			want:        false,
+		},
+		{
+			name:        "mixed: exit + non-exit",
+			output:      "<promise>CLOSER</promise>\n<promise>FINIT</promise>\n",
+			exitPromise: "FINIT",
+			want:        true,
+		},
+		{
+			name:        "COMPLETE is progress when exit is DONE",
+			output:      "<promise>COMPLETE</promise>",
+			exitPromise: "DONE",
+			want:        true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := HasNonExitPromise(tt.output, tt.exitPromise)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestClaudeExecutor_BuildEnv_CustomModels(t *testing.T) {

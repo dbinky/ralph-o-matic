@@ -292,6 +292,37 @@ func TestJobRepo_Create_WithOwner(t *testing.T) {
 	assert.Equal(t, "Alice Smith", fetched.OwnerName)
 }
 
+func TestJobRepo_ExitPromise_RoundTrip(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	// Default exit promise (set by NewJob)
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, repo.Create(job))
+
+	fetched, err := repo.Get(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.DefaultExitPromise, fetched.ExitPromise)
+
+	// Custom exit promise
+	job2 := models.NewJob("git@github.com:user/repo.git", "dev", "test", 5)
+	job2.ExitPromise = "DONE"
+	require.NoError(t, repo.Create(job2))
+
+	fetched2, err := repo.Get(job2.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "DONE", fetched2.ExitPromise)
+
+	// Empty exit promise (old rows)
+	job3 := models.NewJob("git@github.com:user/repo.git", "fix", "test", 3)
+	job3.ExitPromise = ""
+	require.NoError(t, repo.Create(job3))
+
+	fetched3, err := repo.Get(job3.ID)
+	require.NoError(t, err)
+	assert.Empty(t, fetched3.ExitPromise)
+}
+
 func TestJobRepo_Create_WithoutOwner(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewJobRepo(db)

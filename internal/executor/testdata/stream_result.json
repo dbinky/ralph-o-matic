@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"abc-123","tools":["Read","Edit","Bash"]}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Let me read the file."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/src/main.go"}}]}}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":5000,"num_turns":3,"result":"I've implemented the feature and all tests pass.\n\n---RALPH_STATUS---\nSTATUS: COMPLETE\nEXIT_SIGNAL: true\nWORK_TYPE: IMPLEMENTATION\nFILES_MODIFIED: 5\n---END_RALPH_STATUS---","session_id":"111b2763-1e88-4c07-87b5-465c01876e9a"}

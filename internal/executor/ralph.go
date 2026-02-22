@@ -79,12 +79,22 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) (*ExecutionR
 	// Resolve backend: job > server default > ollama
 	backend := effectiveBackend(job.Backend, h.config.DefaultBackend)
 
+	// Resolve exit promise: job > default
+	exitPromise := job.ExitPromise
+	if exitPromise == "" {
+		exitPromise = models.DefaultExitPromise
+	}
+
 	// Get session for continuity across iterations
 	session := h.getSession(job.ID)
 
-	// Execute claude with the prompt
-	result, err := h.executor.Execute(ctx, workDir, job.Prompt, backend, job.Env, session, func(line string) {
-		_ = h.logRepo.Append(job.ID, job.Iteration, line)
+	// Execute claude with the prompt.
+	// Stream-json produces one event per line; format into human-readable
+	// summaries so the terminal shows useful output instead of raw JSON.
+	result, err := h.executor.Execute(ctx, workDir, job.Prompt, backend, job.Env, session, exitPromise, func(line string) {
+		if summary := FormatStreamEvent(line); summary != "" {
+			_ = h.logRepo.Append(job.ID, job.Iteration, summary)
+		}
 	})
 
 	if err != nil {
@@ -107,6 +117,12 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) (*ExecutionR
 		log.Printf("Warning: per-iteration commit failed for job %d: %v", job.ID, commitErr)
 	} else if hash != "" {
 		log.Printf("Job %d iteration %d committed: %s", job.ID, job.Iteration, hash)
+		// Push to remote so changes are visible immediately
+		if pushErr := h.repoManager.Push(ctx, workDir); pushErr != nil {
+			log.Printf("Warning: per-iteration push failed for job %d: %v", job.ID, pushErr)
+		} else {
+			log.Printf("Job %d iteration %d pushed to remote", job.ID, job.Iteration)
+		}
 		// Git diff fallback: if metadata reports no files modified but we committed,
 		// there were actual changes that weren't detected via RALPH_STATUS.
 		// Update FilesModified to indicate progress.

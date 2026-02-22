@@ -45,16 +45,16 @@ func (r *JobRepo) Create(job *models.Job) error {
 		INSERT INTO jobs (
 			status, priority, position,
 			repo_url, branch, result_branch, working_dir,
-			prompt, max_iterations, backend, env,
+			prompt, max_iterations, exit_promise, backend, env,
 			owner_id, owner_name,
 			iteration, retry_count,
 			created_at, started_at, paused_at, completed_at,
 			pr_url, error
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		job.Status, job.Priority, job.Position,
 		job.RepoURL, job.Branch, job.ResultBranch, job.WorkingDir,
-		job.Prompt, job.MaxIterations, string(job.Backend), envJSON,
+		job.Prompt, job.MaxIterations, job.ExitPromise, string(job.Backend), envJSON,
 		job.OwnerID, job.OwnerName,
 		job.Iteration, job.RetryCount,
 		job.CreatedAt, job.StartedAt, job.PausedAt, job.CompletedAt,
@@ -80,11 +80,13 @@ func (r *JobRepo) Get(id int64) (*models.Job, error) {
 	var startedAt, pausedAt, completedAt sql.NullTime
 	var workingDir, backend, prURL, errStr sql.NullString
 
+	var exitPromise sql.NullString
+
 	err := r.db.conn.QueryRow(`
 		SELECT
 			id, status, priority, position,
 			repo_url, branch, result_branch, working_dir,
-			prompt, max_iterations, backend, env,
+			prompt, max_iterations, exit_promise, backend, env,
 			owner_id, owner_name,
 			iteration, retry_count,
 			created_at, started_at, paused_at, completed_at,
@@ -93,7 +95,7 @@ func (r *JobRepo) Get(id int64) (*models.Job, error) {
 	`, id).Scan(
 		&job.ID, &job.Status, &job.Priority, &job.Position,
 		&job.RepoURL, &job.Branch, &job.ResultBranch, &workingDir,
-		&job.Prompt, &job.MaxIterations, &backend, &envJSON,
+		&job.Prompt, &job.MaxIterations, &exitPromise, &backend, &envJSON,
 		&job.OwnerID, &job.OwnerName,
 		&job.Iteration, &job.RetryCount,
 		&job.CreatedAt, &startedAt, &pausedAt, &completedAt,
@@ -109,6 +111,9 @@ func (r *JobRepo) Get(id int64) (*models.Job, error) {
 	// Handle nullable fields
 	if workingDir.Valid {
 		job.WorkingDir = workingDir.String
+	}
+	if exitPromise.Valid {
+		job.ExitPromise = exitPromise.String
 	}
 	if backend.Valid {
 		job.Backend = models.Backend(backend.String)
@@ -152,7 +157,7 @@ func (r *JobRepo) Update(job *models.Job) error {
 		UPDATE jobs SET
 			status = ?, priority = ?, position = ?,
 			repo_url = ?, branch = ?, result_branch = ?, working_dir = ?,
-			prompt = ?, max_iterations = ?, backend = ?, env = ?,
+			prompt = ?, max_iterations = ?, exit_promise = ?, backend = ?, env = ?,
 			owner_id = ?, owner_name = ?,
 			iteration = ?, retry_count = ?,
 			started_at = ?, paused_at = ?, completed_at = ?,
@@ -161,7 +166,7 @@ func (r *JobRepo) Update(job *models.Job) error {
 	`,
 		job.Status, job.Priority, job.Position,
 		job.RepoURL, job.Branch, job.ResultBranch, job.WorkingDir,
-		job.Prompt, job.MaxIterations, string(job.Backend), envJSON,
+		job.Prompt, job.MaxIterations, job.ExitPromise, string(job.Backend), envJSON,
 		job.OwnerID, job.OwnerName,
 		job.Iteration, job.RetryCount,
 		job.StartedAt, job.PausedAt, job.CompletedAt,

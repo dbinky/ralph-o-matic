@@ -81,10 +81,11 @@ func TestBuildArgs_WithExpiredSession(t *testing.T) {
 	assert.NotContains(t, args, "--resume")
 }
 
-func TestBuildArgs_IncludesJSONFormat(t *testing.T) {
+func TestBuildArgs_IncludesStreamJSON(t *testing.T) {
 	args := buildClaudeArgs(false, nil)
+	assert.Contains(t, args, "--verbose")
 	assert.Contains(t, args, "--output-format")
-	assert.Contains(t, args, "json")
+	assert.Contains(t, args, "stream-json")
 }
 
 func TestBuildArgs_SkipPermissions(t *testing.T) {
