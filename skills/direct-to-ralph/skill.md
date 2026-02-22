@@ -17,6 +17,7 @@ Parse the following from the user's command:
 - `--priority LEVEL`: Job priority - high, normal, low (default: normal)
 - `--open-ended`: Use polish prompt without exit criteria
 - `--branch <name>`: Branch to submit (default: current branch)
+- `--local`: Use local repo directory (skip clone). Auto-detected when server is localhost.
 
 ## Workflow Overview
 
@@ -33,7 +34,7 @@ Step 3: Q&A (fill in gaps from flags)
          │
 Step 4: Generate RALPH.md
          │
-Step 5: Pre-flight checks
+Step 5: Pre-flight checks (includes local repo detection)
          │
 Step 6: Commit, push, submit
          │
@@ -106,7 +107,7 @@ Each iteration:
 The code may have been drafted by another agent. Do not trust it. Verify against the spec.
 
 When all spec requirements are satisfied and tests pass, output:
-<promise>COMPLETE</promise>
+<promise>FINIT</promise>
 ```
 
 **Open-ended prompt:**
@@ -171,6 +172,25 @@ fi
 echo "✓ Branch not in queue"
 ```
 
+### Local Server Detection
+
+After pre-flight checks pass, determine whether the ralph server is local.
+
+**How to detect:** Read the configured server URL from `ralph-o-matic config`. If it contains `localhost` or `127.0.0.1`, the server is local.
+
+**If `--local` was passed:** Use local mode without asking.
+
+**If server is local and `--local` was NOT passed:** Ask the user with AskUserQuestion:
+
+| Option | Description |
+|--------|-------------|
+| Use local repo (Recommended) | Ralph works directly in your checkout — no clone, faster startup, changes pushed each iteration. Don't edit these files while ralph is running. |
+| Clone as usual | Ralph clones into its own workspace. Slower but your working tree stays untouched. |
+
+**If the user chooses local repo:** Get the repo root with `git rev-parse --show-toplevel`. Store this as `LOCAL_DIR` for use in Step 6.
+
+**If server is NOT local:** Skip this — remote servers can't access local paths.
+
 ---
 
 ## Step 6: Commit, Push, Submit
@@ -184,9 +204,11 @@ if [ -n "$(git status --porcelain RALPH.md)" ]; then
 fi
 
 # Submit job
+# If LOCAL_DIR is set, pass --working-dir to use the local repo directly
 ralph-o-matic submit \
     --priority {PRIORITY} \
-    --max-iterations {MAX_ITERATIONS}
+    --max-iterations {MAX_ITERATIONS} \
+    ${LOCAL_DIR:+--working-dir "$LOCAL_DIR"}
 ```
 
 ---
@@ -201,10 +223,19 @@ Shipped to Ralph-o-matic!
   Priority:       {PRIORITY}
   Max Iterations: {MAX_ITERATIONS}
   Prompt:         {PROMPT_TYPE}
+  Mode:           {LOCAL_DIR ? "local repo (direct)" : "cloned workspace"}
 
   Dashboard:      {SERVER_URL}/jobs/{JOB_ID}
 
   Monitor: ralph-o-matic logs {JOB_ID} --follow
+```
+
+If local mode was used, add:
+
+```
+  Note: Ralph is working directly in {LOCAL_DIR}.
+        Changes are pushed to the remote after each iteration.
+        Avoid editing files in this repo until the job completes.
 ```
 
 ---
