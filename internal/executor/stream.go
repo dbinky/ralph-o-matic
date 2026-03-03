@@ -42,7 +42,10 @@ func FormatStreamEvent(line string) string {
 	case "result":
 		return "" // worker logs completion separately
 	default:
-		return ""
+		// Log unrecognized event types for debuggability.
+		// System events, tool results, and other types are preserved
+		// as one-liner summaries rather than silently dropped.
+		return fmt.Sprintf("[%s]", ev.Type)
 	}
 }
 

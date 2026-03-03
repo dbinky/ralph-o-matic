@@ -283,23 +283,27 @@
     }
 
     // --- SSE event handling ---
+    var validStatuses = ['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'];
+
     function handleStatusChange(data) {
+        // Validate status against known values before using as CSS class
+        var status = data.status;
+        if (validStatuses.indexOf(status) === -1) return;
+
         // If a panel is expanded, don't reload — preserve terminal state.
         // Status changes will be reflected on next page load or manual refresh.
         if (Object.keys(expandedPanels).length > 0) {
             // If the expanded job reached a terminal state, notify in terminal
             if (expandedPanels[data.jobID]) {
-                var status = data.status;
                 if (status === 'completed' || status === 'failed' || status === 'cancelled') {
                     appendLog(data.jobID, '--- Job ' + status + ' ---');
                     // Update card styling to reflect terminal state
                     var card = document.querySelector('.job-card[data-job-id="' + data.jobID + '"]');
-                    if (card) {
-                        card.className = 'job-card ' + status;
-                        card.setAttribute('data-job-id', data.jobID);
-                    }
+                    if (!card) return;
+                    card.className = 'job-card ' + status;
+                    card.setAttribute('data-job-id', data.jobID);
                     // Hide action buttons
-                    var actions = card && card.querySelector('.job-actions');
+                    var actions = card.querySelector('.job-actions');
                     if (actions) actions.style.display = 'none';
                 }
             }

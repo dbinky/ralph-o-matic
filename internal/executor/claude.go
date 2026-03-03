@@ -245,10 +245,7 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, ba
 	if meta, parseErr := ParseResponse(outputBuf.Bytes()); parseErr == nil {
 		result.Metadata = meta
 		result.SessionID = meta.SessionID
-		result.Completed = ContainsPromise(meta.ResultText, exitPromise)
-		if meta.Completed || meta.ExitSignal {
-			result.Completed = true
-		}
+		result.Completed = meta.Completed || meta.ExitSignal || ContainsPromise(meta.ResultText, exitPromise)
 	} else {
 		// Fallback: if we can't parse stream-json, search raw output.
 		// This handles non-JSON output modes or malformed responses.

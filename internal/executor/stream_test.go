@@ -65,10 +65,10 @@ func TestFormatStreamEvent_ResultSkipped(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-func TestFormatStreamEvent_SystemSkipped(t *testing.T) {
+func TestFormatStreamEvent_SystemLogged(t *testing.T) {
 	line := `{"type":"system","subtype":"init","session_id":"abc-123"}`
 	result := FormatStreamEvent(line)
-	assert.Empty(t, result)
+	assert.Equal(t, "[system]", result)
 }
 
 func TestFormatStreamEvent_EmptyLine(t *testing.T) {

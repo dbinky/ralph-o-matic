@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 )
 
@@ -131,6 +132,21 @@ func (j *Job) Progress() float64 {
 		return 0
 	}
 	return float64(j.Iteration) / float64(j.MaxIterations)
+}
+
+// EffectiveExitPromise returns the exit promise for this job, falling back
+// to DefaultExitPromise when the job-level value is empty.
+func (j *Job) EffectiveExitPromise() string {
+	if j.ExitPromise != "" {
+		return j.ExitPromise
+	}
+	return DefaultExitPromise
+}
+
+// IsDirectMode returns true when the job operates on a local repository
+// (absolute WorkingDir) rather than a server-managed clone.
+func (j *Job) IsDirectMode() bool {
+	return j.WorkingDir != "" && filepath.IsAbs(j.WorkingDir)
 }
 
 // Duration returns how long the job has been running

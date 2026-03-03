@@ -79,18 +79,13 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) (*ExecutionR
 	// Resolve backend: job > server default > ollama
 	backend := effectiveBackend(job.Backend, h.config.DefaultBackend)
 
-	// Resolve exit promise: job > default
-	exitPromise := job.ExitPromise
-	if exitPromise == "" {
-		exitPromise = models.DefaultExitPromise
-	}
-
 	// Get session for continuity across iterations
 	session := h.getSession(job.ID)
 
 	// Execute claude with the prompt.
 	// Stream-json produces one event per line; format into human-readable
 	// summaries so the terminal shows useful output instead of raw JSON.
+	exitPromise := job.EffectiveExitPromise()
 	result, err := h.executor.Execute(ctx, workDir, job.Prompt, backend, job.Env, session, exitPromise, func(line string) {
 		if summary := FormatStreamEvent(line); summary != "" {
 			_ = h.logRepo.Append(job.ID, job.Iteration, summary)
@@ -117,11 +112,14 @@ func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) (*ExecutionR
 		log.Printf("Warning: per-iteration commit failed for job %d: %v", job.ID, commitErr)
 	} else if hash != "" {
 		log.Printf("Job %d iteration %d committed: %s", job.ID, job.Iteration, hash)
-		// Push to remote so changes are visible immediately
-		if pushErr := h.repoManager.Push(ctx, workDir); pushErr != nil {
-			log.Printf("Warning: per-iteration push failed for job %d: %v", job.ID, pushErr)
-		} else {
-			log.Printf("Job %d iteration %d pushed to remote", job.ID, job.Iteration)
+		// Push per-iteration only in direct mode (local repo) so changes
+		// are visible immediately. Standard mode defers push to finalize.
+		if job.IsDirectMode() {
+			if pushErr := h.repoManager.Push(ctx, workDir); pushErr != nil {
+				log.Printf("Warning: per-iteration push failed for job %d: %v", job.ID, pushErr)
+			} else {
+				log.Printf("Job %d iteration %d pushed to remote", job.ID, job.Iteration)
+			}
 		}
 		// Git diff fallback: if metadata reports no files modified but we committed,
 		// there were actual changes that weren't detected via RALPH_STATUS.
@@ -176,7 +174,7 @@ func (h *RalphHandler) updateIteration(job *models.Job, iteration int) {
 // returns the workspace path only if a clone exists (has .git directory).
 // Returns "" if the workspace needs initial setup via setupWorkDir.
 func (h *RalphHandler) resolveWorkDir(job *models.Job) string {
-	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
+	if job.IsDirectMode() {
 		return job.WorkingDir
 	}
 	base := h.repoManager.WorkspacePath(job.ID)
@@ -201,7 +199,7 @@ func (h *RalphHandler) resolveWorkDir(job *models.Job) string {
 
 // setupWorkDir clones the repo and returns the working directory.
 func (h *RalphHandler) setupWorkDir(ctx context.Context, job *models.Job) (string, error) {
-	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
+	if job.IsDirectMode() {
 		return job.WorkingDir, nil
 	}
 	workDir, err := h.repoManager.Setup(ctx, job.ID, job.RepoURL, job.Branch)
@@ -233,7 +231,7 @@ func (h *RalphHandler) finalize(ctx context.Context, job *models.Job, success bo
 
 	// Direct mode (local repo): push current branch, skip PR creation.
 	// The user manages their own branch and PR workflow.
-	if job.WorkingDir != "" && filepath.IsAbs(job.WorkingDir) {
+	if job.IsDirectMode() {
 		if pushErr := h.repoManager.Push(ctx, workDir); pushErr != nil {
 			log.Printf("Warning: final push failed for job %d: %v", job.ID, pushErr)
 		} else {

@@ -215,11 +215,7 @@ func (w *Worker) poll(ctx context.Context) {
 		}
 
 		// Feed circuit breaker
-		exitPromise := job.ExitPromise
-		if exitPromise == "" {
-			exitPromise = models.DefaultExitPromise
-		}
-		hasProgress := detectProgress(result, exitPromise)
+		hasProgress := detectProgress(result, job.EffectiveExitPromise())
 		errMsg := extractErrorSummary(result)
 		cbState := cb.RecordIteration(hasProgress, errMsg)
 
