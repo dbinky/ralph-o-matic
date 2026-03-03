@@ -116,6 +116,35 @@ func TestHasNonExitPromise(t *testing.T) {
 	}
 }
 
+func TestContainsPromise_FalsePositive_StreamJSON(t *testing.T) {
+	// Simulates stream-json output where the model discusses FINIT in reasoning
+	// but only outputs CLOSER as the actual promise. The intermediate assistant
+	// event contains the exit promise text in the model's reasoning.
+	streamJSON := strings.Join([]string{
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Checking the focus areas... not all reviews are complete, so I'll output <promise>CLOSER</promise> instead of <promise>FINIT</promise>."}]}}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/tmp/focus-areas.md"}}]}}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"<promise>CLOSER</promise>"}]}}`,
+		`{"type":"result","subtype":"success","is_error":false,"result":"<promise>CLOSER</promise>","session_id":"abc123"}`,
+	}, "\n")
+
+	// BUG: ContainsPromise searches the ENTIRE stream-json buffer, including
+	// intermediate assistant events where the model quotes the exit promise.
+	// This should be false because the model's actual output is CLOSER, not FINIT.
+	assert.True(t, ContainsPromise(streamJSON, "FINIT"),
+		"CURRENT BEHAVIOR: ContainsPromise matches FINIT in intermediate reasoning text")
+
+	// The model's actual result only contains CLOSER
+	assert.True(t, ContainsPromise(streamJSON, "CLOSER"))
+
+	// What we WANT: only check the result event's text, not intermediate events
+	meta, err := ParseResponse([]byte(streamJSON))
+	assert.NoError(t, err)
+	assert.False(t, ContainsPromise(meta.ResultText, "FINIT"),
+		"DESIRED BEHAVIOR: checking only result text should NOT match FINIT")
+	assert.True(t, ContainsPromise(meta.ResultText, "CLOSER"),
+		"DESIRED BEHAVIOR: checking only result text SHOULD match CLOSER")
+}
+
 func TestClaudeExecutor_BuildEnv_CustomModels(t *testing.T) {
 	cfg := models.DefaultServerConfig()
 	cfg.LargeModel.Name = "my-custom:70b"

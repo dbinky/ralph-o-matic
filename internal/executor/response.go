@@ -11,6 +11,7 @@ import (
 // ResponseMetadata holds parsed data from Claude's JSON output
 type ResponseMetadata struct {
 	SessionID     string   `json:"session_id"`
+	ResultText    string   `json:"result_text"`
 	FilesModified int      `json:"files_modified"`
 	HasErrors     bool     `json:"has_errors"`
 	IsError       bool     `json:"is_error"`
@@ -50,8 +51,9 @@ func ParseResponse(jsonOutput []byte) (*ResponseMetadata, error) {
 	}
 
 	meta := &ResponseMetadata{
-		SessionID: cr.SessionID,
-		IsError:   cr.IsError,
+		SessionID:  cr.SessionID,
+		ResultText: cr.Result,
+		IsError:    cr.IsError,
 	}
 
 	// Parse RALPH_STATUS block if present

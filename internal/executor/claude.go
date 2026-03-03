@@ -235,16 +235,24 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, ba
 		Output:     output,
 		RawJSON:    outputBuf.Bytes(),
 		Iterations: ParseIterations(output),
-		Completed:  ContainsPromise(output, exitPromise),
 	}
 
-	// Parse JSON response for metadata
+	// Parse JSON response for metadata and check completion.
+	// Promise tags are checked against ResultText (the final result event's
+	// text), NOT the raw stream-json buffer, to avoid false positives from
+	// intermediate assistant events where the model quotes promise tags
+	// while reasoning about which one to output.
 	if meta, parseErr := ParseResponse(outputBuf.Bytes()); parseErr == nil {
 		result.Metadata = meta
 		result.SessionID = meta.SessionID
+		result.Completed = ContainsPromise(meta.ResultText, exitPromise)
 		if meta.Completed || meta.ExitSignal {
 			result.Completed = true
 		}
+	} else {
+		// Fallback: if we can't parse stream-json, search raw output.
+		// This handles non-JSON output modes or malformed responses.
+		result.Completed = ContainsPromise(output, exitPromise)
 	}
 
 	return result, nil

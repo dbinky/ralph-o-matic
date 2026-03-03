@@ -398,7 +398,13 @@ func detectProgress(result *executor.ExecutionResult, exitPromise string) bool {
 	if result.Metadata != nil && result.Metadata.FilesModified > 0 {
 		return true
 	}
-	if executor.HasNonExitPromise(result.Output, exitPromise) {
+	// Check for non-exit promise tags in the parsed result text to avoid
+	// false positives from intermediate reasoning in stream-json output.
+	checkText := result.Output
+	if result.Metadata != nil && result.Metadata.ResultText != "" {
+		checkText = result.Metadata.ResultText
+	}
+	if executor.HasNonExitPromise(checkText, exitPromise) {
 		return true
 	}
 	return false
