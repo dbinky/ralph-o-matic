@@ -139,8 +139,9 @@ type ServerConfig struct {
 	JobRetentionDays int    `json:"job_retention_days"`
 
 	// Backend
-	DefaultBackend Backend         `json:"default_backend"`
-	Anthropic      AnthropicConfig `json:"anthropic"`
+	DefaultBackend Backend           `json:"default_backend"`
+	Anthropic      AnthropicConfig   `json:"anthropic"`
+	OpenRouter     OpenRouterConfig  `json:"openrouter"`
 
 	// Retry behavior
 	MaxClaudeRetries  int `json:"max_claude_retries"`
@@ -161,6 +162,11 @@ func DefaultServerConfig() *ServerConfig {
 		Anthropic: AnthropicConfig{
 			LargeModel: "claude-opus-4-5-20251101",
 			SmallModel: "claude-haiku-4-5-20251001",
+		},
+		OpenRouter: OpenRouterConfig{
+			BaseURL:    "https://openrouter.ai/api/v1",
+			LargeModel: "moonshotai/kimi-k2.5",
+			SmallModel: "mistralai/devstral-2-2512",
 		},
 		DefaultMaxIterations: 50,
 		JobRetentionDays:     30,
@@ -193,6 +199,11 @@ func (c *ServerConfig) Validate() error {
 	if c.DefaultBackend == BackendAnthropic {
 		if err := c.Anthropic.Validate(); err != nil {
 			return fmt.Errorf("anthropic: %w", err)
+		}
+	}
+	if c.DefaultBackend == BackendOpenRouter {
+		if err := c.OpenRouter.Validate(); err != nil {
+			return fmt.Errorf("openrouter: %w", err)
 		}
 	}
 	return nil
@@ -262,6 +273,20 @@ func (c *ServerConfig) Merge(updates *ServerConfig) *ServerConfig {
 	}
 	if updates.Anthropic.SmallModel != "" {
 		result.Anthropic.SmallModel = updates.Anthropic.SmallModel
+	}
+
+	// OpenRouter: merge individual fields
+	if updates.OpenRouter.APIKey != "" {
+		result.OpenRouter.APIKey = updates.OpenRouter.APIKey
+	}
+	if updates.OpenRouter.BaseURL != "" {
+		result.OpenRouter.BaseURL = updates.OpenRouter.BaseURL
+	}
+	if updates.OpenRouter.LargeModel != "" {
+		result.OpenRouter.LargeModel = updates.OpenRouter.LargeModel
+	}
+	if updates.OpenRouter.SmallModel != "" {
+		result.OpenRouter.SmallModel = updates.OpenRouter.SmallModel
 	}
 
 	// Notify: merge individual fields
@@ -352,6 +377,24 @@ func (c *ServerConfig) MergeJSON(raw json.RawMessage) (*ServerConfig, error) {
 			}
 			if _, ok := anthropicMap["small_model"]; ok {
 				result.Anthropic.SmallModel = updates.Anthropic.SmallModel
+			}
+		}
+	}
+
+	if openrouterRaw, ok := rawMap["openrouter"]; ok {
+		var openrouterMap map[string]json.RawMessage
+		if err := json.Unmarshal(openrouterRaw, &openrouterMap); err == nil {
+			if _, ok := openrouterMap["api_key"]; ok {
+				result.OpenRouter.APIKey = updates.OpenRouter.APIKey
+			}
+			if _, ok := openrouterMap["base_url"]; ok {
+				result.OpenRouter.BaseURL = updates.OpenRouter.BaseURL
+			}
+			if _, ok := openrouterMap["large_model"]; ok {
+				result.OpenRouter.LargeModel = updates.OpenRouter.LargeModel
+			}
+			if _, ok := openrouterMap["small_model"]; ok {
+				result.OpenRouter.SmallModel = updates.OpenRouter.SmallModel
 			}
 		}
 	}

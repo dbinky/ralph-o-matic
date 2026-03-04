@@ -351,6 +351,61 @@ func TestOpenRouterConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestServerConfig_Validate_OpenRouter(t *testing.T) {
+	cfg := DefaultServerConfig()
+	cfg.DefaultBackend = BackendOpenRouter
+	cfg.OpenRouter.APIKey = "sk-or-v1-test"
+	cfg.OpenRouter.LargeModel = "moonshotai/kimi-k2.5"
+	cfg.OpenRouter.SmallModel = "mistralai/devstral-2-2512"
+
+	assert.NoError(t, cfg.Validate())
+}
+
+func TestServerConfig_Validate_OpenRouter_MissingKey(t *testing.T) {
+	cfg := DefaultServerConfig()
+	cfg.DefaultBackend = BackendOpenRouter
+	// API key left empty
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "openrouter")
+}
+
+func TestServerConfig_Merge_OpenRouter(t *testing.T) {
+	base := DefaultServerConfig()
+	updates := &ServerConfig{
+		OpenRouter: OpenRouterConfig{
+			APIKey:     "sk-or-v1-new",
+			LargeModel: "x-ai/grok-4-1-fast",
+		},
+	}
+
+	merged := base.Merge(updates)
+	assert.Equal(t, "sk-or-v1-new", merged.OpenRouter.APIKey)
+	assert.Equal(t, "x-ai/grok-4-1-fast", merged.OpenRouter.LargeModel)
+	// SmallModel should keep default
+	assert.Equal(t, "mistralai/devstral-2-2512", merged.OpenRouter.SmallModel)
+}
+
+func TestServerConfig_MergeJSON_OpenRouter(t *testing.T) {
+	base := DefaultServerConfig()
+	raw := json.RawMessage(`{"openrouter":{"api_key":"sk-or-v1-json","large_model":"test/model"}}`)
+
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, "sk-or-v1-json", merged.OpenRouter.APIKey)
+	assert.Equal(t, "test/model", merged.OpenRouter.LargeModel)
+	assert.Equal(t, "mistralai/devstral-2-2512", merged.OpenRouter.SmallModel)
+}
+
+func TestDefaultServerConfig_OpenRouter_Defaults(t *testing.T) {
+	cfg := DefaultServerConfig()
+	assert.Equal(t, "https://openrouter.ai/api/v1", cfg.OpenRouter.BaseURL)
+	assert.Equal(t, "moonshotai/kimi-k2.5", cfg.OpenRouter.LargeModel)
+	assert.Equal(t, "mistralai/devstral-2-2512", cfg.OpenRouter.SmallModel)
+	assert.Equal(t, "", cfg.OpenRouter.APIKey)
+}
+
 func TestServerConfig_JSON(t *testing.T) {
 	cfg := DefaultServerConfig()
 	cfg.LargeModel.Name = "test-model"
