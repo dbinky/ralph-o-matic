@@ -406,6 +406,29 @@ func TestDefaultServerConfig_OpenRouter_Defaults(t *testing.T) {
 	assert.Equal(t, "", cfg.OpenRouter.APIKey)
 }
 
+func TestNewServerConfigResponse_OpenRouter_RedactsKey(t *testing.T) {
+	cfg := DefaultServerConfig()
+	cfg.OpenRouter.APIKey = "sk-or-v1-secret-key"
+	cfg.OpenRouter.LargeModel = "moonshotai/kimi-k2.5"
+	cfg.OpenRouter.SmallModel = "mistralai/devstral-2-2512"
+	cfg.OpenRouter.BaseURL = "https://openrouter.ai/api/v1"
+
+	resp := NewServerConfigResponse(cfg)
+
+	assert.Equal(t, "moonshotai/kimi-k2.5", resp.OpenRouter.LargeModel)
+	assert.Equal(t, "mistralai/devstral-2-2512", resp.OpenRouter.SmallModel)
+	assert.Equal(t, "https://openrouter.ai/api/v1", resp.OpenRouter.BaseURL)
+	assert.True(t, resp.OpenRouter.APIKeySet)
+}
+
+func TestNewServerConfigResponse_OpenRouter_NoKey(t *testing.T) {
+	cfg := DefaultServerConfig()
+
+	resp := NewServerConfigResponse(cfg)
+
+	assert.False(t, resp.OpenRouter.APIKeySet)
+}
+
 func TestServerConfig_JSON(t *testing.T) {
 	cfg := DefaultServerConfig()
 	cfg.LargeModel.Name = "test-model"
