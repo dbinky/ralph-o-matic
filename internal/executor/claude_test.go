@@ -205,6 +205,23 @@ func TestClaudeExecutor_BuildEnv_Anthropic(t *testing.T) {
 	assert.False(t, hasBaseURL)
 }
 
+func TestClaudeExecutor_BuildEnv_OpenRouter(t *testing.T) {
+	cfg := models.DefaultServerConfig()
+	cfg.OpenRouter.APIKey = "sk-or-v1-test-key"
+	cfg.OpenRouter.BaseURL = "https://openrouter.ai/api/v1"
+	cfg.OpenRouter.LargeModel = "moonshotai/kimi-k2.5"
+	cfg.OpenRouter.SmallModel = "mistralai/devstral-2-2512"
+	exec := NewClaudeExecutor(cfg)
+
+	env := exec.BuildEnv(models.BackendOpenRouter, nil)
+
+	envMap := envToMap(env)
+	assert.Equal(t, "https://openrouter.ai/api/v1", envMap["ANTHROPIC_BASE_URL"])
+	assert.Equal(t, "sk-or-v1-test-key", envMap["ANTHROPIC_AUTH_TOKEN"])
+	assert.Equal(t, "moonshotai/kimi-k2.5", envMap["ANTHROPIC_MODEL"])
+	assert.Equal(t, "mistralai/devstral-2-2512", envMap["ANTHROPIC_DEFAULT_HAIKU_MODEL"])
+}
+
 func TestClaudeExecutor_BuildEnv_Ollama_Unchanged(t *testing.T) {
 	cfg := models.DefaultServerConfig()
 	exec := NewClaudeExecutor(cfg)
