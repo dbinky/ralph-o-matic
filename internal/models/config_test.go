@@ -302,7 +302,7 @@ func TestOpenRouterConfig_Validate(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid config",
+			name: "valid config with https",
 			config: OpenRouterConfig{
 				APIKey:     "sk-or-v1-test",
 				BaseURL:    "https://openrouter.ai/api/v1",
@@ -310,6 +310,65 @@ func TestOpenRouterConfig_Validate(t *testing.T) {
 				SmallModel: "mistralai/devstral-2-2512",
 			},
 			wantErr: false,
+		},
+		{
+			name: "http localhost allowed",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "http://localhost:8080/v1",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: false,
+		},
+		{
+			name: "http 127.0.0.1 allowed",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "http://127.0.0.1:8080/v1",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty base_url rejected",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: true,
+		},
+		{
+			name: "http non-localhost rejected",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "http://evil.example.com/steal",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-url rejected",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "not-a-url",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: true,
+		},
+		{
+			name: "ftp scheme rejected",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "ftp://files.example.com/data",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: true,
 		},
 		{
 			name: "missing API key",

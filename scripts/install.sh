@@ -423,6 +423,7 @@ validate_openrouter_key() {
     # Validate by calling the models endpoint
     local http_code
     http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+        --connect-timeout 10 --max-time 30 \
         -H "Authorization: Bearer $OPENROUTER_API_KEY" \
         "https://openrouter.ai/api/v1/models")
 
@@ -986,6 +987,19 @@ configure_notifications() {
     fi
 }
 
+apply_backend_config() {
+    local json_payload="$1"
+    local http_code
+    http_code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH http://localhost:9090/api/config \
+        -H "Content-Type: application/json" \
+        -d "$json_payload")
+    if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+        warn "Config update failed (HTTP $http_code) — check server logs"
+        return 1
+    fi
+    return 0
+}
+
 apply_model_config() {
     info "Applying model configuration to server..."
 
@@ -1009,16 +1023,9 @@ apply_model_config() {
             --arg small "$SMALL_MODEL" \
             '{default_backend:"anthropic",anthropic:{large_model:$large,small_model:$small}}')
 
-        local http_code
-        http_code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH http://localhost:9090/api/config \
-            -H "Content-Type: application/json" \
-            -d "$json_payload")
-        if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
-            warn "Config update failed (HTTP $http_code) — check server logs"
-            return
+        if apply_backend_config "$json_payload"; then
+            success "Anthropic config applied (large=$LARGE_MODEL, small=$SMALL_MODEL)"
         fi
-
-        success "Anthropic config applied (large=$LARGE_MODEL, small=$SMALL_MODEL)"
         return
     elif [[ "$BACKEND" == "openrouter" ]]; then
         local json_payload
@@ -1028,16 +1035,9 @@ apply_model_config() {
             --arg small "$SMALL_MODEL" \
             '{default_backend:"openrouter",openrouter:{api_key:$key,base_url:"https://openrouter.ai/api/v1",large_model:$large,small_model:$small}}')
 
-        local http_code
-        http_code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH http://localhost:9090/api/config \
-            -H "Content-Type: application/json" \
-            -d "$json_payload")
-        if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
-            warn "Config update failed (HTTP $http_code) — check server logs"
-            return
+        if apply_backend_config "$json_payload"; then
+            success "OpenRouter config applied (large=$LARGE_MODEL, small=$SMALL_MODEL)"
         fi
-
-        success "OpenRouter config applied (large=$LARGE_MODEL, small=$SMALL_MODEL)"
         return
     fi
 

@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 )
 
 // Backend identifies which AI provider to use
@@ -85,10 +86,34 @@ type OpenRouterConfig struct {
 	SmallModel string `json:"small_model"`
 }
 
-// Validate checks that API key and model names are set
+// Validate checks that API key, base URL, and model names are set.
+// BaseURL is validated for scheme and host to prevent SSRF -- it controls
+// where the API key is sent as a Bearer token.
 func (orc *OpenRouterConfig) Validate() error {
 	if orc.APIKey == "" {
 		return fmt.Errorf("api_key is required")
+	}
+	if orc.BaseURL == "" {
+		return fmt.Errorf("base_url is required")
+	}
+	u, err := url.Parse(orc.BaseURL)
+	if err != nil {
+		return fmt.Errorf("base_url is not a valid URL: %w", err)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("base_url must have a host")
+	}
+	switch u.Scheme {
+	case "https":
+		// always allowed
+	case "http":
+		// allow http only for localhost development
+		host := u.Hostname()
+		if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+			return fmt.Errorf("base_url must use https scheme for non-localhost hosts, got %q", u.Scheme)
+		}
+	default:
+		return fmt.Errorf("base_url must use https (or http for localhost), got scheme %q", u.Scheme)
 	}
 	if orc.LargeModel == "" {
 		return fmt.Errorf("large_model is required")
