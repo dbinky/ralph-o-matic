@@ -22,6 +22,7 @@ type Client struct {
 	tokenPath   string
 	cachedToken *CachedToken // loaded once per CLI invocation
 	tokenLoaded bool         // true after first load attempt
+	apiKey      string       // static API key for AuthModeAPIKey servers
 }
 
 // SetTokenPath sets the path to the cached auth token file.
@@ -29,6 +30,13 @@ type Client struct {
 // to each request if the token is valid and matches the server.
 func (c *Client) SetTokenPath(path string) {
 	c.tokenPath = path
+}
+
+// SetAPIKey sets a static API key to be sent as a Bearer token on every
+// request. Use this for servers configured with AuthModeAPIKey.
+// The key is typically read from the RALPH_API_KEY environment variable.
+func (c *Client) SetAPIKey(key string) {
+	c.apiKey = key
 }
 
 // loadCachedToken returns the cached token, loading it from disk on first call.
@@ -199,8 +207,10 @@ func (c *Client) StreamJobEvents(ctx context.Context, jobID int64) (<-chan struc
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	// Attach bearer token if available.
-	if c.tokenPath != "" {
+	// Attach auth header (mirrors logic in request()).
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	} else if c.tokenPath != "" {
 		token := c.loadCachedToken()
 		if token != nil && !token.IsExpired() && token.Server == c.baseURL {
 			req.Header.Set("Authorization", "Bearer "+token.AccessToken)
@@ -282,9 +292,11 @@ func (c *Client) request(method, path string, body, result interface{}) error {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	// Attach bearer token if available, valid, and matching server.
-	// The token is loaded from disk once per CLI invocation and cached.
-	if c.tokenPath != "" {
+	// Attach auth header: static API key takes precedence over cached Entra token.
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	} else if c.tokenPath != "" {
+		// Entra token: loaded from disk once per CLI invocation and cached.
 		token := c.loadCachedToken()
 		if token != nil {
 			if token.IsExpired() {
