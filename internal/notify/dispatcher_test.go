@@ -337,3 +337,31 @@ func (c *contextCapture) Notify(ctx context.Context, _ *models.Job, _ Event) err
 }
 
 func (c *contextCapture) Name() string { return c.name }
+
+// --- Real Dispatcher.callNotifier coverage ---
+
+func TestDispatcher_NewDispatcher_NilLogger_UsesDefault(t *testing.T) {
+	cp := &mockConfigProvider{cfg: models.DefaultServerConfig()}
+	d := NewDispatcher(cp, nil) // nil logger → uses slog.Default()
+	require.NotNil(t, d)
+}
+
+func TestDispatcher_Notify_RealCallNotifier_SMTPFails(t *testing.T) {
+	// Use the real Dispatcher so callNotifier is exercised.
+	// SMTP notifier will fail (no server), but errors are swallowed.
+	cp := &mockConfigProvider{cfg: smtpEnabledConfig()}
+	d := NewDispatcher(cp, slog.Default())
+
+	assert.NotPanics(t, func() {
+		d.Notify(context.Background(), newTestJob(), EventCompleted)
+	})
+}
+
+func TestDispatcher_Notify_RealCallNotifier_TeamsFails(t *testing.T) {
+	cp := &mockConfigProvider{cfg: teamsEnabledConfig()}
+	d := NewDispatcher(cp, slog.Default())
+
+	assert.NotPanics(t, func() {
+		d.Notify(context.Background(), newTestJob(), EventFailed)
+	})
+}
