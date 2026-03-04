@@ -58,6 +58,7 @@ type CreateJobRequest struct {
 	MaxIterations int               `json:"max_iterations"`
 	Priority      string            `json:"priority,omitempty"`
 	WorkingDir    string            `json:"working_dir,omitempty"`
+	ExitPromise   string            `json:"exit_promise,omitempty"`
 	Env           map[string]string `json:"env,omitempty"`
 	Backend       string            `json:"backend,omitempty"`
 }

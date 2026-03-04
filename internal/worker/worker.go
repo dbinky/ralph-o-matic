@@ -215,7 +215,7 @@ func (w *Worker) poll(ctx context.Context) {
 		}
 
 		// Feed circuit breaker
-		hasProgress := detectProgress(result)
+		hasProgress := detectProgress(result, job.EffectiveExitPromise())
 		errMsg := extractErrorSummary(result)
 		cbState := cb.RecordIteration(hasProgress, errMsg)
 
@@ -385,18 +385,22 @@ func (w *Worker) executeWithRetry(ctx context.Context, job *models.Job) (*execut
 
 // detectProgress checks whether an iteration made meaningful progress.
 // Progress is detected via RALPH_STATUS file counts, git commit fallback,
-// or <promise>CLOSER</promise> tags (explicit progress signals from the prompt).
-func detectProgress(result *executor.ExecutionResult) bool {
+// or any non-exit promise tag (explicit progress signals from the prompt,
+// e.g. CLOSER, REVIEW COMPLETE).
+func detectProgress(result *executor.ExecutionResult, exitPromise string) bool {
 	if result == nil {
 		return false
 	}
 	if result.Metadata != nil && result.Metadata.FilesModified > 0 {
 		return true
 	}
-	// CLOSER is an explicit progress signal — the loop made improvements
-	// but isn't done yet. This catches cases where Claude commits files
-	// itself (so ralph's own git commit finds nothing).
-	if executor.ContainsPromise(result.Output, "CLOSER") {
+	// Check for non-exit promise tags in the parsed result text to avoid
+	// false positives from intermediate reasoning in stream-json output.
+	checkText := result.Output
+	if result.Metadata != nil && result.Metadata.ResultText != "" {
+		checkText = result.Metadata.ResultText
+	}
+	if executor.HasNonExitPromise(checkText, exitPromise) {
 		return true
 	}
 	return false

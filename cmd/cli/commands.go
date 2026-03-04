@@ -15,7 +15,7 @@ import (
 )
 
 func submitCmd() *cobra.Command {
-	var prompt, priority, workingDir, backend string
+	var prompt, priority, workingDir, backend, exitPromise string
 	var maxIterations int
 	var openEnded bool
 
@@ -63,6 +63,9 @@ func submitCmd() *cobra.Command {
 				WorkingDir:    workingDir,
 			}
 
+			if exitPromise != "" {
+				req.ExitPromise = exitPromise
+			}
 			if backend != "" {
 				req.Backend = backend
 			}
@@ -91,6 +94,7 @@ func submitCmd() *cobra.Command {
 	cmd.Flags().IntVar(&maxIterations, "max-iterations", 0, "Max iterations")
 	cmd.Flags().StringVar(&workingDir, "working-dir", "", "Working directory")
 	cmd.Flags().BoolVar(&openEnded, "open-ended", false, "Use open-ended prompt")
+	cmd.Flags().StringVar(&exitPromise, "exit-promise", "", "Promise tag that signals completion (default: FINIT)")
 	cmd.Flags().StringVar(&backend, "backend", "", "Backend to use: ollama or anthropic (default: server setting)")
 
 	return cmd

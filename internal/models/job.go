@@ -2,8 +2,12 @@ package models
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 )
+
+// DefaultExitPromise is the default promise tag that signals job completion.
+const DefaultExitPromise = "FINIT"
 
 // Job represents a ralph loop job in the queue
 type Job struct {
@@ -21,6 +25,7 @@ type Job struct {
 	// Execution config
 	Prompt        string            `json:"prompt"`
 	MaxIterations int               `json:"max_iterations"`
+	ExitPromise   string            `json:"exit_promise,omitempty"`
 	Backend       Backend           `json:"backend,omitempty"`
 	Env           map[string]string `json:"env,omitempty"`
 
@@ -53,6 +58,7 @@ func NewJob(repoURL, branch, prompt string, maxIterations int) *Job {
 		ResultBranch:  GenerateResultBranch(branch),
 		Prompt:        prompt,
 		MaxIterations: maxIterations,
+		ExitPromise:   DefaultExitPromise,
 		Iteration:     0,
 		RetryCount:    0,
 		CreatedAt:     time.Now(),
@@ -126,6 +132,21 @@ func (j *Job) Progress() float64 {
 		return 0
 	}
 	return float64(j.Iteration) / float64(j.MaxIterations)
+}
+
+// EffectiveExitPromise returns the exit promise for this job, falling back
+// to DefaultExitPromise when the job-level value is empty.
+func (j *Job) EffectiveExitPromise() string {
+	if j.ExitPromise != "" {
+		return j.ExitPromise
+	}
+	return DefaultExitPromise
+}
+
+// IsDirectMode returns true when the job operates on a local repository
+// (absolute WorkingDir) rather than a server-managed clone.
+func (j *Job) IsDirectMode() bool {
+	return j.WorkingDir != "" && filepath.IsAbs(j.WorkingDir)
 }
 
 // Duration returns how long the job has been running

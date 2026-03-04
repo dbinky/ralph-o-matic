@@ -51,10 +51,98 @@ func TestClaudeExecutor_ParseOutput_Promise(t *testing.T) {
 	assert.False(t, ContainsPromise(output, "DONE"))
 }
 
+func TestContainsPromise_FINIT(t *testing.T) {
+	output := "All tests passing!\n<promise>FINIT</promise>\n"
+	assert.True(t, ContainsPromise(output, "FINIT"))
+	assert.False(t, ContainsPromise(output, "COMPLETE"))
+}
+
 func TestClaudeExecutor_ParseOutput_NoPromise(t *testing.T) {
 	output := "Still working on tests..."
 
 	assert.False(t, ContainsPromise(output, "COMPLETE"))
+}
+
+func TestHasNonExitPromise(t *testing.T) {
+	tests := []struct {
+		name        string
+		output      string
+		exitPromise string
+		want        bool
+	}{
+		{
+			name:        "CLOSER is progress when exit is FINIT",
+			output:      "Fixed.\n<promise>CLOSER</promise>\n",
+			exitPromise: "FINIT",
+			want:        true,
+		},
+		{
+			name:        "REVIEW COMPLETE is progress when exit is FINIT",
+			output:      "Done reviewing.\n<promise>REVIEW COMPLETE</promise>\n",
+			exitPromise: "FINIT",
+			want:        true,
+		},
+		{
+			name:        "exit promise only — no progress",
+			output:      "Done!\n<promise>FINIT</promise>\n",
+			exitPromise: "FINIT",
+			want:        false,
+		},
+		{
+			name:        "no promise tags at all",
+			output:      "Still working on things...",
+			exitPromise: "FINIT",
+			want:        false,
+		},
+		{
+			name:        "mixed: exit + non-exit",
+			output:      "<promise>CLOSER</promise>\n<promise>FINIT</promise>\n",
+			exitPromise: "FINIT",
+			want:        true,
+		},
+		{
+			name:        "COMPLETE is progress when exit is DONE",
+			output:      "<promise>COMPLETE</promise>",
+			exitPromise: "DONE",
+			want:        true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := HasNonExitPromise(tt.output, tt.exitPromise)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestContainsPromise_FalsePositive_StreamJSON(t *testing.T) {
+	// Simulates stream-json output where the model discusses FINIT in reasoning
+	// but only outputs CLOSER as the actual promise. The intermediate assistant
+	// event contains the exit promise text in the model's reasoning.
+	streamJSON := strings.Join([]string{
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Checking the focus areas... not all reviews are complete, so I'll output <promise>CLOSER</promise> instead of <promise>FINIT</promise>."}]}}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/tmp/focus-areas.md"}}]}}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"<promise>CLOSER</promise>"}]}}`,
+		`{"type":"result","subtype":"success","is_error":false,"result":"<promise>CLOSER</promise>","session_id":"abc123"}`,
+	}, "\n")
+
+	// BUG: ContainsPromise searches the ENTIRE stream-json buffer, including
+	// intermediate assistant events where the model quotes the exit promise.
+	// This should be false because the model's actual output is CLOSER, not FINIT.
+	assert.True(t, ContainsPromise(streamJSON, "FINIT"),
+		"CURRENT BEHAVIOR: ContainsPromise matches FINIT in intermediate reasoning text")
+
+	// The model's actual result only contains CLOSER
+	assert.True(t, ContainsPromise(streamJSON, "CLOSER"))
+
+	// What we WANT: only check the result event's text, not intermediate events
+	meta, err := ParseResponse([]byte(streamJSON))
+	assert.NoError(t, err)
+	assert.False(t, ContainsPromise(meta.ResultText, "FINIT"),
+		"DESIRED BEHAVIOR: checking only result text should NOT match FINIT")
+	assert.True(t, ContainsPromise(meta.ResultText, "CLOSER"),
+		"DESIRED BEHAVIOR: checking only result text SHOULD match CLOSER")
 }
 
 func TestClaudeExecutor_BuildEnv_CustomModels(t *testing.T) {

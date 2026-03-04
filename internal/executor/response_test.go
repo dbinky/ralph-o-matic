@@ -142,6 +142,20 @@ func TestParseResponse_MixedTextAndJSON(t *testing.T) {
 	assert.Equal(t, "abc-123", meta.SessionID)
 }
 
+// --- Stream JSON ---
+
+func TestParseResponse_StreamJSON(t *testing.T) {
+	// Multi-line stream-json output should find the result line
+	data := loadTestData(t, "stream_result.json")
+	meta, err := ParseResponse(data)
+
+	require.NoError(t, err)
+	assert.Equal(t, "111b2763-1e88-4c07-87b5-465c01876e9a", meta.SessionID)
+	assert.True(t, meta.Completed)
+	assert.True(t, meta.ExitSignal)
+	assert.Equal(t, 5, meta.FilesModified)
+}
+
 func TestParseResponse_RalphStatusExitSignalFalse(t *testing.T) {
 	// Explicit EXIT_SIGNAL: false should be respected
 	input := []byte(`{"type":"result","subtype":"success","is_error":false,"result":"Task done but more work remains.\n\n---RALPH_STATUS---\nSTATUS: COMPLETE\nEXIT_SIGNAL: false\nFILES_MODIFIED: 3\n---END_RALPH_STATUS---","session_id":"xyz-789"}`)

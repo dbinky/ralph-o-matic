@@ -1022,34 +1022,64 @@ func TestDetectProgress_FilesModified(t *testing.T) {
 	result := &executor.ExecutionResult{
 		Metadata: &executor.ResponseMetadata{FilesModified: 3},
 	}
-	assert.True(t, detectProgress(result))
+	assert.True(t, detectProgress(result, "FINIT"))
 }
 
 func TestDetectProgress_CloserPromise(t *testing.T) {
 	result := &executor.ExecutionResult{
 		Output:   "Fixed the bug.\n<promise>CLOSER</promise>\n",
-		Metadata: &executor.ResponseMetadata{FilesModified: 0},
+		Metadata: &executor.ResponseMetadata{FilesModified: 0, ResultText: "Fixed the bug.\n<promise>CLOSER</promise>\n"},
 	}
-	assert.True(t, detectProgress(result), "CLOSER promise should count as progress")
+	assert.True(t, detectProgress(result, "FINIT"), "CLOSER promise should count as progress")
 }
 
 func TestDetectProgress_NoSignal(t *testing.T) {
 	result := &executor.ExecutionResult{
 		Output:   "I couldn't find anything to fix.",
-		Metadata: &executor.ResponseMetadata{FilesModified: 0},
+		Metadata: &executor.ResponseMetadata{FilesModified: 0, ResultText: "I couldn't find anything to fix."},
 	}
-	assert.False(t, detectProgress(result))
+	assert.False(t, detectProgress(result, "FINIT"))
 }
 
 func TestDetectProgress_NilResult(t *testing.T) {
-	assert.False(t, detectProgress(nil))
+	assert.False(t, detectProgress(nil, "FINIT"))
 }
 
 func TestDetectProgress_NilMetadata_WithCloser(t *testing.T) {
 	result := &executor.ExecutionResult{
 		Output: "Done.\n<promise>CLOSER</promise>",
 	}
-	assert.True(t, detectProgress(result), "CLOSER without metadata should still count")
+	assert.True(t, detectProgress(result, "FINIT"), "CLOSER without metadata should still count")
+}
+
+func TestDetectProgress_ExitPromiseNotProgress(t *testing.T) {
+	result := &executor.ExecutionResult{
+		Output:   "All done!\n<promise>FINIT</promise>\n",
+		Metadata: &executor.ResponseMetadata{FilesModified: 0, ResultText: "All done!\n<promise>FINIT</promise>\n"},
+	}
+	assert.False(t, detectProgress(result, "FINIT"), "exit promise should not count as progress")
+}
+
+func TestDetectProgress_NonExitPromiseIsProgress(t *testing.T) {
+	result := &executor.ExecutionResult{
+		Output:   "Review done.\n<promise>REVIEW COMPLETE</promise>\n",
+		Metadata: &executor.ResponseMetadata{FilesModified: 0, ResultText: "Review done.\n<promise>REVIEW COMPLETE</promise>\n"},
+	}
+	assert.True(t, detectProgress(result, "FINIT"), "non-exit promise should count as progress")
+}
+
+func TestDetectProgress_StreamJSON_FalsePositive(t *testing.T) {
+	// Simulates stream-json buffer where model discusses FINIT in reasoning
+	// but the actual result text only contains CLOSER.
+	streamOutput := `{"type":"assistant","message":{"content":[{"type":"text","text":"I'll output <promise>CLOSER</promise> not <promise>FINIT</promise>"}]}}
+{"type":"result","result":"<promise>CLOSER</promise>","session_id":"abc"}` //nolint:lll
+
+	result := &executor.ExecutionResult{
+		Output:   streamOutput,
+		Metadata: &executor.ResponseMetadata{FilesModified: 0, ResultText: "<promise>CLOSER</promise>"},
+	}
+	assert.True(t, detectProgress(result, "FINIT"),
+		"CLOSER in result text should count as progress even though FINIT appears in raw output")
 }
 
 func TestWorker_StartsProgressReporter(t *testing.T) {

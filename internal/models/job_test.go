@@ -228,6 +228,44 @@ func TestNewJob_OwnerFieldsEmpty(t *testing.T) {
 	assert.Empty(t, job.OwnerName)
 }
 
+func TestJob_EffectiveExitPromise(t *testing.T) {
+	t.Run("returns job value when set", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "test", 10)
+		job.ExitPromise = "DONE"
+		assert.Equal(t, "DONE", job.EffectiveExitPromise())
+	})
+
+	t.Run("returns default when empty", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "test", 10)
+		job.ExitPromise = ""
+		assert.Equal(t, DefaultExitPromise, job.EffectiveExitPromise())
+	})
+
+	t.Run("returns default from NewJob", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "test", 10)
+		assert.Equal(t, DefaultExitPromise, job.EffectiveExitPromise())
+	})
+}
+
+func TestJob_IsDirectMode(t *testing.T) {
+	t.Run("absolute path is direct mode", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "test", 10)
+		job.WorkingDir = "/home/user/repo"
+		assert.True(t, job.IsDirectMode())
+	})
+
+	t.Run("relative path is not direct mode", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "test", 10)
+		job.WorkingDir = "packages/auth"
+		assert.False(t, job.IsDirectMode())
+	})
+
+	t.Run("empty working dir is not direct mode", func(t *testing.T) {
+		job := NewJob("https://github.com/foo/bar", "main", "test", 10)
+		assert.False(t, job.IsDirectMode())
+	})
+}
+
 func TestJob_Duration(t *testing.T) {
 	job := NewJob("git@github.com:user/repo.git", "main", "test", 10)
 

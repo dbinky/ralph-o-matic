@@ -25,7 +25,7 @@ func newTestDashboard(t *testing.T) (*Dashboard, *queue.Queue) {
 
 	// Use the actual web/templates directory
 	templatesDir := os.DirFS("../../web/templates")
-	d := New(database, q, templatesDir)
+	d := New(database, q, templatesDir, "test")
 	return d, q
 }
 

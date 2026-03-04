@@ -15,6 +15,7 @@ Parse the following from the user's command:
 - `--max-iterations N`: Max ralph loop iterations (default: 50)
 - `--priority LEVEL`: Job priority - high, normal, low (default: normal)
 - `--open-ended`: Use polish prompt without exit criteria
+- `--local`: Use local repo directory (skip clone). Auto-detected when server is localhost.
 
 ## Workflow Overview
 
@@ -185,6 +186,25 @@ fi
 echo "✓ Branch not in queue"
 ```
 
+### Local Server Detection
+
+After pre-flight checks pass, determine whether the ralph server is local.
+
+**How to detect:** Read the configured server URL from `ralph-o-matic config`. If it contains `localhost` or `127.0.0.1`, the server is local.
+
+**If `--local` was passed:** Use local mode without asking.
+
+**If server is local and `--local` was NOT passed:** Ask the user with AskUserQuestion:
+
+| Option | Description |
+|--------|-------------|
+| Use local repo (Recommended) | Ralph works directly in your checkout — no clone, faster startup, changes pushed each iteration. Don't edit these files while ralph is running. |
+| Clone as usual | Ralph clones into its own workspace. Slower but your working tree stays untouched. |
+
+**If the user chooses local repo:** Get the repo root with `git rev-parse --show-toplevel`. Store this as `LOCAL_DIR` for use in the submit step.
+
+**If server is NOT local:** Skip this — remote servers can't access local paths.
+
 ### Generate Ralph Prompt
 
 Based on the `--open-ended` flag, generate the appropriate prompt:
@@ -208,7 +228,7 @@ Each iteration:
 The code may have been drafted by another agent. Do not trust it. Verify against the spec.
 
 When all spec requirements are satisfied and tests pass, output:
-<promise>COMPLETE</promise>
+<promise>FINIT</promise>
 ```
 
 **Open-ended prompt (unbounded):**
@@ -242,34 +262,35 @@ git commit -m "chore: add ralph loop prompt"
 git push
 
 # Submit job
+# If LOCAL_DIR is set, pass --working-dir to use the local repo directly
 ralph-o-matic submit \
     --priority {PRIORITY} \
-    --max-iterations {MAX_ITERATIONS}
+    --max-iterations {MAX_ITERATIONS} \
+    ${LOCAL_DIR:+--working-dir "$LOCAL_DIR"}
 ```
 
 ### Report Success
 
 ```
-╔══════════════════════════════════════════════════════════════════╗
-║                    Shipped to Ralph-o-matic!                     ║
-╠══════════════════════════════════════════════════════════════════╣
-║                                                                  ║
-║  Job ID:        #52                                              ║
-║  Branch:        feature/auth-refactor                            ║
-║  Priority:      high                                             ║
-║  Max Iterations: 50                                              ║
-║  Queue Position: 1st                                             ║
-║                                                                  ║
-║  Dashboard:     http://192.168.1.50:9090/jobs/52                ║
-║                                                                  ║
-║  The ralph loop will iterate on your code until:                 ║
-║  - All tests pass AND spec is satisfied, OR                      ║
-║  - Max iterations reached                                        ║
-║                                                                  ║
-║  Monitor progress:                                               ║
-║    ralph-o-matic logs 52 --follow                               ║
-║                                                                  ║
-╚══════════════════════════════════════════════════════════════════╝
+Shipped to Ralph-o-matic!
+
+  Job ID:         #{JOB_ID}
+  Branch:         {BRANCH}
+  Priority:       {PRIORITY}
+  Max Iterations: {MAX_ITERATIONS}
+  Mode:           {LOCAL_DIR ? "local repo (direct)" : "cloned workspace"}
+
+  Dashboard:      {SERVER_URL}/jobs/{JOB_ID}
+
+  Monitor: ralph-o-matic logs {JOB_ID} --follow
+```
+
+If local mode was used, add:
+
+```
+  Note: Ralph is working directly in {LOCAL_DIR}.
+        Changes are pushed to the remote after each iteration.
+        Avoid editing files in this repo until the job completes.
 ```
 
 ---
@@ -281,7 +302,7 @@ ralph-o-matic submit \
 If ralph-o-matic server is unreachable during pre-flight:
 
 ```
-✗ Cannot reach ralph-o-matic server
+Cannot reach ralph-o-matic server
 
 The implementation is complete and ready for ralph. Options:
 
@@ -301,7 +322,7 @@ The implementation is complete and ready for ralph. Options:
 If tests are failing before submission:
 
 ```
-✗ Tests failing - ralph needs passing tests as baseline
+Tests failing - ralph needs passing tests as baseline
 
 {N} tests failing. Fix these before submitting to ralph:
 
@@ -315,7 +336,7 @@ Ralph uses test results to measure progress. Submit when tests pass.
 ### No Tests Found
 
 ```
-✗ No tests found
+No tests found
 
 Ralph needs tests to verify completion. The implementation includes code but no tests.
 

@@ -26,6 +26,7 @@ type Server struct {
 	queue        *queue.Queue
 	dashboard    *dashboard.Dashboard
 	addr         string
+	version      string
 	router       chi.Router
 	server       *http.Server
 	authProvider *auth.EntraProvider
@@ -41,6 +42,7 @@ type ServerOptions struct {
 	Sessions     *auth.SessionStore
 	Secure       bool
 	Broadcaster  *broadcast.Broadcaster
+	Version      string
 }
 
 // NewServer creates a new API server. Pass nil for opts to disable authentication.
@@ -50,11 +52,17 @@ func NewServer(database *db.DB, q *queue.Queue, addr string, opts *ServerOptions
 		log.Fatalf("failed to load templates: %v", err)
 	}
 
+	var ver string
+	if opts != nil {
+		ver = opts.Version
+	}
+
 	s := &Server{
 		db:        database,
 		queue:     q,
-		dashboard: dashboard.New(database, q, templatesFS),
+		dashboard: dashboard.New(database, q, templatesFS, ver),
 		addr:      addr,
+		version:   ver,
 	}
 
 	if opts != nil {
@@ -172,7 +180,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	resp := map[string]string{"status": "ok"}
+	if s.version != "" {
+		resp["version"] = s.version
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // Response helpers
