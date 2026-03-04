@@ -74,9 +74,17 @@ func (e *ClaudeExecutor) BuildEnv(backend models.Backend, extra map[string]strin
 
 	switch backend {
 	case models.BackendAnthropic:
+		// No ANTHROPIC_BASE_URL: Claude Code's built-in auth handles routing to the Anthropic API directly.
 		backendEnv = map[string]string{
 			"ANTHROPIC_MODEL":               e.config.Anthropic.LargeModel,
 			"ANTHROPIC_DEFAULT_HAIKU_MODEL": e.config.Anthropic.SmallModel,
+		}
+	case models.BackendOpenRouter:
+		backendEnv = map[string]string{
+			"ANTHROPIC_BASE_URL":            e.config.OpenRouter.BaseURL,
+			"ANTHROPIC_AUTH_TOKEN":           e.config.OpenRouter.APIKey,
+			"ANTHROPIC_MODEL":               e.config.OpenRouter.LargeModel,
+			"ANTHROPIC_DEFAULT_HAIKU_MODEL": e.config.OpenRouter.SmallModel,
 		}
 	default: // ollama
 		backendEnv = map[string]string{

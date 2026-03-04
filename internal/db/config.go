@@ -65,6 +65,10 @@ func (r *ConfigRepo) Save(cfg *models.ServerConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal anthropic: %w", err)
 	}
+	openrouterJSON, err := json.Marshal(cfg.OpenRouter)
+	if err != nil {
+		return fmt.Errorf("marshal openrouter: %w", err)
+	}
 
 	values := map[string]string{
 		"large_model":              string(largeModelJSON),
@@ -72,6 +76,7 @@ func (r *ConfigRepo) Save(cfg *models.ServerConfig) error {
 		"ollama":                   string(ollamaJSON),
 		"default_backend":          string(cfg.DefaultBackend),
 		"anthropic":                string(anthropicJSON),
+		"openrouter":               string(openrouterJSON),
 		"default_max_iterations":   strconv.Itoa(cfg.DefaultMaxIterations),
 		"workspace_dir":            cfg.WorkspaceDir,
 		"job_retention_days":       strconv.Itoa(cfg.JobRetentionDays),
@@ -200,6 +205,12 @@ func applyConfigValue(cfg *models.ServerConfig, key, value string) error {
 			return err
 		}
 		cfg.Anthropic = ac
+	case "openrouter":
+		var orc models.OpenRouterConfig
+		if err := json.Unmarshal([]byte(value), &orc); err != nil {
+			return err
+		}
+		cfg.OpenRouter = orc
 	case "notify.smtp.enabled":
 		cfg.Notify.SMTP.Enabled = value == "true"
 	case "notify.smtp.host":

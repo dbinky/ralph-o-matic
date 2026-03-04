@@ -3,20 +3,22 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 )
 
 // Backend identifies which AI provider to use
 type Backend string
 
 const (
-	BackendOllama    Backend = "ollama"
-	BackendAnthropic Backend = "anthropic"
+	BackendOllama      Backend = "ollama"
+	BackendAnthropic   Backend = "anthropic"
+	BackendOpenRouter  Backend = "openrouter"
 )
 
 // Valid returns true for known backends and empty (which means "use default")
 func (b Backend) Valid() bool {
 	switch b {
-	case "", BackendOllama, BackendAnthropic:
+	case "", BackendOllama, BackendAnthropic, BackendOpenRouter:
 		return true
 	default:
 		return false
@@ -76,6 +78,52 @@ func (ac *AnthropicConfig) Validate() error {
 	return nil
 }
 
+// OpenRouterConfig holds settings for the OpenRouter API backend.
+type OpenRouterConfig struct {
+	APIKey     string `json:"api_key"`
+	BaseURL    string `json:"base_url"`
+	LargeModel string `json:"large_model"`
+	SmallModel string `json:"small_model"`
+}
+
+// Validate checks that API key, base URL, and model names are set.
+// BaseURL is validated for scheme and host to prevent SSRF -- it controls
+// where the API key is sent as a Bearer token.
+func (orc *OpenRouterConfig) Validate() error {
+	if orc.APIKey == "" {
+		return fmt.Errorf("api_key is required")
+	}
+	if orc.BaseURL == "" {
+		return fmt.Errorf("base_url is required")
+	}
+	u, err := url.Parse(orc.BaseURL)
+	if err != nil {
+		return fmt.Errorf("base_url is not a valid URL: %w", err)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("base_url must have a host")
+	}
+	switch u.Scheme {
+	case "https":
+		// always allowed
+	case "http":
+		// allow http only for localhost development
+		host := u.Hostname()
+		if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+			return fmt.Errorf("base_url must use https scheme for non-localhost hosts, got %q", u.Scheme)
+		}
+	default:
+		return fmt.Errorf("base_url must use https (or http for localhost), got scheme %q", u.Scheme)
+	}
+	if orc.LargeModel == "" {
+		return fmt.Errorf("large_model is required")
+	}
+	if orc.SmallModel == "" {
+		return fmt.Errorf("small_model is required")
+	}
+	return nil
+}
+
 // SMTPConfig holds SMTP notification settings
 type SMTPConfig struct {
 	Enabled    bool     `json:"enabled"`
@@ -116,8 +164,9 @@ type ServerConfig struct {
 	JobRetentionDays int    `json:"job_retention_days"`
 
 	// Backend
-	DefaultBackend Backend         `json:"default_backend"`
-	Anthropic      AnthropicConfig `json:"anthropic"`
+	DefaultBackend Backend           `json:"default_backend"`
+	Anthropic      AnthropicConfig   `json:"anthropic"`
+	OpenRouter     OpenRouterConfig  `json:"openrouter"`
 
 	// Retry behavior
 	MaxClaudeRetries  int `json:"max_claude_retries"`
@@ -138,6 +187,11 @@ func DefaultServerConfig() *ServerConfig {
 		Anthropic: AnthropicConfig{
 			LargeModel: "claude-opus-4-5-20251101",
 			SmallModel: "claude-haiku-4-5-20251001",
+		},
+		OpenRouter: OpenRouterConfig{
+			BaseURL:    "https://openrouter.ai/api/v1",
+			LargeModel: "moonshotai/kimi-k2.5",
+			SmallModel: "mistralai/devstral-2-2512",
 		},
 		DefaultMaxIterations: 50,
 		JobRetentionDays:     30,
@@ -170,6 +224,11 @@ func (c *ServerConfig) Validate() error {
 	if c.DefaultBackend == BackendAnthropic {
 		if err := c.Anthropic.Validate(); err != nil {
 			return fmt.Errorf("anthropic: %w", err)
+		}
+	}
+	if c.DefaultBackend == BackendOpenRouter {
+		if err := c.OpenRouter.Validate(); err != nil {
+			return fmt.Errorf("openrouter: %w", err)
 		}
 	}
 	return nil
@@ -239,6 +298,20 @@ func (c *ServerConfig) Merge(updates *ServerConfig) *ServerConfig {
 	}
 	if updates.Anthropic.SmallModel != "" {
 		result.Anthropic.SmallModel = updates.Anthropic.SmallModel
+	}
+
+	// OpenRouter: merge individual fields
+	if updates.OpenRouter.APIKey != "" {
+		result.OpenRouter.APIKey = updates.OpenRouter.APIKey
+	}
+	if updates.OpenRouter.BaseURL != "" {
+		result.OpenRouter.BaseURL = updates.OpenRouter.BaseURL
+	}
+	if updates.OpenRouter.LargeModel != "" {
+		result.OpenRouter.LargeModel = updates.OpenRouter.LargeModel
+	}
+	if updates.OpenRouter.SmallModel != "" {
+		result.OpenRouter.SmallModel = updates.OpenRouter.SmallModel
 	}
 
 	// Notify: merge individual fields
@@ -329,6 +402,24 @@ func (c *ServerConfig) MergeJSON(raw json.RawMessage) (*ServerConfig, error) {
 			}
 			if _, ok := anthropicMap["small_model"]; ok {
 				result.Anthropic.SmallModel = updates.Anthropic.SmallModel
+			}
+		}
+	}
+
+	if openrouterRaw, ok := rawMap["openrouter"]; ok {
+		var openrouterMap map[string]json.RawMessage
+		if err := json.Unmarshal(openrouterRaw, &openrouterMap); err == nil {
+			if _, ok := openrouterMap["api_key"]; ok {
+				result.OpenRouter.APIKey = updates.OpenRouter.APIKey
+			}
+			if _, ok := openrouterMap["base_url"]; ok {
+				result.OpenRouter.BaseURL = updates.OpenRouter.BaseURL
+			}
+			if _, ok := openrouterMap["large_model"]; ok {
+				result.OpenRouter.LargeModel = updates.OpenRouter.LargeModel
+			}
+			if _, ok := openrouterMap["small_model"]; ok {
+				result.OpenRouter.SmallModel = updates.OpenRouter.SmallModel
 			}
 		}
 	}

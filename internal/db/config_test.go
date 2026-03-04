@@ -232,6 +232,30 @@ func TestConfigRepo_SaveAnthropic(t *testing.T) {
 	assert.Equal(t, "claude-haiku-4-5-20251001", fetched.Anthropic.SmallModel)
 }
 
+func TestConfigRepo_SaveOpenRouter(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewConfigRepo(db)
+
+	cfg := models.DefaultServerConfig()
+	cfg.DefaultBackend = models.BackendOpenRouter
+	cfg.OpenRouter.APIKey = "sk-or-v1-test-key"
+	cfg.OpenRouter.BaseURL = "https://openrouter.ai/api/v1"
+	cfg.OpenRouter.LargeModel = "moonshotai/kimi-k2.5"
+	cfg.OpenRouter.SmallModel = "mistralai/devstral-2-2512"
+
+	err := repo.Save(cfg)
+	require.NoError(t, err)
+
+	fetched, err := repo.Get()
+	require.NoError(t, err)
+
+	assert.Equal(t, models.BackendOpenRouter, fetched.DefaultBackend)
+	assert.Equal(t, "sk-or-v1-test-key", fetched.OpenRouter.APIKey)
+	assert.Equal(t, "https://openrouter.ai/api/v1", fetched.OpenRouter.BaseURL)
+	assert.Equal(t, "moonshotai/kimi-k2.5", fetched.OpenRouter.LargeModel)
+	assert.Equal(t, "mistralai/devstral-2-2512", fetched.OpenRouter.SmallModel)
+}
+
 func TestConfigRepo_DefaultBackend_Defaults(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewConfigRepo(db)

@@ -6,6 +6,15 @@ type AnthropicConfigResponse struct {
 	SmallModel string `json:"small_model"`
 }
 
+// OpenRouterConfigResponse is the OpenRouter config returned by the API.
+// The API key is replaced with a boolean indicating whether one is set.
+type OpenRouterConfigResponse struct {
+	BaseURL    string `json:"base_url"`
+	LargeModel string `json:"large_model"`
+	SmallModel string `json:"small_model"`
+	APIKeySet  bool   `json:"api_key_set"`
+}
+
 // SMTPConfigResponse is the redacted SMTP config returned by the API.
 // The password is replaced with a boolean indicating whether one is set.
 type SMTPConfigResponse struct {
@@ -41,8 +50,9 @@ type ServerConfigResponse struct {
 	DefaultMaxIterations int                     `json:"default_max_iterations"`
 	WorkspaceDir         string                  `json:"workspace_dir,omitempty"`
 	JobRetentionDays     int                     `json:"job_retention_days"`
-	DefaultBackend       Backend                 `json:"default_backend"`
-	Anthropic            AnthropicConfigResponse `json:"anthropic"`
+	DefaultBackend       Backend                    `json:"default_backend"`
+	Anthropic            AnthropicConfigResponse    `json:"anthropic"`
+	OpenRouter           OpenRouterConfigResponse   `json:"openrouter"`
 	MaxClaudeRetries     int                     `json:"max_claude_retries"`
 	MaxGitRetries        int                     `json:"max_git_retries"`
 	GitRetryBackoffMs    int                     `json:"git_retry_backoff_ms"`
@@ -62,6 +72,12 @@ func NewServerConfigResponse(cfg *ServerConfig) *ServerConfigResponse {
 		Anthropic: AnthropicConfigResponse{
 			LargeModel: cfg.Anthropic.LargeModel,
 			SmallModel: cfg.Anthropic.SmallModel,
+		},
+		OpenRouter: OpenRouterConfigResponse{
+			BaseURL:    cfg.OpenRouter.BaseURL,
+			LargeModel: cfg.OpenRouter.LargeModel,
+			SmallModel: cfg.OpenRouter.SmallModel,
+			APIKeySet:  cfg.OpenRouter.APIKey != "",
 		},
 		MaxClaudeRetries:  cfg.MaxClaudeRetries,
 		MaxGitRetries:     cfg.MaxGitRetries,
