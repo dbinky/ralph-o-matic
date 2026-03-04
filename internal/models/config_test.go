@@ -508,3 +508,86 @@ func TestServerConfig_JSON(t *testing.T) {
 	assert.True(t, decoded.Ollama.IsRemote)
 	assert.Equal(t, cfg.DefaultMaxIterations, decoded.DefaultMaxIterations)
 }
+
+// --- MergeJSON additional coverage ---
+
+func TestServerConfig_MergeJSON_InvalidJSON(t *testing.T) {
+	base := DefaultServerConfig()
+	_, err := base.MergeJSON(json.RawMessage(`{invalid`))
+	assert.Error(t, err)
+}
+
+func TestServerConfig_MergeJSON_OllamaIsRemoteExplicitFalse(t *testing.T) {
+	base := DefaultServerConfig()
+	base.Ollama.IsRemote = true
+	raw := json.RawMessage(`{"ollama":{"is_remote":false}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.False(t, merged.Ollama.IsRemote)
+}
+
+func TestServerConfig_MergeJSON_LargeModelMemoryGBExplicitZero(t *testing.T) {
+	base := DefaultServerConfig()
+	base.LargeModel.MemoryGB = 8.0
+	raw := json.RawMessage(`{"large_model":{"memory_gb":0}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, merged.LargeModel.MemoryGB)
+}
+
+func TestServerConfig_MergeJSON_SmallModelMemoryGBExplicitZero(t *testing.T) {
+	base := DefaultServerConfig()
+	base.SmallModel.MemoryGB = 4.0
+	raw := json.RawMessage(`{"small_model":{"memory_gb":0}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, merged.SmallModel.MemoryGB)
+}
+
+func TestServerConfig_MergeJSON_DefaultBackendExplicit(t *testing.T) {
+	base := DefaultServerConfig()
+	raw := json.RawMessage(`{"default_backend":"anthropic"}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, BackendAnthropic, merged.DefaultBackend)
+}
+
+func TestServerConfig_MergeJSON_AnthropicModels(t *testing.T) {
+	base := DefaultServerConfig()
+	raw := json.RawMessage(`{"anthropic":{"large_model":"claude-opus-4-6","small_model":"claude-haiku-4-5"}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, "claude-opus-4-6", merged.Anthropic.LargeModel)
+	assert.Equal(t, "claude-haiku-4-5", merged.Anthropic.SmallModel)
+}
+
+func TestServerConfig_MergeJSON_NotifySMTPEnabledExplicitFalse(t *testing.T) {
+	base := DefaultServerConfig()
+	base.Notify.SMTP.Enabled = true
+	base.Notify.SMTP.Port = 587
+	raw := json.RawMessage(`{"notify":{"smtp":{"enabled":false,"port":0}}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.False(t, merged.Notify.SMTP.Enabled)
+	assert.Equal(t, 0, merged.Notify.SMTP.Port)
+}
+
+func TestServerConfig_MergeJSON_NotifyTeamsEnabledExplicitFalse(t *testing.T) {
+	base := DefaultServerConfig()
+	base.Notify.Teams.Enabled = true
+	raw := json.RawMessage(`{"notify":{"teams":{"enabled":false}}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.False(t, merged.Notify.Teams.Enabled)
+}
+
+func TestServerConfig_MergeJSON_OpenRouterAllFields(t *testing.T) {
+	base := DefaultServerConfig()
+	raw := json.RawMessage(`{"openrouter":{"api_key":"","base_url":"https://custom.ai","large_model":"x/big","small_model":"x/small"}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, "", merged.OpenRouter.APIKey)
+	assert.Equal(t, "https://custom.ai", merged.OpenRouter.BaseURL)
+	assert.Equal(t, "x/big", merged.OpenRouter.LargeModel)
+	assert.Equal(t, "x/small", merged.OpenRouter.SmallModel)
+}
