@@ -9,14 +9,15 @@ import (
 type Backend string
 
 const (
-	BackendOllama    Backend = "ollama"
-	BackendAnthropic Backend = "anthropic"
+	BackendOllama      Backend = "ollama"
+	BackendAnthropic   Backend = "anthropic"
+	BackendOpenRouter  Backend = "openrouter"
 )
 
 // Valid returns true for known backends and empty (which means "use default")
 func (b Backend) Valid() bool {
 	switch b {
-	case "", BackendOllama, BackendAnthropic:
+	case "", BackendOllama, BackendAnthropic, BackendOpenRouter:
 		return true
 	default:
 		return false
@@ -71,6 +72,28 @@ func (ac *AnthropicConfig) Validate() error {
 		return fmt.Errorf("large_model is required")
 	}
 	if ac.SmallModel == "" {
+		return fmt.Errorf("small_model is required")
+	}
+	return nil
+}
+
+// OpenRouterConfig holds settings for the OpenRouter API backend.
+type OpenRouterConfig struct {
+	APIKey     string `json:"api_key"`
+	BaseURL    string `json:"base_url"`
+	LargeModel string `json:"large_model"`
+	SmallModel string `json:"small_model"`
+}
+
+// Validate checks that API key and model names are set
+func (orc *OpenRouterConfig) Validate() error {
+	if orc.APIKey == "" {
+		return fmt.Errorf("api_key is required")
+	}
+	if orc.LargeModel == "" {
+		return fmt.Errorf("large_model is required")
+	}
+	if orc.SmallModel == "" {
 		return fmt.Errorf("small_model is required")
 	}
 	return nil

@@ -291,6 +291,66 @@ func TestServerConfig_Merge_NoConcurrentJobs(t *testing.T) {
 	assert.Equal(t, 100, merged.DefaultMaxIterations)
 }
 
+func TestBackend_Valid_OpenRouter(t *testing.T) {
+	assert.True(t, BackendOpenRouter.Valid())
+}
+
+func TestOpenRouterConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  OpenRouterConfig
+		wantErr bool
+	}{
+		{
+			name: "valid config",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "https://openrouter.ai/api/v1",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing API key",
+			config: OpenRouterConfig{
+				BaseURL:    "https://openrouter.ai/api/v1",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing large model",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "https://openrouter.ai/api/v1",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing small model",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "https://openrouter.ai/api/v1",
+				LargeModel: "moonshotai/kimi-k2.5",
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestServerConfig_JSON(t *testing.T) {
 	cfg := DefaultServerConfig()
 	cfg.LargeModel.Name = "test-model"
