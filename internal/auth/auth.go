@@ -18,6 +18,10 @@ const (
 	AuthModeNone AuthMode = "none"
 	// AuthModeEntra enables EntraID (Azure AD) SSO authentication.
 	AuthModeEntra AuthMode = "entra"
+	// AuthModeAPIKey enables static API key authentication via Bearer token.
+	// Use this when Entra SSO is not available but you need to protect endpoints
+	// from unauthenticated access (e.g. when using the Anthropic backend).
+	AuthModeAPIKey AuthMode = "apikey"
 )
 
 // Normalize returns the canonical form of the auth mode.
@@ -33,7 +37,7 @@ func (m AuthMode) Normalize() AuthMode {
 // Empty string is valid (normalizes to none).
 func (m AuthMode) Valid() bool {
 	switch m.Normalize() {
-	case AuthModeNone, AuthModeEntra:
+	case AuthModeNone, AuthModeEntra, AuthModeAPIKey:
 		return true
 	default:
 		return false
@@ -49,8 +53,9 @@ type EntraConfig struct {
 
 // Config holds the complete auth configuration.
 type Config struct {
-	Mode  AuthMode    `json:"mode"`
-	Entra EntraConfig `json:"entra"`
+	Mode   AuthMode    `json:"mode"`
+	Entra  EntraConfig `json:"entra"`
+	APIKey string      `json:"api_key"`
 }
 
 // Validate checks the auth configuration for completeness.
@@ -75,6 +80,10 @@ func (c *Config) Validate() error {
 		if len(missing) > 0 {
 			return fmt.Errorf("auth mode %q requires: %s", c.Mode, strings.Join(missing, ", "))
 		}
+	}
+
+	if c.Mode == AuthModeAPIKey && c.APIKey == "" {
+		return fmt.Errorf("auth mode %q requires a non-empty api_key", c.Mode)
 	}
 
 	return nil
@@ -152,6 +161,9 @@ func LoadConfig(getenv func(string) string, defaultSettingsPath string) (*Config
 	}
 	if v := getenv("RALPH_ENTRA_CLIENT_SECRET"); v != "" {
 		cfg.Entra.ClientSecret = v
+	}
+	if v := getenv("RALPH_API_KEY"); v != "" {
+		cfg.APIKey = v
 	}
 
 	// 4. Normalize mode

@@ -97,6 +97,11 @@ func run() error {
 			Secure:       secure,
 		}
 		log.Printf("Authentication enabled: EntraID SSO (tenant: %s)", authCfg.Entra.TenantID)
+	} else if authCfg.Mode == auth.AuthModeAPIKey {
+		serverOpts = &api.ServerOptions{
+			APIKey: authCfg.APIKey,
+		}
+		log.Println("Authentication enabled: static API key")
 	} else {
 		log.Println("WARNING: running without authentication — all endpoints are open")
 	}
