@@ -31,7 +31,8 @@ LARGE_MODEL=""
 SMALL_MODEL=""
 OLLAMA_URL="http://localhost:11434"
 INFERENCE_MODE=""  # gpu_cpu_split, gpu_only, cpu_only, remote
-BACKEND="ollama"  # ollama or anthropic
+BACKEND="ollama"  # ollama, anthropic, or openrouter
+OPENROUTER_API_KEY=""
 
 # Notification configuration
 NOTIFY_SMTP_ENABLED=false
@@ -120,8 +121,8 @@ detect_platform() {
 check_ram_requirement() {
     local MIN_RAM=16
 
-    if [[ "$MODE" == "client" ]] || [[ "$BACKEND" == "anthropic" ]]; then
-        # Client doesn't need much RAM; anthropic backend runs models in the cloud
+    if [[ "$MODE" == "client" ]] || [[ "$BACKEND" == "anthropic" ]] || [[ "$BACKEND" == "openrouter" ]]; then
+        # Client doesn't need much RAM; cloud backends run models remotely
         return 0
     fi
 
@@ -314,12 +315,14 @@ select_backend() {
     echo ""
     echo "  [1] Local models via Ollama (GPU/CPU — free, private, requires hardware)"
     echo "  [2] Anthropic API via Claude Code (uses your Claude subscription/API credits)"
+    echo "  [3] OpenRouter API (cloud, multi-provider — pay-per-token via openrouter.ai)"
     echo ""
-    read -p "Select [1-2]: " -n 1 -r
+    read -p "Select [1-3]: " -n 1 -r
     echo ""
 
     case $REPLY in
         2) BACKEND="anthropic" ;;
+        3) BACKEND="openrouter" ;;
         *) BACKEND="ollama" ;;
     esac
 }
@@ -395,6 +398,94 @@ select_anthropic_models() {
             fi
             ;;
         *) warn "Invalid choice, using claude-haiku-4-5-20251001"; SMALL_MODEL="claude-haiku-4-5-20251001" ;;
+    esac
+
+    success "Selected: large=$LARGE_MODEL, small=$SMALL_MODEL"
+}
+
+validate_openrouter_key() {
+    if [[ "$YES_FLAG" == true ]]; then
+        if [[ -z "$OPENROUTER_API_KEY" ]]; then
+            error "OpenRouter API key required. Pass via OPENROUTER_API_KEY env var with --yes."
+        fi
+        return
+    fi
+
+    echo ""
+    echo "Enter your OpenRouter API key (from https://openrouter.ai/keys):"
+    read -s -p "API key: " -r OPENROUTER_API_KEY
+    echo ""
+
+    if [[ -z "$OPENROUTER_API_KEY" ]]; then
+        error "API key cannot be empty"
+    fi
+
+    # Validate by calling the models endpoint
+    local http_code
+    http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+        -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+        "https://openrouter.ai/api/v1/models")
+
+    if [[ "$http_code" != "200" ]]; then
+        error "API key validation failed (HTTP $http_code). Check your key at https://openrouter.ai/keys"
+    fi
+
+    success "API key validated"
+}
+
+select_openrouter_models() {
+    if [[ "$YES_FLAG" == true ]]; then
+        LARGE_MODEL="moonshotai/kimi-k2.5"
+        SMALL_MODEL="mistralai/devstral-2-2512"
+        return
+    fi
+
+    echo ""
+    echo "Select the LARGE model (used for main coding iterations):"
+    echo ""
+    echo "  [1] Kimi K2.5        (moonshotai/kimi-k2.5)"
+    echo "  [2] Grok 4.1 Fast    (x-ai/grok-4-1-fast)"
+    echo "  [3] Devstral 2 2512  (mistralai/devstral-2-2512)"
+    echo "  [4] Custom model ID"
+    echo ""
+    read -p "Select [1-4]: " -n 1 -r
+    echo ""
+    case $REPLY in
+        1) LARGE_MODEL="moonshotai/kimi-k2.5" ;;
+        2) LARGE_MODEL="x-ai/grok-4-1-fast" ;;
+        3) LARGE_MODEL="mistralai/devstral-2-2512" ;;
+        4)
+            read -p "Enter model ID: " -r LARGE_MODEL
+            if [[ -z "$LARGE_MODEL" ]]; then
+                warn "Empty model ID, using moonshotai/kimi-k2.5"
+                LARGE_MODEL="moonshotai/kimi-k2.5"
+            fi
+            ;;
+        *) warn "Invalid choice, using moonshotai/kimi-k2.5"; LARGE_MODEL="moonshotai/kimi-k2.5" ;;
+    esac
+
+    echo ""
+    echo "Select the SMALL model (used for fast tasks and tool calls):"
+    echo ""
+    echo "  [1] Kimi K2.5        (moonshotai/kimi-k2.5)"
+    echo "  [2] Grok 4.1 Fast    (x-ai/grok-4-1-fast)"
+    echo "  [3] Devstral 2 2512  (mistralai/devstral-2-2512)"
+    echo "  [4] Custom model ID"
+    echo ""
+    read -p "Select [1-4]: " -n 1 -r
+    echo ""
+    case $REPLY in
+        1) SMALL_MODEL="moonshotai/kimi-k2.5" ;;
+        2) SMALL_MODEL="x-ai/grok-4-1-fast" ;;
+        3) SMALL_MODEL="mistralai/devstral-2-2512" ;;
+        4)
+            read -p "Enter model ID: " -r SMALL_MODEL
+            if [[ -z "$SMALL_MODEL" ]]; then
+                warn "Empty model ID, using mistralai/devstral-2-2512"
+                SMALL_MODEL="mistralai/devstral-2-2512"
+            fi
+            ;;
+        *) warn "Invalid choice, using mistralai/devstral-2-2512"; SMALL_MODEL="mistralai/devstral-2-2512" ;;
     esac
 
     success "Selected: large=$LARGE_MODEL, small=$SMALL_MODEL"
@@ -929,6 +1020,25 @@ apply_model_config() {
 
         success "Anthropic config applied (large=$LARGE_MODEL, small=$SMALL_MODEL)"
         return
+    elif [[ "$BACKEND" == "openrouter" ]]; then
+        local json_payload
+        json_payload=$(jq -n \
+            --arg key "$OPENROUTER_API_KEY" \
+            --arg large "$LARGE_MODEL" \
+            --arg small "$SMALL_MODEL" \
+            '{default_backend:"openrouter",openrouter:{api_key:$key,base_url:"https://openrouter.ai/api/v1",large_model:$large,small_model:$small}}')
+
+        local http_code
+        http_code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH http://localhost:9090/api/config \
+            -H "Content-Type: application/json" \
+            -d "$json_payload")
+        if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+            warn "Config update failed (HTTP $http_code) — check server logs"
+            return
+        fi
+
+        success "OpenRouter config applied (large=$LARGE_MODEL, small=$SMALL_MODEL)"
+        return
     fi
 
     # Map INFERENCE_MODE to device settings and is_remote flag
@@ -1327,6 +1437,9 @@ main() {
         if [[ "$BACKEND" == "anthropic" ]]; then
             validate_claude_auth
             select_anthropic_models
+        elif [[ "$BACKEND" == "openrouter" ]]; then
+            validate_openrouter_key
+            select_openrouter_models
         else
             detect_gpu
             select_models

@@ -322,3 +322,74 @@ setup() {
     [ "$LARGE_MODEL" = "claude-sonnet-4-6" ]
     [ "$SMALL_MODEL" = "claude-haiku-4-5-20251001" ]
 }
+
+# --- OpenRouter backend tests ---
+
+@test "select_backend sets openrouter with choice 3" {
+    YES_FLAG=false
+    BACKEND="ollama"
+    select_backend <<< "3"
+    [ "$BACKEND" = "openrouter" ]
+}
+
+@test "select_backend defaults to ollama with --yes (not openrouter)" {
+    YES_FLAG=true
+    BACKEND="ollama"
+    select_backend
+    [ "$BACKEND" = "ollama" ]
+}
+
+@test "select_openrouter_models picks defaults with --yes" {
+    YES_FLAG=true
+    LARGE_MODEL=""
+    SMALL_MODEL=""
+    select_openrouter_models
+    [ "$LARGE_MODEL" = "moonshotai/kimi-k2.5" ]
+    [ "$SMALL_MODEL" = "mistralai/devstral-2-2512" ]
+}
+
+@test "select_openrouter_models picks kimi with choice 1 and devstral with choice 3" {
+    YES_FLAG=false
+    LARGE_MODEL=""
+    SMALL_MODEL=""
+    select_openrouter_models <<< $'13'
+    [ "$LARGE_MODEL" = "moonshotai/kimi-k2.5" ]
+    [ "$SMALL_MODEL" = "mistralai/devstral-2-2512" ]
+}
+
+@test "select_openrouter_models picks grok with choice 2" {
+    YES_FLAG=false
+    LARGE_MODEL=""
+    SMALL_MODEL=""
+    select_openrouter_models <<< $'22'
+    [ "$LARGE_MODEL" = "x-ai/grok-4-1-fast" ]
+    [ "$SMALL_MODEL" = "x-ai/grok-4-1-fast" ]
+}
+
+@test "check_ram_requirement skips for openrouter backend" {
+    MODE="server"
+    BACKEND="openrouter"
+    RAM_GB=4
+    run check_ram_requirement
+    [ "$status" -eq 0 ]
+}
+
+@test "apply_model_config sends openrouter payload" {
+    BACKEND="openrouter"
+    LARGE_MODEL="moonshotai/kimi-k2.5"
+    SMALL_MODEL="mistralai/devstral-2-2512"
+    OPENROUTER_API_KEY="sk-or-v1-test"
+
+    curl() {
+        if [[ "$1" == "-sf" ]] && [[ "$2" != "-X" ]]; then
+            return 0
+        fi
+        printf "200"
+        return 0
+    }
+    export -f curl
+
+    run apply_model_config
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"OpenRouter config applied"* ]]
+}
