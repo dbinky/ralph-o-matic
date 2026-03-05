@@ -526,3 +526,52 @@ func TestCleaner_FullTick_MixedJobs(t *testing.T) {
 	_, err = env.jobRepo.Get(jobQueued.ID)
 	assert.NoError(t, err)
 }
+
+func TestCleaner_Retention_ContextAlreadyCancelledAtStart(t *testing.T) {
+	env := newCleanerTestEnv(t)
+	cfg := models.DefaultServerConfig()
+	cfg.JobRetentionDays = 1
+	require.NoError(t, env.configRepo.Save(cfg))
+
+	job := env.createJob(t, models.StatusCompleted, 2*24*time.Hour, false)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancelled before call
+
+	c := env.newCleaner()
+	c.purgeExpiredJobs(ctx)
+
+	// Job should NOT be deleted because context was already cancelled
+	_, err := env.jobRepo.Get(job.ID)
+	assert.NoError(t, err, "job should still exist when context was pre-cancelled")
+}
+
+func TestCleaner_Tick_SkipsWhenLocked(t *testing.T) {
+	env := newCleanerTestEnv(t)
+
+	c := env.newCleaner()
+
+	// Acquire the internal lock to simulate a running cleanup
+	c.running.Lock()
+	defer c.running.Unlock()
+
+	// tick should log and return without hanging
+	ctx := context.Background()
+	c.tick(ctx) // should return immediately because TryLock fails
+}
+
+func TestCleaner_cleanWorkspaces_ContextAlreadyCancelled(t *testing.T) {
+	env := newCleanerTestEnv(t)
+
+	// Create a terminal job with a workspace
+	job := env.createJob(t, models.StatusCompleted, 0, true)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	c := env.newCleaner()
+	c.cleanWorkspaces(ctx)
+
+	// Workspace should still exist — context was pre-cancelled
+	assert.True(t, env.workspaceExists(job.ID))
+}

@@ -33,6 +33,7 @@ type Server struct {
 	sessions     *auth.SessionStore
 	secure       bool
 	broadcaster  *broadcast.Broadcaster
+	apiKey       string
 }
 
 // ServerOptions holds optional configuration for the server.
@@ -43,6 +44,7 @@ type ServerOptions struct {
 	Secure       bool
 	Broadcaster  *broadcast.Broadcaster
 	Version      string
+	APIKey       string // static Bearer token for AuthModeAPIKey
 }
 
 // NewServer creates a new API server. Pass nil for opts to disable authentication.
@@ -70,6 +72,7 @@ func NewServer(database *db.DB, q *queue.Queue, addr string, opts *ServerOptions
 		s.sessions = opts.Sessions
 		s.secure = opts.Secure
 		s.broadcaster = opts.Broadcaster
+		s.apiKey = opts.APIKey
 	}
 
 	s.setupRoutes()
@@ -96,7 +99,7 @@ func (s *Server) setupRoutes() {
 
 	// Protected routes — wrapped in auth middleware
 	r.Group(func(r chi.Router) {
-		r.Use(auth.Middleware(s.authProvider, s.sessions))
+		r.Use(auth.Middleware(s.authProvider, s.sessions, s.apiKey))
 
 		// SSE routes — no timeout (long-lived connections)
 		// Global SSE is open to all authenticated users (no admin guard) for

@@ -142,3 +142,80 @@ func TestScheduler_JobSignal(t *testing.T) {
 
 	assert.Equal(t, int32(1), atomic.LoadInt32(&processed))
 }
+
+func newSchedulerWithDB(t *testing.T) (*Scheduler, *Queue) {
+	t.Helper()
+	database, err := db.New(":memory:")
+	require.NoError(t, err)
+	require.NoError(t, database.Migrate())
+	t.Cleanup(func() { database.Close() })
+
+	q := New(database)
+	handler := func(ctx context.Context, j *models.Job) error { return nil }
+	s := NewScheduler(q, handler)
+	return s, q
+}
+
+func TestScheduler_PauseJob(t *testing.T) {
+	s, q := newSchedulerWithDB(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, q.Enqueue(job))
+
+	// Jobs start in queued state; pause transitions from running only
+	// Force it to running first
+	job.Status = models.StatusRunning
+	require.NoError(t, q.Update(job))
+
+	require.NoError(t, s.PauseJob(job.ID))
+
+	updated, err := q.Get(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusPaused, updated.Status)
+}
+
+func TestScheduler_PauseJob_NotFound(t *testing.T) {
+	s, _ := newSchedulerWithDB(t)
+	err := s.PauseJob(9999)
+	assert.Error(t, err)
+}
+
+func TestScheduler_ResumeJob(t *testing.T) {
+	s, q := newSchedulerWithDB(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, q.Enqueue(job))
+	job.Status = models.StatusPaused
+	require.NoError(t, q.Update(job))
+
+	require.NoError(t, s.ResumeJob(job.ID))
+
+	updated, err := q.Get(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusQueued, updated.Status)
+}
+
+func TestScheduler_ResumeJob_NotFound(t *testing.T) {
+	s, _ := newSchedulerWithDB(t)
+	err := s.ResumeJob(9999)
+	assert.Error(t, err)
+}
+
+func TestScheduler_CancelJob(t *testing.T) {
+	s, q := newSchedulerWithDB(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, q.Enqueue(job))
+
+	require.NoError(t, s.CancelJob(job.ID))
+
+	updated, err := q.Get(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.StatusCancelled, updated.Status)
+}
+
+func TestScheduler_CancelJob_NotFound(t *testing.T) {
+	s, _ := newSchedulerWithDB(t)
+	err := s.CancelJob(9999)
+	assert.Error(t, err)
+}

@@ -43,3 +43,30 @@ func TestGH_BuildPRBody_Failed(t *testing.T) {
 	assert.Contains(t, body, "without completing")
 	assert.Contains(t, body, "3 tests failing")
 }
+
+func TestBuildPRTitle_Success(t *testing.T) {
+	title := BuildPRTitle("feature/auth", true)
+	assert.Contains(t, title, "feature/auth")
+	assert.Contains(t, title, "✓")
+	assert.NotContains(t, title, "FAILED")
+}
+
+func TestBuildPRTitle_Failed(t *testing.T) {
+	title := BuildPRTitle("bugfix/login", false)
+	assert.Contains(t, title, "bugfix/login")
+	assert.Contains(t, title, "FAILED")
+	assert.Contains(t, title, "✗")
+}
+
+func TestBuildPRBody_NoSpecPath(t *testing.T) {
+	body := BuildPRBody(5, true, "", nil)
+	assert.Contains(t, body, "5 iterations")
+	assert.NotContains(t, body, "Specification")
+	assert.Contains(t, body, "Ralph-o-matic")
+}
+
+func TestBuildPRBody_FailedNoDetails(t *testing.T) {
+	body := BuildPRBody(10, false, "", nil)
+	assert.Contains(t, body, "Manual intervention")
+	assert.NotContains(t, body, "Current State")
+}

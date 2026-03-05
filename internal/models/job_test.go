@@ -194,6 +194,12 @@ func TestJob_Progress(t *testing.T) {
 	assert.Equal(t, 1.0, job.Progress())
 }
 
+func TestJob_Progress_ZeroMaxIterations(t *testing.T) {
+	job := NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	job.MaxIterations = 0
+	assert.Equal(t, 0.0, job.Progress())
+}
+
 func TestJob_JSON(t *testing.T) {
 	job := NewJob("git@github.com:user/repo.git", "feature/test", "Run tests", 50)
 	job.ID = 42
