@@ -1,0 +1,1 @@
+ALTER TABLE jobs ADD COLUMN exit_promise TEXT NOT NULL DEFAULT '';

@@ -355,6 +355,51 @@ func TestClient_NoAuthHeader_WhenTokenExpired(t *testing.T) {
 	assert.Empty(t, authHeader)
 }
 
+func TestClient_AddsAPIKey_WhenSet(t *testing.T) {
+	var authHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader = r.Header.Get("Authorization")
+		json.NewEncoder(w).Encode(map[string]interface{}{})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	client.SetAPIKey("my-static-api-key")
+
+	err := client.get("/health", nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Bearer my-static-api-key", authHeader)
+}
+
+func TestClient_APIKey_TakesPrecedenceOverToken(t *testing.T) {
+	var authHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader = r.Header.Get("Authorization")
+		json.NewEncoder(w).Encode(map[string]interface{}{})
+	}))
+	defer server.Close()
+
+	// Save a valid Entra token
+	tmpDir := t.TempDir()
+	tokenPath := filepath.Join(tmpDir, "token.json")
+	token := &CachedToken{
+		AccessToken: "entra-token",
+		ExpiresAt:   time.Now().Add(1 * time.Hour),
+		Server:      server.URL,
+	}
+	require.NoError(t, saveToken(tokenPath, token))
+
+	client := NewClient(server.URL)
+	client.SetTokenPath(tokenPath)
+	client.SetAPIKey("static-key") // should win
+
+	err := client.get("/health", nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Bearer static-key", authHeader)
+}
+
 func TestClient_NoAuthHeader_WhenServerMismatch(t *testing.T) {
 	var authHeader string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

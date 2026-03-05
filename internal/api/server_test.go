@@ -46,6 +46,23 @@ func TestServer_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
+func TestServer_Health_WithVersion(t *testing.T) {
+	database, err := db.New(":memory:")
+	require.NoError(t, err)
+	require.NoError(t, database.Migrate())
+	t.Cleanup(func() { database.Close() })
+
+	q := queue.New(database)
+	srv := NewServer(database, q, ":9090", &ServerOptions{Version: "1.2.3"})
+
+	req := httptest.NewRequest("GET", "/health", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "1.2.3")
+}
+
 func TestServer_CORS(t *testing.T) {
 	srv, _ := newTestServer(t)
 

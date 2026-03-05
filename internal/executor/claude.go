@@ -74,9 +74,17 @@ func (e *ClaudeExecutor) BuildEnv(backend models.Backend, extra map[string]strin
 
 	switch backend {
 	case models.BackendAnthropic:
+		// No ANTHROPIC_BASE_URL: Claude Code's built-in auth handles routing to the Anthropic API directly.
 		backendEnv = map[string]string{
 			"ANTHROPIC_MODEL":               e.config.Anthropic.LargeModel,
 			"ANTHROPIC_DEFAULT_HAIKU_MODEL": e.config.Anthropic.SmallModel,
+		}
+	case models.BackendOpenRouter:
+		backendEnv = map[string]string{
+			"ANTHROPIC_BASE_URL":            e.config.OpenRouter.BaseURL,
+			"ANTHROPIC_AUTH_TOKEN":           e.config.OpenRouter.APIKey,
+			"ANTHROPIC_MODEL":               e.config.OpenRouter.LargeModel,
+			"ANTHROPIC_DEFAULT_HAIKU_MODEL": e.config.OpenRouter.SmallModel,
 		}
 	default: // ollama
 		backendEnv = map[string]string{
@@ -174,7 +182,7 @@ type OutputCallback func(line string)
 // Permissions are always skipped because --print mode is automated
 // with no human to approve interactive prompts.
 // If session is non-nil and valid, --resume is passed for continuity.
-func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, backend models.Backend, env map[string]string, session *Session, onOutput OutputCallback) (*ExecutionResult, error) {
+func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, backend models.Backend, env map[string]string, session *Session, exitPromise string, onOutput OutputCallback) (*ExecutionResult, error) {
 	args := buildClaudeArgs(true, session)
 	cmd := exec.CommandContext(ctx, e.claudePath, args...) //nolint:gosec // claude is a trusted CLI tool
 	cmd.Dir = workDir
@@ -235,16 +243,21 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, ba
 		Output:     output,
 		RawJSON:    outputBuf.Bytes(),
 		Iterations: ParseIterations(output),
-		Completed:  ContainsPromise(output, "COMPLETE") || ContainsPromise(output, "DONE"),
 	}
 
-	// Parse JSON response for metadata
+	// Parse JSON response for metadata and check completion.
+	// Promise tags are checked against ResultText (the final result event's
+	// text), NOT the raw stream-json buffer, to avoid false positives from
+	// intermediate assistant events where the model quotes promise tags
+	// while reasoning about which one to output.
 	if meta, parseErr := ParseResponse(outputBuf.Bytes()); parseErr == nil {
 		result.Metadata = meta
 		result.SessionID = meta.SessionID
-		if meta.Completed || meta.ExitSignal {
-			result.Completed = true
-		}
+		result.Completed = meta.Completed || meta.ExitSignal || ContainsPromise(meta.ResultText, exitPromise)
+	} else {
+		// Fallback: if we can't parse stream-json, search raw output.
+		// This handles non-JSON output modes or malformed responses.
+		result.Completed = ContainsPromise(output, exitPromise)
 	}
 
 	return result, nil
@@ -252,6 +265,9 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, workDir, prompt string, ba
 
 func (e *ClaudeExecutor) readOutput(r io.Reader, buf *bytes.Buffer, callback OutputCallback) {
 	scanner := bufio.NewScanner(r)
+	// stream-json events can be large (tool results with file contents);
+	// increase from default 64KB to 1MB per line.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		buf.WriteString(line + "\n")
@@ -290,6 +306,22 @@ func ContainsPromise(output, promiseText string) bool {
 	pattern := fmt.Sprintf(`<promise>%s</promise>`, regexp.QuoteMeta(promiseText))
 	matched, _ := regexp.MatchString(pattern, output)
 	return matched
+}
+
+// promiseTagPattern matches <promise>X</promise> tags in output.
+var promiseTagPattern = regexp.MustCompile(`<promise>(.*?)</promise>`)
+
+// HasNonExitPromise returns true if output contains any <promise>X</promise>
+// tag where X is NOT the exit promise. These tags are progress signals
+// from the ralph loop script (e.g. CLOSER, REVIEW COMPLETE).
+func HasNonExitPromise(output, exitPromise string) bool {
+	matches := promiseTagPattern.FindAllStringSubmatch(output, -1)
+	for _, match := range matches {
+		if len(match) >= 2 && match[1] != exitPromise {
+			return true
+		}
+	}
+	return false
 }
 
 // IsClaudeInstalled checks if claude CLI is available

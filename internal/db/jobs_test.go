@@ -85,6 +85,36 @@ func TestJobRepo_Update(t *testing.T) {
 	assert.Equal(t, 5, fetched.Iteration)
 }
 
+func TestJobRepo_Update_WithEnv(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	job.Env = map[string]string{"KEY": "value"}
+	require.NoError(t, repo.Create(job))
+
+	job.Env["EXTRA"] = "data"
+	require.NoError(t, repo.Update(job))
+
+	fetched, err := repo.Get(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "value", fetched.Env["KEY"])
+	assert.Equal(t, "data", fetched.Env["EXTRA"])
+}
+
+func TestJobRepo_Update_DBClosed(t *testing.T) {
+	database := newTestDB(t)
+	repo := NewJobRepo(database)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, repo.Create(job))
+
+	database.Close()
+
+	err := repo.Update(job)
+	assert.Error(t, err)
+}
+
 func TestJobRepo_Delete(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewJobRepo(db)
@@ -290,6 +320,37 @@ func TestJobRepo_Create_WithOwner(t *testing.T) {
 
 	assert.Equal(t, "user-abc-123", fetched.OwnerID)
 	assert.Equal(t, "Alice Smith", fetched.OwnerName)
+}
+
+func TestJobRepo_ExitPromise_RoundTrip(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewJobRepo(db)
+
+	// Default exit promise (set by NewJob)
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, repo.Create(job))
+
+	fetched, err := repo.Get(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.DefaultExitPromise, fetched.ExitPromise)
+
+	// Custom exit promise
+	job2 := models.NewJob("git@github.com:user/repo.git", "dev", "test", 5)
+	job2.ExitPromise = "DONE"
+	require.NoError(t, repo.Create(job2))
+
+	fetched2, err := repo.Get(job2.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "DONE", fetched2.ExitPromise)
+
+	// Empty exit promise (old rows)
+	job3 := models.NewJob("git@github.com:user/repo.git", "fix", "test", 3)
+	job3.ExitPromise = ""
+	require.NoError(t, repo.Create(job3))
+
+	fetched3, err := repo.Get(job3.ID)
+	require.NoError(t, err)
+	assert.Empty(t, fetched3.ExitPromise)
 }
 
 func TestJobRepo_Create_WithoutOwner(t *testing.T) {
@@ -548,6 +609,81 @@ func TestJobRepo_ListExpired_FallsBackToCreatedAt(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, jobs, 1)
 	assert.Equal(t, job.ID, jobs[0].ID)
+}
+
+// --- DB-closed error path tests ---
+
+func TestJobRepo_Create_DBClosed(t *testing.T) {
+	database := newTestDB(t)
+	repo := NewJobRepo(database)
+	database.Close()
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	err := repo.Create(job)
+	assert.Error(t, err)
+}
+
+func TestJobRepo_Get_DBClosed(t *testing.T) {
+	database := newTestDB(t)
+	repo := NewJobRepo(database)
+	database.Close()
+
+	_, err := repo.Get(1)
+	assert.Error(t, err)
+}
+
+func TestJobRepo_Delete_DBClosed(t *testing.T) {
+	database := newTestDB(t)
+	repo := NewJobRepo(database)
+	database.Close()
+
+	err := repo.Delete(1)
+	assert.Error(t, err)
+}
+
+func TestJobRepo_List_DBClosed(t *testing.T) {
+	database := newTestDB(t)
+	repo := NewJobRepo(database)
+	database.Close()
+
+	_, _, err := repo.List(ListOptions{})
+	assert.Error(t, err)
+}
+
+func TestJobRepo_ListQueued_DBClosed(t *testing.T) {
+	database := newTestDB(t)
+	repo := NewJobRepo(database)
+	database.Close()
+
+	_, err := repo.ListQueued()
+	assert.Error(t, err)
+}
+
+func TestJobRepo_ListTerminal_DBClosed(t *testing.T) {
+	database := newTestDB(t)
+	repo := NewJobRepo(database)
+	database.Close()
+
+	_, err := repo.ListTerminal()
+	assert.Error(t, err)
+}
+
+func TestJobRepo_ListExpired_DBClosed(t *testing.T) {
+	database := newTestDB(t)
+	repo := NewJobRepo(database)
+	database.Close()
+
+	_, err := repo.ListExpired(time.Now())
+	assert.Error(t, err)
+}
+
+func TestJobRepo_CountByStatus_DBClosed(t *testing.T) {
+	database := newTestDB(t)
+	repo := NewJobRepo(database)
+	database.Close()
+
+	_, err := repo.CountByStatus()
+	assert.Error(t, err)
 }
 
 func TestJobRepo_CountByStatus(t *testing.T) {

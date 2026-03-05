@@ -11,6 +11,7 @@ import (
 // ResponseMetadata holds parsed data from Claude's JSON output
 type ResponseMetadata struct {
 	SessionID     string   `json:"session_id"`
+	ResultText    string   `json:"result_text"`
 	FilesModified int      `json:"files_modified"`
 	HasErrors     bool     `json:"has_errors"`
 	IsError       bool     `json:"is_error"`
@@ -50,8 +51,9 @@ func ParseResponse(jsonOutput []byte) (*ResponseMetadata, error) {
 	}
 
 	meta := &ResponseMetadata{
-		SessionID: cr.SessionID,
-		IsError:   cr.IsError,
+		SessionID:  cr.SessionID,
+		ResultText: cr.Result,
+		IsError:    cr.IsError,
 	}
 
 	// Parse RALPH_STATUS block if present
@@ -74,14 +76,30 @@ func ParseResponse(jsonOutput []byte) (*ResponseMetadata, error) {
 	return meta, nil
 }
 
-// extractJSON finds the first JSON object in the output
+// extractJSON finds the result JSON object in the output.
+// Handles both single-line (--output-format json) and multi-line
+// (--output-format stream-json) formats. For stream-json, scans
+// backwards for the {"type":"result",...} line.
 func extractJSON(data []byte) []byte {
-	// Try parsing as-is first
+	// Try parsing as-is first (single JSON object)
 	if json.Valid(data) {
 		return data
 	}
 
-	// Look for first '{' character (skip stderr lines)
+	// For stream-json: scan lines backwards to find the result event
+	resultMarker := []byte(`"type":"result"`)
+	lines := bytes.Split(data, []byte("\n"))
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := bytes.TrimSpace(lines[i])
+		if len(line) == 0 {
+			continue
+		}
+		if bytes.Contains(line, resultMarker) && json.Valid(line) {
+			return line
+		}
+	}
+
+	// Fallback: look for first '{' character (skip stderr lines)
 	idx := bytes.IndexByte(data, '{')
 	if idx >= 0 {
 		candidate := data[idx:]

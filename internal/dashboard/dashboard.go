@@ -58,13 +58,14 @@ func TemplateFuncs() template.FuncMap {
 type Dashboard struct {
 	db            *db.DB
 	queue         *queue.Queue
+	version       string
 	dashboardTmpl *template.Template
 	jobTmpl       *template.Template
 	configTmpl    *template.Template
 }
 
 // New creates a new dashboard handler from a template filesystem
-func New(database *db.DB, q *queue.Queue, templatesFS fs.FS) *Dashboard {
+func New(database *db.DB, q *queue.Queue, templatesFS fs.FS, version string) *Dashboard {
 	funcs := TemplateFuncs()
 
 	dashboardTmpl := template.Must(
@@ -82,6 +83,7 @@ func New(database *db.DB, q *queue.Queue, templatesFS fs.FS) *Dashboard {
 	return &Dashboard{
 		db:            database,
 		queue:         q,
+		version:       version,
 		dashboardTmpl: dashboardTmpl,
 		jobTmpl:       jobTmpl,
 		configTmpl:    configTmpl,
@@ -91,6 +93,7 @@ func New(database *db.DB, q *queue.Queue, templatesFS fs.FS) *Dashboard {
 // IndexData is the data for the dashboard index
 type IndexData struct {
 	QueueSize int
+	Version   string
 	AuthUser  *auth.User
 	Running   []*models.Job
 	Paused    []*models.Job
@@ -119,6 +122,7 @@ func (d *Dashboard) HandleIndex(w http.ResponseWriter, r *http.Request) {
 
 	data := IndexData{
 		QueueSize: len(queued),
+		Version:   d.version,
 		AuthUser:  auth.UserFromContext(r.Context()),
 		Running:   running,
 		Paused:    paused,
@@ -132,6 +136,7 @@ func (d *Dashboard) HandleIndex(w http.ResponseWriter, r *http.Request) {
 // JobData is the data for the job detail page
 type JobData struct {
 	QueueSize int
+	Version   string
 	AuthUser  *auth.User
 	Job       *models.Job
 	Logs      []*db.JobLog
@@ -155,6 +160,7 @@ func (d *Dashboard) HandleJob(w http.ResponseWriter, r *http.Request, jobID int6
 
 	data := JobData{
 		QueueSize: d.queue.Size(),
+		Version:   d.version,
 		AuthUser:  auth.UserFromContext(r.Context()),
 		Job:       job,
 		Logs:      logs,
@@ -172,6 +178,7 @@ type ConfigSetting struct {
 // ConfigData is the data for the config page
 type ConfigData struct {
 	QueueSize int
+	Version   string
 	AuthUser  *auth.User
 	Settings  []ConfigSetting
 }
@@ -207,6 +214,7 @@ func (d *Dashboard) HandleConfig(w http.ResponseWriter, r *http.Request) {
 
 	data := ConfigData{
 		QueueSize: d.queue.Size(),
+		Version:   d.version,
 		AuthUser:  auth.UserFromContext(r.Context()),
 		Settings:  settings,
 	}

@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/auth"
 	"github.com/ryan/ralph-o-matic/internal/db"
@@ -25,7 +26,7 @@ func newTestDashboard(t *testing.T) (*Dashboard, *queue.Queue) {
 
 	// Use the actual web/templates directory
 	templatesDir := os.DirFS("../../web/templates")
-	d := New(database, q, templatesDir)
+	d := New(database, q, templatesDir, "test")
 	return d, q
 }
 
@@ -241,4 +242,64 @@ func TestDashboard_Index_NoAuth_SeesAllJobs(t *testing.T) {
 	body := w.Body.String()
 	assert.Contains(t, body, "Alice")
 	assert.Contains(t, body, "Bob")
+}
+
+// --- TemplateFuncs tests ---
+
+func TestTemplateFuncs_Truncate(t *testing.T) {
+	funcs := TemplateFuncs()
+	truncate := funcs["truncate"].(func(int, string) string)
+
+	assert.Equal(t, "hello", truncate(10, "hello"))
+	assert.Equal(t, "hel...", truncate(3, "hello world"))
+	assert.Equal(t, "abc", truncate(3, "abc"))
+}
+
+func TestTemplateFuncs_Upper(t *testing.T) {
+	funcs := TemplateFuncs()
+	upper := funcs["upper"].(func(string) string)
+
+	assert.Equal(t, "HELLO", upper("hello"))
+}
+
+func TestTemplateFuncs_Duration(t *testing.T) {
+	funcs := TemplateFuncs()
+	duration := funcs["duration"].(func(time.Duration) string)
+
+	assert.Equal(t, "< 1m", duration(30*time.Second))
+	assert.Equal(t, "5m", duration(5*time.Minute+30*time.Second))
+	assert.Equal(t, "2h30m", duration(2*time.Hour+30*time.Minute))
+}
+
+func TestTemplateFuncs_TimeAgo(t *testing.T) {
+	funcs := TemplateFuncs()
+	timeago := funcs["timeago"].(func(*time.Time) string)
+
+	assert.Equal(t, "never", timeago(nil))
+
+	recent := time.Now().Add(-5 * time.Second)
+	assert.Equal(t, "just now", timeago(&recent))
+
+	minsAgo := time.Now().Add(-10 * time.Minute)
+	result := timeago(&minsAgo)
+	assert.Contains(t, result, "ago")
+}
+
+func TestTemplateFuncs_Multiply(t *testing.T) {
+	funcs := TemplateFuncs()
+	multiply := funcs["multiply"].(func(interface{}, interface{}) float64)
+
+	assert.Equal(t, 6.0, multiply(2, 3))
+	assert.Equal(t, 6.0, multiply(int64(2), int64(3)))
+	assert.Equal(t, 6.0, multiply(2.0, 3.0))
+	assert.Equal(t, 0.0, multiply("bad", 3)) // unsupported type = 0
+}
+
+func TestToFloat64(t *testing.T) {
+	assert.Equal(t, float64(3), toFloat64(3))
+	assert.Equal(t, float64(3), toFloat64(int64(3)))
+	assert.Equal(t, float64(3.14), toFloat64(float64(3.14)))
+	assert.InDelta(t, float64(3.14), toFloat64(float32(3.14)), 1e-6)
+	assert.Equal(t, float64(0), toFloat64("bad"))
+	assert.Equal(t, float64(0), toFloat64(nil))
 }

@@ -82,7 +82,8 @@ func run() error {
 	}
 
 	var serverOpts *api.ServerOptions
-	if authCfg.Mode == auth.AuthModeEntra {
+	switch authCfg.Mode {
+	case auth.AuthModeEntra:
 		provider, err := auth.NewEntraProvider(context.Background(), authCfg.Entra, "")
 		if err != nil {
 			return fmt.Errorf("failed to initialize EntraID provider: %w", err)
@@ -97,7 +98,12 @@ func run() error {
 			Secure:       secure,
 		}
 		log.Printf("Authentication enabled: EntraID SSO (tenant: %s)", authCfg.Entra.TenantID)
-	} else {
+	case auth.AuthModeAPIKey:
+		serverOpts = &api.ServerOptions{
+			APIKey: authCfg.APIKey,
+		}
+		log.Println("Authentication enabled: static API key")
+	default:
 		log.Println("WARNING: running without authentication — all endpoints are open")
 	}
 
@@ -105,6 +111,7 @@ func run() error {
 		serverOpts = &api.ServerOptions{}
 	}
 	serverOpts.Broadcaster = b
+	serverOpts.Version = version
 
 	srv := api.NewServer(database, q, addr, serverOpts)
 

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -8,19 +9,36 @@ import (
 
 // Middleware returns an HTTP middleware that authenticates requests.
 //
-// When provider is nil (auth mode none), requests pass through without
-// setting any user context. When provider is set, the middleware checks
-// for a Bearer token first, then falls back to session cookies.
-func Middleware(provider *EntraProvider, store *SessionStore) func(http.Handler) http.Handler {
+// When provider is nil and apiKey is empty (auth mode none), requests pass
+// through without setting any user context.
+//
+// When apiKey is non-empty (auth mode apikey), the middleware requires a
+// matching Bearer token. A synthetic admin user is set in context on success
+// so that downstream RequireRole checks work correctly.
+//
+// When provider is set (auth mode entra), the middleware checks for a
+// Bearer token first, then falls back to session cookies.
+func Middleware(provider *EntraProvider, store *SessionStore, apiKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Auth mode apikey: validate static Bearer token
+			if provider == nil && apiKey != "" {
+				if subtle.ConstantTimeCompare([]byte(extractBearerToken(r)), []byte(apiKey)) != 1 {
+					writeJSONError(w, http.StatusUnauthorized, "API key required")
+					return
+				}
+				syntheticUser := &User{Name: "api-key", Email: "api-key@local", Roles: []string{"Admin"}}
+				next.ServeHTTP(w, r.WithContext(ContextWithUser(r.Context(), syntheticUser)))
+				return
+			}
+
 			// Auth mode none: pass through without setting user
 			if provider == nil {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// 1. Check for Bearer token (takes precedence over cookie)
+			// Auth mode entra: check for Bearer token (takes precedence over cookie)
 			if token := extractBearerToken(r); token != "" {
 				user, err := provider.ValidateToken(r.Context(), token)
 				if err != nil {
@@ -31,7 +49,7 @@ func Middleware(provider *EntraProvider, store *SessionStore) func(http.Handler)
 				return
 			}
 
-			// 2. Check for session cookie
+			// Check for session cookie
 			if sessionID := GetSessionID(r); sessionID != "" {
 				if session := store.Get(sessionID); session != nil {
 					user := &session.User
@@ -40,7 +58,7 @@ func Middleware(provider *EntraProvider, store *SessionStore) func(http.Handler)
 				}
 			}
 
-			// 3. No valid authentication found
+			// No valid authentication found
 			if isBrowserRequest(r) {
 				http.Redirect(w, r, "/auth/login", http.StatusFound)
 				return

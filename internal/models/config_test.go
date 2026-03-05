@@ -291,6 +291,203 @@ func TestServerConfig_Merge_NoConcurrentJobs(t *testing.T) {
 	assert.Equal(t, 100, merged.DefaultMaxIterations)
 }
 
+func TestBackend_Valid_OpenRouter(t *testing.T) {
+	assert.True(t, BackendOpenRouter.Valid())
+}
+
+func TestOpenRouterConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  OpenRouterConfig
+		wantErr bool
+	}{
+		{
+			name: "valid config with https",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "https://openrouter.ai/api/v1",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: false,
+		},
+		{
+			name: "http localhost allowed",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "http://localhost:8080/v1",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: false,
+		},
+		{
+			name: "http 127.0.0.1 allowed",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "http://127.0.0.1:8080/v1",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty base_url rejected",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: true,
+		},
+		{
+			name: "http non-localhost rejected",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "http://evil.example.com/steal",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-url rejected",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "not-a-url",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: true,
+		},
+		{
+			name: "ftp scheme rejected",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "ftp://files.example.com/data",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing API key",
+			config: OpenRouterConfig{
+				BaseURL:    "https://openrouter.ai/api/v1",
+				LargeModel: "moonshotai/kimi-k2.5",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing large model",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "https://openrouter.ai/api/v1",
+				SmallModel: "mistralai/devstral-2-2512",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing small model",
+			config: OpenRouterConfig{
+				APIKey:     "sk-or-v1-test",
+				BaseURL:    "https://openrouter.ai/api/v1",
+				LargeModel: "moonshotai/kimi-k2.5",
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestServerConfig_Validate_OpenRouter(t *testing.T) {
+	cfg := DefaultServerConfig()
+	cfg.DefaultBackend = BackendOpenRouter
+	cfg.OpenRouter.APIKey = "sk-or-v1-test"
+	cfg.OpenRouter.LargeModel = "moonshotai/kimi-k2.5"
+	cfg.OpenRouter.SmallModel = "mistralai/devstral-2-2512"
+
+	assert.NoError(t, cfg.Validate())
+}
+
+func TestServerConfig_Validate_OpenRouter_MissingKey(t *testing.T) {
+	cfg := DefaultServerConfig()
+	cfg.DefaultBackend = BackendOpenRouter
+	// API key left empty
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "openrouter")
+}
+
+func TestServerConfig_Merge_OpenRouter(t *testing.T) {
+	base := DefaultServerConfig()
+	updates := &ServerConfig{
+		OpenRouter: OpenRouterConfig{
+			APIKey:     "sk-or-v1-new",
+			LargeModel: "x-ai/grok-4-1-fast",
+		},
+	}
+
+	merged := base.Merge(updates)
+	assert.Equal(t, "sk-or-v1-new", merged.OpenRouter.APIKey)
+	assert.Equal(t, "x-ai/grok-4-1-fast", merged.OpenRouter.LargeModel)
+	// SmallModel should keep default
+	assert.Equal(t, "mistralai/devstral-2-2512", merged.OpenRouter.SmallModel)
+}
+
+func TestServerConfig_MergeJSON_OpenRouter(t *testing.T) {
+	base := DefaultServerConfig()
+	raw := json.RawMessage(`{"openrouter":{"api_key":"sk-or-v1-json","large_model":"test/model"}}`)
+
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, "sk-or-v1-json", merged.OpenRouter.APIKey)
+	assert.Equal(t, "test/model", merged.OpenRouter.LargeModel)
+	assert.Equal(t, "mistralai/devstral-2-2512", merged.OpenRouter.SmallModel)
+}
+
+func TestDefaultServerConfig_OpenRouter_Defaults(t *testing.T) {
+	cfg := DefaultServerConfig()
+	assert.Equal(t, "https://openrouter.ai/api/v1", cfg.OpenRouter.BaseURL)
+	assert.Equal(t, "moonshotai/kimi-k2.5", cfg.OpenRouter.LargeModel)
+	assert.Equal(t, "mistralai/devstral-2-2512", cfg.OpenRouter.SmallModel)
+	assert.Equal(t, "", cfg.OpenRouter.APIKey)
+}
+
+func TestNewServerConfigResponse_OpenRouter_RedactsKey(t *testing.T) {
+	cfg := DefaultServerConfig()
+	cfg.OpenRouter.APIKey = "sk-or-v1-secret-key"
+	cfg.OpenRouter.LargeModel = "moonshotai/kimi-k2.5"
+	cfg.OpenRouter.SmallModel = "mistralai/devstral-2-2512"
+	cfg.OpenRouter.BaseURL = "https://openrouter.ai/api/v1"
+
+	resp := NewServerConfigResponse(cfg)
+
+	assert.Equal(t, "moonshotai/kimi-k2.5", resp.OpenRouter.LargeModel)
+	assert.Equal(t, "mistralai/devstral-2-2512", resp.OpenRouter.SmallModel)
+	assert.Equal(t, "https://openrouter.ai/api/v1", resp.OpenRouter.BaseURL)
+	assert.True(t, resp.OpenRouter.APIKeySet)
+}
+
+func TestNewServerConfigResponse_OpenRouter_NoKey(t *testing.T) {
+	cfg := DefaultServerConfig()
+
+	resp := NewServerConfigResponse(cfg)
+
+	assert.False(t, resp.OpenRouter.APIKeySet)
+}
+
 func TestServerConfig_JSON(t *testing.T) {
 	cfg := DefaultServerConfig()
 	cfg.LargeModel.Name = "test-model"
@@ -310,4 +507,87 @@ func TestServerConfig_JSON(t *testing.T) {
 	assert.Equal(t, "http://localhost:11434", decoded.Ollama.Host)
 	assert.True(t, decoded.Ollama.IsRemote)
 	assert.Equal(t, cfg.DefaultMaxIterations, decoded.DefaultMaxIterations)
+}
+
+// --- MergeJSON additional coverage ---
+
+func TestServerConfig_MergeJSON_InvalidJSON(t *testing.T) {
+	base := DefaultServerConfig()
+	_, err := base.MergeJSON(json.RawMessage(`{invalid`))
+	assert.Error(t, err)
+}
+
+func TestServerConfig_MergeJSON_OllamaIsRemoteExplicitFalse(t *testing.T) {
+	base := DefaultServerConfig()
+	base.Ollama.IsRemote = true
+	raw := json.RawMessage(`{"ollama":{"is_remote":false}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.False(t, merged.Ollama.IsRemote)
+}
+
+func TestServerConfig_MergeJSON_LargeModelMemoryGBExplicitZero(t *testing.T) {
+	base := DefaultServerConfig()
+	base.LargeModel.MemoryGB = 8.0
+	raw := json.RawMessage(`{"large_model":{"memory_gb":0}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, merged.LargeModel.MemoryGB)
+}
+
+func TestServerConfig_MergeJSON_SmallModelMemoryGBExplicitZero(t *testing.T) {
+	base := DefaultServerConfig()
+	base.SmallModel.MemoryGB = 4.0
+	raw := json.RawMessage(`{"small_model":{"memory_gb":0}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, merged.SmallModel.MemoryGB)
+}
+
+func TestServerConfig_MergeJSON_DefaultBackendExplicit(t *testing.T) {
+	base := DefaultServerConfig()
+	raw := json.RawMessage(`{"default_backend":"anthropic"}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, BackendAnthropic, merged.DefaultBackend)
+}
+
+func TestServerConfig_MergeJSON_AnthropicModels(t *testing.T) {
+	base := DefaultServerConfig()
+	raw := json.RawMessage(`{"anthropic":{"large_model":"claude-opus-4-6","small_model":"claude-haiku-4-5"}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, "claude-opus-4-6", merged.Anthropic.LargeModel)
+	assert.Equal(t, "claude-haiku-4-5", merged.Anthropic.SmallModel)
+}
+
+func TestServerConfig_MergeJSON_NotifySMTPEnabledExplicitFalse(t *testing.T) {
+	base := DefaultServerConfig()
+	base.Notify.SMTP.Enabled = true
+	base.Notify.SMTP.Port = 587
+	raw := json.RawMessage(`{"notify":{"smtp":{"enabled":false,"port":0}}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.False(t, merged.Notify.SMTP.Enabled)
+	assert.Equal(t, 0, merged.Notify.SMTP.Port)
+}
+
+func TestServerConfig_MergeJSON_NotifyTeamsEnabledExplicitFalse(t *testing.T) {
+	base := DefaultServerConfig()
+	base.Notify.Teams.Enabled = true
+	raw := json.RawMessage(`{"notify":{"teams":{"enabled":false}}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.False(t, merged.Notify.Teams.Enabled)
+}
+
+func TestServerConfig_MergeJSON_OpenRouterAllFields(t *testing.T) {
+	base := DefaultServerConfig()
+	raw := json.RawMessage(`{"openrouter":{"api_key":"","base_url":"https://custom.ai","large_model":"x/big","small_model":"x/small"}}`)
+	merged, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, "", merged.OpenRouter.APIKey)
+	assert.Equal(t, "https://custom.ai", merged.OpenRouter.BaseURL)
+	assert.Equal(t, "x/big", merged.OpenRouter.LargeModel)
+	assert.Equal(t, "x/small", merged.OpenRouter.SmallModel)
 }

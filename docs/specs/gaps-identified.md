@@ -3,7 +3,9 @@
 Tracking spec-vs-implementation divergences and quality issues discovered during review.
 Items are removed from this list when fixed.
 
-## Spec Divergences
+## Open Issues
+
+## Previously Fixed
 
 - [x] **FIXED** Installer model config never applied to server — `configure_ralph()` wrote server config fields to YAML, but server reads config from database only. Added `apply_model_config()` to push hardware-detected model selections to server API after startup (same pattern as `apply_notification_config()`). Also fixed server/full mode YAML to write CLI-compatible fields.
 

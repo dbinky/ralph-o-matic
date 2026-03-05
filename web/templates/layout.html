@@ -230,7 +230,7 @@
 <body>
     <div class="container">
         <header>
-            <h1>Ralph-o-matic</h1>
+            <h1>Ralph-o-matic {{if .Version}}<span style="font-size: 0.6em; color: #666; font-weight: normal;">{{.Version}}</span>{{end}}</h1>
             <div class="nav-links">
                 <a href="/">Dashboard</a>
                 <a href="/config">Config</a>

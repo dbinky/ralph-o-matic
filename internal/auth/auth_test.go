@@ -357,3 +357,80 @@ func TestLoadConfig_MalformedFileFails(t *testing.T) {
 	)
 	assert.Error(t, err)
 }
+
+// --- AuthModeAPIKey tests ---
+
+func TestAuthMode_APIKey_Valid(t *testing.T) {
+	assert.True(t, AuthModeAPIKey.Valid())
+}
+
+func TestConfig_Validate_ModeAPIKey_WithKey(t *testing.T) {
+	cfg := &Config{Mode: AuthModeAPIKey, APIKey: "my-secret-key-that-is-long-enough"}
+	assert.NoError(t, cfg.Validate())
+}
+
+func TestConfig_Validate_ModeAPIKey_TooShort(t *testing.T) {
+	cfg := &Config{Mode: AuthModeAPIKey, APIKey: "short"}
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "at least 16 characters")
+}
+
+func TestConfig_Validate_ModeAPIKey_EmptyKey(t *testing.T) {
+	cfg := &Config{Mode: AuthModeAPIKey, APIKey: ""}
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "api_key")
+}
+
+func TestLoadConfig_APIKey_EnvVar(t *testing.T) {
+	envVars := map[string]string{
+		"RALPH_AUTH_MODE": "apikey",
+		"RALPH_API_KEY":   "env-api-key",
+	}
+	cfg, err := LoadConfig(
+		func(key string) string { return envVars[key] },
+		"",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, AuthModeAPIKey, cfg.Mode)
+	assert.Equal(t, "env-api-key", cfg.APIKey)
+}
+
+func TestLoadConfig_APIKey_FromFile(t *testing.T) {
+	dir := t.TempDir()
+	settingsPath := filepath.Join(dir, "settings.json")
+	content := `{"auth": {"mode": "apikey", "api_key": "file-api-key"}}`
+	require.NoError(t, os.WriteFile(settingsPath, []byte(content), 0600))
+
+	cfg, err := LoadConfig(
+		func(key string) string {
+			if key == "RALPH_CONFIG_FILE" {
+				return settingsPath
+			}
+			return ""
+		},
+		"",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, AuthModeAPIKey, cfg.Mode)
+	assert.Equal(t, "file-api-key", cfg.APIKey)
+}
+
+func TestLoadConfig_APIKey_EnvOverridesFile(t *testing.T) {
+	dir := t.TempDir()
+	settingsPath := filepath.Join(dir, "settings.json")
+	content := `{"auth": {"mode": "apikey", "api_key": "file-key"}}`
+	require.NoError(t, os.WriteFile(settingsPath, []byte(content), 0600))
+
+	envVars := map[string]string{
+		"RALPH_CONFIG_FILE": settingsPath,
+		"RALPH_API_KEY":     "env-key",
+	}
+	cfg, err := LoadConfig(
+		func(key string) string { return envVars[key] },
+		"",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "env-key", cfg.APIKey)
+}

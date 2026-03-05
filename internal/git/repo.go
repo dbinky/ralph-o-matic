@@ -115,6 +115,15 @@ func (rm *RepoManager) PushAndCreatePR(ctx context.Context, workDir, baseBranch 
 	return prURL, nil
 }
 
+// Push pushes the current branch to origin.
+func (rm *RepoManager) Push(ctx context.Context, workDir string) error {
+	branch, err := rm.git.GetCurrentBranch(ctx, workDir)
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+	return rm.git.Push(ctx, workDir, branch)
+}
+
 // Cleanup removes the job workspace
 func (rm *RepoManager) Cleanup(jobID int64) error {
 	return os.RemoveAll(rm.WorkspacePath(jobID))

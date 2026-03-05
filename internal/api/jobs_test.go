@@ -82,6 +82,16 @@ func TestAPI_GetJob(t *testing.T) {
 	assert.Equal(t, job.ID, resp.ID)
 }
 
+func TestAPI_GetJob_InvalidID(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/jobs/notanint", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestAPI_GetJob_NotFound(t *testing.T) {
 	srv, _ := newTestServer(t)
 
@@ -863,6 +873,160 @@ func TestAPI_UpdateJob_NotFound(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestAPI_CancelJob_InvalidID(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("DELETE", "/api/jobs/notanint", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_CancelJob_NotFound(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("DELETE", "/api/jobs/99999", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestAPI_CancelJob_AlreadyCancelled(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+	require.NoError(t, srv.queue.Cancel(job))
+
+	req := httptest.NewRequest("DELETE", "/api/jobs/"+strconv.FormatInt(job.ID, 10), nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_PauseJob_InvalidID(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("POST", "/api/jobs/notanint/pause", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_PauseJob_NotFound(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("POST", "/api/jobs/99999/pause", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestAPI_PauseJob_WrongState(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	// Queued job cannot be paused (must be running first)
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+
+	req := httptest.NewRequest("POST", "/api/jobs/"+strconv.FormatInt(job.ID, 10)+"/pause", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_ResumeJob_InvalidID(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("POST", "/api/jobs/notanint/resume", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_ResumeJob_NotFound(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("POST", "/api/jobs/99999/resume", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestAPI_ResumeJob_WrongState(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	// Queued job cannot be resumed (must be paused first)
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+
+	req := httptest.NewRequest("POST", "/api/jobs/"+strconv.FormatInt(job.ID, 10)+"/resume", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_ReorderJobs_InvalidJSON(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("PUT", "/api/jobs/order", strings.NewReader("{invalid"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_GetJobLogs(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	job := models.NewJob("git@github.com:user/repo.git", "main", "test", 10)
+	require.NoError(t, srv.queue.Enqueue(job))
+
+	// Write a log entry
+	logRepo := db.NewLogRepo(database)
+	require.NoError(t, logRepo.Append(job.ID, 1, "line one\n"))
+
+	req := httptest.NewRequest("GET", "/api/jobs/"+strconv.FormatInt(job.ID, 10)+"/logs", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Contains(t, resp, "logs")
+}
+
+func TestAPI_GetJobLogs_InvalidID(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/jobs/notanint/logs", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_GetJobLogs_NotFound(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/jobs/99999/logs", nil)
+	w := httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)

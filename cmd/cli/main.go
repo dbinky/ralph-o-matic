@@ -25,6 +25,9 @@ func main() {
 	}
 
 	client = cli.NewClient(cfg.Server)
+	if key := os.Getenv("RALPH_API_KEY"); key != "" {
+		client.SetAPIKey(key)
+	}
 
 	rootCmd := &cobra.Command{
 		Use:     "ralph-o-matic",

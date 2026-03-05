@@ -32,7 +32,7 @@ func (s *Session) IsValid() bool {
 // skipPermissions controls --dangerously-skip-permissions.
 // session is optional; if valid, --resume is added.
 func buildClaudeArgs(skipPermissions bool, session *Session) []string {
-	args := []string{"--print", "--output-format", "json"}
+	args := []string{"--print", "--verbose", "--output-format", "stream-json"}
 	if skipPermissions {
 		args = append(args, "--dangerously-skip-permissions")
 	}
