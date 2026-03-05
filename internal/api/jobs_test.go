@@ -82,6 +82,16 @@ func TestAPI_GetJob(t *testing.T) {
 	assert.Equal(t, job.ID, resp.ID)
 }
 
+func TestAPI_GetJob_InvalidID(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/jobs/notanint", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestAPI_GetJob_NotFound(t *testing.T) {
 	srv, _ := newTestServer(t)
 
