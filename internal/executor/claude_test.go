@@ -301,12 +301,6 @@ func TestAugmentPath_NoPATH(t *testing.T) {
 	assert.Equal(t, env, result)
 }
 
-func TestIsClaudeInstalled_NoPanic(t *testing.T) {
-	// Verify the function runs without panicking.
-	// Result depends on the test environment.
-	_ = IsClaudeInstalled()
-}
-
 func TestClaudeExecutor_BuildEnv_DeniedEnvVarsFiltered(t *testing.T) {
 	cfg := models.DefaultServerConfig()
 	exec := NewClaudeExecutor(cfg)

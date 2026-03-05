@@ -82,8 +82,13 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if c.Mode == AuthModeAPIKey && c.APIKey == "" {
-		return fmt.Errorf("auth mode %q requires a non-empty api_key", c.Mode)
+	if c.Mode == AuthModeAPIKey {
+		if c.APIKey == "" {
+			return fmt.Errorf("auth mode %q requires a non-empty api_key", c.Mode)
+		}
+		if len(c.APIKey) < 16 {
+			return fmt.Errorf("auth mode %q: api_key must be at least 16 characters", c.Mode)
+		}
 	}
 
 	return nil

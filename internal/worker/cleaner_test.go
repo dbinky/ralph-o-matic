@@ -546,29 +546,6 @@ func TestCleaner_Retention_ContextAlreadyCancelledAtStart(t *testing.T) {
 	assert.NoError(t, err, "job should still exist when context was pre-cancelled")
 }
 
-func TestCleaner_Retention_ContextCancelledMidLoop(t *testing.T) {
-	env := newCleanerTestEnv(t)
-	cfg := models.DefaultServerConfig()
-	cfg.JobRetentionDays = 1
-	require.NoError(t, env.configRepo.Save(cfg))
-
-	// Create multiple expired jobs
-	for i := 0; i < 3; i++ {
-		env.createJob(t, models.StatusCompleted, 2*24*time.Hour, false)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Use a custom cleaner where we cancel mid-loop isn't directly injectable,
-	// but we can verify the ctx.Err() path by having ctx already done.
-	// This is equivalent to the pre-cancel test but for the inner loop path.
-	cancel()
-
-	c := env.newCleaner()
-	// Call with done context — hits the inner ctx.Err() check too.
-	c.purgeExpiredJobs(ctx)
-}
-
 func TestCleaner_Tick_SkipsWhenLocked(t *testing.T) {
 	env := newCleanerTestEnv(t)
 

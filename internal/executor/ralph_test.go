@@ -151,4 +151,5 @@ func TestRalphHandler_ResolveWorkDir_PathTraversal(t *testing.T) {
 	// Path traversal should be rejected — returns base dir
 	result := handler.resolveWorkDir(job)
 	assert.Equal(t, workspacePath, result)
+	assert.NotContains(t, result, "..")
 }

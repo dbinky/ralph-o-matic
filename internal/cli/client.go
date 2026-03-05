@@ -50,6 +50,29 @@ func (c *Client) loadCachedToken() *CachedToken {
 	return c.cachedToken
 }
 
+// attachAuth sets the Authorization header on the request.
+// Static API key takes precedence over cached Entra token.
+func (c *Client) attachAuth(req *http.Request) {
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		return
+	}
+	if c.tokenPath == "" {
+		return
+	}
+	token := c.loadCachedToken()
+	if token == nil {
+		return
+	}
+	if token.IsExpired() {
+		fmt.Fprintf(os.Stderr, "Warning: auth token expired. Run 'ralph auth login' to re-authenticate.\n")
+		return
+	}
+	if token.Server == c.baseURL {
+		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	}
+}
+
 // NewClient creates a new API client
 func NewClient(baseURL string) *Client {
 	return &Client{
@@ -206,16 +229,7 @@ func (c *Client) StreamJobEvents(ctx context.Context, jobID int64) (<-chan struc
 		return nil, err
 	}
 	req.Header.Set("Accept", "text/event-stream")
-
-	// Attach auth header (mirrors logic in request()).
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	} else if c.tokenPath != "" {
-		token := c.loadCachedToken()
-		if token != nil && !token.IsExpired() && token.Server == c.baseURL {
-			req.Header.Set("Authorization", "Bearer "+token.AccessToken)
-		}
-	}
+	c.attachAuth(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -292,20 +306,7 @@ func (c *Client) request(method, path string, body, result interface{}) error {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	// Attach auth header: static API key takes precedence over cached Entra token.
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	} else if c.tokenPath != "" {
-		// Entra token: loaded from disk once per CLI invocation and cached.
-		token := c.loadCachedToken()
-		if token != nil {
-			if token.IsExpired() {
-				fmt.Fprintf(os.Stderr, "Warning: auth token expired. Run 'ralph auth login' to re-authenticate.\n")
-			} else if token.Server == c.baseURL {
-				req.Header.Set("Authorization", "Bearer "+token.AccessToken)
-			}
-		}
-	}
+	c.attachAuth(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

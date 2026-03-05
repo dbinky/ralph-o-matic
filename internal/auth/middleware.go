@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -12,7 +13,8 @@ import (
 // through without setting any user context.
 //
 // When apiKey is non-empty (auth mode apikey), the middleware requires a
-// matching Bearer token. No user context is set on success.
+// matching Bearer token. A synthetic admin user is set in context on success
+// so that downstream RequireRole checks work correctly.
 //
 // When provider is set (auth mode entra), the middleware checks for a
 // Bearer token first, then falls back to session cookies.
@@ -21,11 +23,12 @@ func Middleware(provider *EntraProvider, store *SessionStore, apiKey string) fun
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Auth mode apikey: validate static Bearer token
 			if provider == nil && apiKey != "" {
-				if extractBearerToken(r) != apiKey {
+				if subtle.ConstantTimeCompare([]byte(extractBearerToken(r)), []byte(apiKey)) != 1 {
 					writeJSONError(w, http.StatusUnauthorized, "API key required")
 					return
 				}
-				next.ServeHTTP(w, r)
+				syntheticUser := &User{Name: "api-key", Email: "api-key@local", Roles: []string{"Admin"}}
+				next.ServeHTTP(w, r.WithContext(ContextWithUser(r.Context(), syntheticUser)))
 				return
 			}
 

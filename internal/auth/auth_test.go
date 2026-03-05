@@ -365,8 +365,15 @@ func TestAuthMode_APIKey_Valid(t *testing.T) {
 }
 
 func TestConfig_Validate_ModeAPIKey_WithKey(t *testing.T) {
-	cfg := &Config{Mode: AuthModeAPIKey, APIKey: "my-secret-key"}
+	cfg := &Config{Mode: AuthModeAPIKey, APIKey: "my-secret-key-that-is-long-enough"}
 	assert.NoError(t, cfg.Validate())
+}
+
+func TestConfig_Validate_ModeAPIKey_TooShort(t *testing.T) {
+	cfg := &Config{Mode: AuthModeAPIKey, APIKey: "short"}
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "at least 16 characters")
 }
 
 func TestConfig_Validate_ModeAPIKey_EmptyKey(t *testing.T) {

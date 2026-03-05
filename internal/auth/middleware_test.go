@@ -321,8 +321,12 @@ func TestMiddleware_APIKey_CorrectKey_Passes(t *testing.T) {
 	called := false
 	handler := Middleware(nil, nil, key)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
-		// No user context set in apikey mode
-		assert.Nil(t, UserFromContext(r.Context()))
+		// API key mode sets a synthetic admin user in context
+		user := UserFromContext(r.Context())
+		require.NotNil(t, user)
+		assert.Equal(t, "api-key", user.Name)
+		assert.Equal(t, "api-key@local", user.Email)
+		assert.True(t, user.IsAdmin())
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -332,6 +336,23 @@ func TestMiddleware_APIKey_CorrectKey_Passes(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	assert.True(t, called)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestMiddleware_APIKey_RequireRole_Integration(t *testing.T) {
+	const key = "test-api-key-integration"
+
+	// Chain: Middleware (API key) -> RequireRole("Admin") -> handler
+	innerHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := Middleware(nil, nil, key)(RequireRole("Admin", innerHandler))
+
+	req := httptest.NewRequest("PUT", "/api/config", nil)
+	req.Header.Set("Authorization", "Bearer "+key)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
