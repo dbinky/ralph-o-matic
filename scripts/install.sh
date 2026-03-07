@@ -4,7 +4,7 @@ set -euo pipefail
 # Ralph-o-matic Installer
 # "It just works."
 
-VERSION="0.6.1"
+VERSION="0.6.2"
 REPO_URL="https://github.com/dbinky/ralph-o-matic"
 RELEASE_URL="$REPO_URL/releases/download/v$VERSION"
 

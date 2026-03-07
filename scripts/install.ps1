@@ -7,7 +7,7 @@ param(
     [switch]$Update,
     [ValidateSet("full", "server", "client")]
     [string]$Mode = "full",
-    [ValidateSet("ollama", "anthropic")]
+    [ValidateSet("ollama", "anthropic", "openrouter")]
     [string]$Backend = "ollama",
     [string]$Server = "",
     [string]$LargeModel = "",
@@ -16,7 +16,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Version = "0.0.3"
+$Version = "0.6.2"
 $RepoUrl = "https://github.com/dbinky/ralph-o-matic"
 $ReleaseUrl = "$RepoUrl/releases/download/v$Version"
 
@@ -51,7 +51,7 @@ function Get-Platform {
 function Test-RamRequirement {
     $MinRam = 16
 
-    if ($Mode -eq "client" -or $Backend -eq "anthropic") {
+    if ($Mode -eq "client" -or $Backend -eq "anthropic" -or $Backend -eq "openrouter") {
         return
     }
 
@@ -349,7 +349,7 @@ function Test-Dependencies {
     }
 
     # Ollama (server mode + ollama backend only)
-    if ($Mode -ne "client" -and $Backend -ne "anthropic") {
+    if ($Mode -ne "client" -and $Backend -eq "ollama") {
         try {
             $ollamaVersion = & ollama --version 2>$null
             $script:Deps["ollama"] = @{ Installed = $true; Version = $ollamaVersion }
@@ -411,7 +411,7 @@ function Install-MissingDependencies {
         & gh auth login
     }
 
-    if ($Mode -ne "client" -and $Backend -ne "anthropic" -and -not $script:Deps["ollama"].Installed) {
+    if ($Mode -ne "client" -and $Backend -eq "ollama" -and -not $script:Deps["ollama"].Installed) {
         Write-Info "Installing Ollama..."
         winget install --id Ollama.Ollama -e --source winget --accept-package-agreements --accept-source-agreements
         Write-Success "Ollama installed"
@@ -514,7 +514,7 @@ default_max_iterations: 50
         $lanIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" -and $_.PrefixOrigin -eq "Dhcp" } | Select-Object -First 1).IPAddress
         if (-not $lanIp) { $lanIp = "localhost" }
 
-        if ($Backend -eq "anthropic") {
+        if ($Backend -eq "anthropic" -or $Backend -eq "openrouter") {
             @"
 server: http://localhost:9090
 default_priority: normal
@@ -581,11 +581,13 @@ function Select-Backend {
     Write-Host ""
     Write-Host "  [1] Local models via Ollama (GPU/CPU - free, private, requires hardware)"
     Write-Host "  [2] Anthropic API via Claude Code (uses your Claude subscription/API credits)"
+    Write-Host "  [3] OpenRouter API (cloud, multi-provider - pay-per-token via openrouter.ai)"
     Write-Host ""
-    $choice = Read-Host "Select [1-2]"
+    $choice = Read-Host "Select [1-3]"
 
     switch ($choice) {
         "2" { $script:Backend = "anthropic" }
+        "3" { $script:Backend = "openrouter" }
         default { $script:Backend = "ollama" }
     }
 }
@@ -613,8 +615,8 @@ function Test-ClaudeAuth {
 function Select-AnthropicModels {
     # Auto-select defaults with -Yes flag
     if ($Yes) {
-        $script:LargeModel = "claude-sonnet-4-5-20250929"
-        $script:SmallModel = "claude-haiku-4-5-20251001"
+        $script:LargeModel = "claude-sonnet-4-6-20260218"
+        $script:SmallModel = "claude-sonnet-4-6-20260218"
         return
     }
 
@@ -622,49 +624,49 @@ function Select-AnthropicModels {
     Write-Host "Select the LARGE model (used for main coding iterations):"
     Write-Host ""
     Write-Host "  [1] claude-opus-4-6               (most capable, slower, higher cost)"
-    Write-Host "  [2] claude-sonnet-4-5-20250929     (strong balance of quality and speed)"
+    Write-Host "  [2] claude-sonnet-4-6-20260218    (fast and capable, recommended)"
     Write-Host "  [3] Custom model ID"
     Write-Host ""
     $choice = Read-Host "Select [1-3]"
 
     switch ($choice) {
         "1" { $script:LargeModel = "claude-opus-4-6" }
-        "2" { $script:LargeModel = "claude-sonnet-4-5-20250929" }
+        "2" { $script:LargeModel = "claude-sonnet-4-6-20260218" }
         "3" {
             $script:LargeModel = Read-Host "Enter model ID"
             if (-not $script:LargeModel) {
-                Write-Warn "Empty model ID, using claude-sonnet-4-5-20250929"
-                $script:LargeModel = "claude-sonnet-4-5-20250929"
+                Write-Warn "Empty model ID, using claude-sonnet-4-6-20260218"
+                $script:LargeModel = "claude-sonnet-4-6-20260218"
             }
         }
         default {
-            Write-Warn "Invalid choice, using claude-sonnet-4-5-20250929"
-            $script:LargeModel = "claude-sonnet-4-5-20250929"
+            Write-Warn "Invalid choice, using claude-sonnet-4-6-20260218"
+            $script:LargeModel = "claude-sonnet-4-6-20260218"
         }
     }
 
     Write-Host ""
     Write-Host "Select the SMALL model (used for quick checks and lightweight tasks):"
     Write-Host ""
-    Write-Host "  [1] claude-haiku-4-5-20251001     (fast, efficient, low cost)"
-    Write-Host "  [2] claude-sonnet-4-5-20250929     (higher quality for small tasks)"
+    Write-Host "  [1] claude-sonnet-4-6-20260218    (fast and capable, recommended)"
+    Write-Host "  [2] claude-haiku-4-5-20251001     (faster, lower cost)"
     Write-Host "  [3] Custom model ID"
     Write-Host ""
     $choice = Read-Host "Select [1-3]"
 
     switch ($choice) {
-        "1" { $script:SmallModel = "claude-haiku-4-5-20251001" }
-        "2" { $script:SmallModel = "claude-sonnet-4-5-20250929" }
+        "1" { $script:SmallModel = "claude-sonnet-4-6-20260218" }
+        "2" { $script:SmallModel = "claude-haiku-4-5-20251001" }
         "3" {
             $script:SmallModel = Read-Host "Enter model ID"
             if (-not $script:SmallModel) {
-                Write-Warn "Empty model ID, using claude-haiku-4-5-20251001"
-                $script:SmallModel = "claude-haiku-4-5-20251001"
+                Write-Warn "Empty model ID, using claude-sonnet-4-6-20260218"
+                $script:SmallModel = "claude-sonnet-4-6-20260218"
             }
         }
         default {
-            Write-Warn "Invalid choice, using claude-haiku-4-5-20251001"
-            $script:SmallModel = "claude-haiku-4-5-20251001"
+            Write-Warn "Invalid choice, using claude-sonnet-4-6-20260218"
+            $script:SmallModel = "claude-sonnet-4-6-20260218"
         }
     }
 
@@ -703,6 +705,141 @@ function Push-AnthropicConfig {
         Write-Success "Anthropic config applied (large=$($script:LargeModel), small=$($script:SmallModel))"
     } catch {
         Write-Warn "Failed to apply Anthropic config: $_"
+    }
+}
+
+$script:OpenRouterApiKey = ""
+
+function Test-OpenRouterKey {
+    if ($Yes) {
+        if (-not $env:OPENROUTER_API_KEY) {
+            Write-Err "OpenRouter API key required. Set OPENROUTER_API_KEY env var with -Yes."
+        }
+        $script:OpenRouterApiKey = $env:OPENROUTER_API_KEY
+        return
+    }
+
+    Write-Host ""
+    Write-Host "Enter your OpenRouter API key (from https://openrouter.ai/keys):"
+    $secureKey = Read-Host "API key" -AsSecureString
+    $script:OpenRouterApiKey = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+    )
+
+    if (-not $script:OpenRouterApiKey) {
+        Write-Err "API key cannot be empty"
+    }
+
+    # Validate by calling the models endpoint
+    Write-Info "Validating API key..."
+    try {
+        $headers = @{ "Authorization" = "Bearer $($script:OpenRouterApiKey)" }
+        $null = Invoke-RestMethod -Uri "https://openrouter.ai/api/v1/models" -Headers $headers -TimeoutSec 30
+        Write-Success "API key validated"
+    } catch {
+        $statusCode = $_.Exception.Response.StatusCode.value__
+        Write-Err "API key validation failed (HTTP $statusCode). Check your key at https://openrouter.ai/keys"
+    }
+}
+
+function Select-OpenRouterModels {
+    if ($Yes) {
+        $script:LargeModel = "moonshotai/kimi-k2.5"
+        $script:SmallModel = "mistralai/devstral-2-2512"
+        return
+    }
+
+    Write-Host ""
+    Write-Host "Select the LARGE model (used for main coding iterations):"
+    Write-Host ""
+    Write-Host "  [1] Kimi K2.5        (moonshotai/kimi-k2.5)"
+    Write-Host "  [2] Grok 4.1 Fast    (x-ai/grok-4-1-fast)"
+    Write-Host "  [3] Devstral 2 2512  (mistralai/devstral-2-2512)"
+    Write-Host "  [4] Custom model ID"
+    Write-Host ""
+    $choice = Read-Host "Select [1-4]"
+
+    switch ($choice) {
+        "1" { $script:LargeModel = "moonshotai/kimi-k2.5" }
+        "2" { $script:LargeModel = "x-ai/grok-4-1-fast" }
+        "3" { $script:LargeModel = "mistralai/devstral-2-2512" }
+        "4" {
+            $script:LargeModel = Read-Host "Enter model ID"
+            if (-not $script:LargeModel) {
+                Write-Warn "Empty model ID, using moonshotai/kimi-k2.5"
+                $script:LargeModel = "moonshotai/kimi-k2.5"
+            }
+        }
+        default {
+            Write-Warn "Invalid choice, using moonshotai/kimi-k2.5"
+            $script:LargeModel = "moonshotai/kimi-k2.5"
+        }
+    }
+
+    Write-Host ""
+    Write-Host "Select the SMALL model (used for fast tasks and tool calls):"
+    Write-Host ""
+    Write-Host "  [1] Kimi K2.5        (moonshotai/kimi-k2.5)"
+    Write-Host "  [2] Grok 4.1 Fast    (x-ai/grok-4-1-fast)"
+    Write-Host "  [3] Devstral 2 2512  (mistralai/devstral-2-2512)"
+    Write-Host "  [4] Custom model ID"
+    Write-Host ""
+    $choice = Read-Host "Select [1-4]"
+
+    switch ($choice) {
+        "1" { $script:SmallModel = "moonshotai/kimi-k2.5" }
+        "2" { $script:SmallModel = "x-ai/grok-4-1-fast" }
+        "3" { $script:SmallModel = "mistralai/devstral-2-2512" }
+        "4" {
+            $script:SmallModel = Read-Host "Enter model ID"
+            if (-not $script:SmallModel) {
+                Write-Warn "Empty model ID, using mistralai/devstral-2-2512"
+                $script:SmallModel = "mistralai/devstral-2-2512"
+            }
+        }
+        default {
+            Write-Warn "Invalid choice, using mistralai/devstral-2-2512"
+            $script:SmallModel = "mistralai/devstral-2-2512"
+        }
+    }
+
+    Write-Success "Selected: large=$($script:LargeModel), small=$($script:SmallModel)"
+}
+
+function Push-OpenRouterConfig {
+    Write-Info "Applying OpenRouter configuration to server..."
+
+    # Wait for server
+    $retries = 0
+    while ($retries -lt 15) {
+        try {
+            $null = Invoke-RestMethod -Uri "http://localhost:9090/api/config" -TimeoutSec 2
+            break
+        } catch {
+            $retries++
+            Start-Sleep -Seconds 1
+        }
+    }
+    if ($retries -ge 15) {
+        Write-Warn "Server not responding - skipping OpenRouter config"
+        return
+    }
+
+    $body = @{
+        default_backend = "openrouter"
+        openrouter = @{
+            api_key = $script:OpenRouterApiKey
+            base_url = "https://openrouter.ai/api/v1"
+            large_model = $script:LargeModel
+            small_model = $script:SmallModel
+        }
+    } | ConvertTo-Json -Depth 3
+
+    try {
+        Invoke-RestMethod -Uri "http://localhost:9090/api/config" -Method Patch -ContentType "application/json" -Body $body | Out-Null
+        Write-Success "OpenRouter config applied (large=$($script:LargeModel), small=$($script:SmallModel))"
+    } catch {
+        Write-Warn "Failed to apply OpenRouter config: $_"
     }
 }
 
@@ -1044,6 +1181,9 @@ function Main {
         if ($Backend -eq "anthropic") {
             Test-ClaudeAuth
             Select-AnthropicModels
+        } elseif ($Backend -eq "openrouter") {
+            Test-OpenRouterKey
+            Select-OpenRouterModels
         } else {
             Get-Gpu
             Select-Models
@@ -1061,6 +1201,8 @@ function Main {
         Request-StartServer
         if ($Backend -eq "anthropic") {
             Push-AnthropicConfig
+        } elseif ($Backend -eq "openrouter") {
+            Push-OpenRouterConfig
         }
         Push-NotificationConfig
         Test-NotificationConfig
