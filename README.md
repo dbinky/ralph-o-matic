@@ -1,6 +1,6 @@
 # ralph-o-matic
 
-A job queue server that runs iterative AI coding refinement loops — locally via [Ollama](https://ollama.com) or against the Anthropic API — so you can queue work, walk away, and review results as PRs.
+A job queue server that runs iterative AI coding refinement loops — locally via [Ollama](https://ollama.com), against the Anthropic API, or through [OpenRouter](https://openrouter.ai) — so you can queue work, walk away, and review results as PRs.
 
 ## The Problem
 
@@ -8,22 +8,22 @@ Iterating on code until tests pass and acceptance criteria are met produces exce
 
 ## The Solution
 
-Draft your implementation with Claude Code + Opus 4.5. Then hand off to ralph-o-matic, which runs the refinement loop with built-in circuit breakers, retry logic, session continuity, and per-iteration commits. Use local models via Ollama to save API credits, or use the Anthropic API with rate limiting when you need cloud-grade quality.
+Draft your implementation with Claude Code + Opus. Then hand off to ralph-o-matic, which runs the refinement loop with built-in circuit breakers, retry logic, session continuity, and per-iteration commits. Use local models via Ollama to save API credits, use the Anthropic API when you need Claude-grade quality, or use OpenRouter for access to models from multiple providers on a pay-per-token basis.
 
 ```
-Your Dev Env (Opus 4.5)            Ralph-o-Matic Server
+Your Dev Env (Opus 4.6)            Ralph-o-Matic Server
 ┌─────────────────┐               ┌─────────────────────────┐
 │ Brainstorm      │  submit job   │ ralph-o-matic-server    │
 │ Plan            │──────────────>│ Queue → Execute loop    │
 │ Draft           │               │ Commit → Push → PR      │
 └─────────────────┘               └─────────────────────────┘
-                                           │
-                                   Review PR when done
+                                          │
+                                  Review PR when done
 ```
 
 ## Features
 
-- **Dual backend** — run loops against local Ollama models or the Anthropic API, with per-backend configuration
+- **Three backends** — run loops against local Ollama models, the Anthropic API (via Claude Code), or OpenRouter (Kimi, Grok, Devstral, and more)
 - **Job queue** with priority scheduling (high/normal/low), pause/resume, drag-and-drop reordering
 - **Circuit breaker** — detects no-progress loops and repeated errors, stops wasting compute
 - **Session continuity** — resumes Claude sessions across iterations for better context
@@ -42,21 +42,29 @@ Your Dev Env (Opus 4.5)            Ralph-o-Matic Server
 
 ## Quick Start
 
-### Install
+### Install (macOS / Linux)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dbinky/ralph-o-matic/main/scripts/install.sh | bash
 ```
 
-The installer detects your hardware, recommends models, installs dependencies, and starts the server. Use `--yes` for non-interactive mode.
+### Install (Windows PowerShell)
 
-**Installation modes:**
+```powershell
+irm https://raw.githubusercontent.com/dbinky/ralph-o-matic/main/scripts/install.ps1 | iex
+```
+
+Both installers detect your hardware, let you choose a backend, recommend models, install dependencies, and start the server. Use `--yes` (bash) or `-Yes` (PowerShell) for non-interactive mode.
+
+### Installation Modes
 
 | Mode | What it installs |
 |------|-----------------|
-| `--mode=full` | Server + CLI + Ollama + models (default) |
-| `--mode=server` | Server + Ollama + models only |
-| `--mode=client` | CLI only (connects to remote server) |
+| `full` (default) | Server + CLI + backend dependencies + models |
+| `server` | Server + backend dependencies + models only |
+| `client` | CLI only (connects to a remote server) |
+
+**Bash examples:**
 
 ```bash
 # Server-only on a remote machine
@@ -64,7 +72,32 @@ curl -fsSL .../install.sh | bash -s -- --mode=server --yes
 
 # Client-only, pointing at your server
 curl -fsSL .../install.sh | bash -s -- --mode=client --server=http://192.168.1.50:9090
+
+# Non-interactive with Anthropic backend
+curl -fsSL .../install.sh | bash -s -- --yes --backend=anthropic
 ```
+
+**PowerShell examples:**
+
+```powershell
+# Download and run with flags
+$script = irm https://raw.githubusercontent.com/dbinky/ralph-o-matic/main/scripts/install.ps1
+& ([scriptblock]::Create($script)) -Mode client -Server http://192.168.1.50:9090
+
+# Or save and run
+irm .../install.ps1 -OutFile install.ps1
+.\install.ps1 -Yes -Backend anthropic
+```
+
+### Choosing a Backend
+
+The installer prompts you to choose one of three backends:
+
+| Backend | When to use |
+|---------|------------|
+| **Ollama** (default) | Free, private, runs on your hardware. Requires 16+ GB RAM. |
+| **Anthropic** | Uses your Claude Code subscription or API credits. No local hardware needed. |
+| **OpenRouter** | Pay-per-token access to models from multiple providers (Kimi, Grok, Devstral, etc.). Requires an API key from [openrouter.ai](https://openrouter.ai). |
 
 ### Submit a Job
 
@@ -78,8 +111,9 @@ ralph-o-matic submit --prompt "Fix the failing tests in auth.go. Exit criteria: 
 # With options
 ralph-o-matic submit --priority high --max-iterations 100 --open-ended
 
-# Use Anthropic API instead of Ollama
+# Use a specific backend
 ralph-o-matic submit --backend anthropic --prompt "Refactor the auth module"
+ralph-o-matic submit --backend openrouter --prompt "Add input validation"
 ```
 
 ### Monitor
@@ -103,6 +137,8 @@ ralph-o-matic move <job-id> --first  # Move to front of queue
 
 ## Model Catalog
 
+### Ollama (Local Models)
+
 ralph-o-matic ships with a curated catalog of coding models:
 
 | Model | Size | Role | Quality | Notes |
@@ -115,15 +151,33 @@ ralph-o-matic ships with a curated catalog of coding models:
 
 The installer recommends a (large, small) pairing based on your hardware:
 
-- **48+ GB Apple Silicon** → devstral + qwen3:8b on GPU (unified memory)
-- **32 GB Apple Silicon** → qwen3-coder:30b + qwen3:8b on GPU
-- **64 GB RAM + GPU** → devstral on CPU + qwen3:8b on GPU (split)
-- **16 GB RAM, no GPU** → qwen3:14b + qwen3:8b on CPU
-- **8 GB RAM** → qwen3:8b + qwen3:4b on CPU
+- **48+ GB Apple Silicon** — devstral + qwen3:8b on GPU (unified memory)
+- **32 GB Apple Silicon** — qwen3-coder:30b + qwen3:8b on GPU
+- **64 GB RAM + GPU** — devstral on CPU + qwen3:8b on GPU (split)
+- **16 GB RAM, no GPU** — qwen3:14b + qwen3:8b on CPU
+- **8 GB RAM** — qwen3:8b + qwen3:4b on CPU
+
+### Anthropic Models
+
+| Model | Role | Notes |
+|-------|------|-------|
+| claude-opus-4-6 | large | Most capable, slower, higher cost |
+| claude-sonnet-4-6-20260218 | large + small (default) | Fast and capable |
+| claude-haiku-4-5-20251001 | small | Fastest, lowest cost |
+
+### OpenRouter Models
+
+| Model | ID | Role |
+|-------|-----|------|
+| Kimi K2.5 | `moonshotai/kimi-k2.5` | large (default) |
+| Grok 4.1 Fast | `x-ai/grok-4-1-fast` | large or small |
+| Devstral 2 2512 | `mistralai/devstral-2-2512` | small (default) |
+
+You can also enter any model ID available on [OpenRouter](https://openrouter.ai/models) during installation.
 
 ## Configuration
 
-Server config lives at `~/.config/ralph-o-matic/config.yaml` and is editable via the API or CLI:
+Server config is managed via the API and CLI:
 
 ```bash
 ralph-o-matic server-config                        # View current config
@@ -131,7 +185,7 @@ ralph-o-matic server-config set large_model.name qwen3-coder:30b
 ralph-o-matic server-config set ollama.host http://remote:11434
 ```
 
-Key settings:
+### Ollama Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -142,15 +196,46 @@ Key settings:
 | `small_model.name` | `qwen3:8b` | Fast model for simple tasks |
 | `small_model.device` | `gpu` | Where to run it |
 
+### Anthropic Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `default_backend` | `ollama` | Active backend (`ollama`, `anthropic`, `openrouter`) |
+| `anthropic.large_model` | `claude-sonnet-4-6-20260218` | Primary coding model |
+| `anthropic.small_model` | `claude-sonnet-4-6-20260218` | Fast model for simple tasks |
+
+Authentication is handled by Claude Code's built-in auth — no API key needed.
+
+### OpenRouter Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `openrouter.api_key` | | Your OpenRouter API key (from [openrouter.ai/keys](https://openrouter.ai/keys)) |
+| `openrouter.base_url` | `https://openrouter.ai/api/v1` | API endpoint (must be HTTPS for non-localhost) |
+| `openrouter.large_model` | `moonshotai/kimi-k2.5` | Primary coding model |
+| `openrouter.small_model` | `mistralai/devstral-2-2512` | Fast model for simple tasks |
+
+### General Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
 | `default_max_iterations` | `50` | Default iteration cap |
 | `job_retention_days` | `30` | Days to keep completed jobs |
-| `notify.smtp.host` | | SMTP server hostname |
-| `notify.smtp.port` | `587` | SMTP server port |
-| `notify.smtp.username` | | SMTP auth username |
-| `notify.smtp.password` | | SMTP auth password |
-| `notify.smtp.from` | | Sender email address |
-| `notify.smtp.recipients` | | Comma-separated recipient addresses |
-| `notify.teams.webhook_url` | | Microsoft Teams incoming webhook URL |
+
+### Switching Backends
+
+You can switch the active backend at any time via the API:
+
+```bash
+# Switch to OpenRouter
+ralph-o-matic server-config set default_backend openrouter
+
+# Switch to Anthropic
+ralph-o-matic server-config set default_backend anthropic
+
+# Switch back to Ollama
+ralph-o-matic server-config set default_backend ollama
+```
 
 ## Notifications
 
@@ -200,7 +285,7 @@ Install the `brainstorm-to-ralph` skill for end-to-end workflows:
 /brainstorm-to-ralph "Add user authentication with OAuth"
 ```
 
-This walks through brainstorming, planning, and drafting locally with Opus 4.5, then submits the refinement work to ralph-o-matic automatically.
+This walks through brainstorming, planning, and drafting locally with Opus, then submits the refinement work to ralph-o-matic automatically.
 
 ## API
 
