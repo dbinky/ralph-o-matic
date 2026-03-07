@@ -117,8 +117,8 @@ func TestAnthropicConfig_Validate(t *testing.T) {
 func TestDefaultServerConfig_AnthropicDefaults(t *testing.T) {
 	cfg := DefaultServerConfig()
 	assert.Equal(t, BackendOllama, cfg.DefaultBackend)
-	assert.Equal(t, "claude-opus-4-5-20251101", cfg.Anthropic.LargeModel)
-	assert.Equal(t, "claude-haiku-4-5-20251001", cfg.Anthropic.SmallModel)
+	assert.Equal(t, "claude-sonnet-4-6-20260218", cfg.Anthropic.LargeModel)
+	assert.Equal(t, "claude-sonnet-4-6-20260218", cfg.Anthropic.SmallModel)
 }
 
 func TestServerConfig_Validate(t *testing.T) {
@@ -247,7 +247,7 @@ func TestServerConfig_Merge_Backend(t *testing.T) {
 		}
 		merged := base.Merge(updates)
 		assert.Equal(t, "claude-sonnet-4-20250514", merged.Anthropic.LargeModel)
-		assert.Equal(t, "claude-haiku-4-5-20251001", merged.Anthropic.SmallModel)
+		assert.Equal(t, "claude-sonnet-4-6-20260218", merged.Anthropic.SmallModel)
 	})
 }
 
