@@ -1,6 +1,6 @@
 module github.com/ryan/ralph-o-matic
 
-go 1.24.13
+go 1.25.0
 
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
@@ -8,7 +8,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.3
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/oauth2 v0.35.0
+	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.46.1
 )
