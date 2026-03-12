@@ -37,7 +37,7 @@ Your Dev Env (Opus 4.6)            Ralph-o-Matic Server
 - **Authentication** — optional Microsoft Entra ID (Azure AD) SSO with role-based access control
 - **Web dashboard** with live updates via SSE
 - **Git integration** — auto-clones repos, creates result branches, opens PRs on completion
-- **Claude Code skill** (`brainstorm-to-ralph`) — end-to-end workflow from idea to queued refinement job
+- **Claude Code skills** — `brainstorm-to-ralph` for end-to-end idea-to-job workflows, `direct-to-ralph` for submitting ready work without brainstorming
 - **Cross-platform** — macOS, Linux, and Windows; amd64 and arm64
 
 ## Quick Start
@@ -277,15 +277,27 @@ export RALPH_ENTRA_CLIENT_SECRET=your-client-secret
 
 Admin-only endpoints (like `test-notify`) require the admin role.
 
-## Claude Code Integration
+## Claude Code Skills
 
-Install the `brainstorm-to-ralph` skill for end-to-end workflows:
+The installer sets up two Claude Code skills that integrate directly with ralph-o-matic:
+
+### `/brainstorm-to-ralph`
+
+End-to-end workflow from idea to queued refinement job. Walks through brainstorming, planning, and drafting locally with Opus, then submits the work to ralph-o-matic for iterative refinement.
 
 ```
 /brainstorm-to-ralph "Add user authentication with OAuth"
+/brainstorm-to-ralph "Refactor the payment module" --max-iterations 100
 ```
 
-This walks through brainstorming, planning, and drafting locally with Opus, then submits the refinement work to ralph-o-matic automatically.
+### `/direct-to-ralph`
+
+Skip brainstorming and planning — submit work directly when you already have code or a clear task for ralph to refine.
+
+```
+/direct-to-ralph "Fix all failing tests in the auth package"
+/direct-to-ralph "Improve test coverage to 80%" --spec docs/coverage-plan.md
+```
 
 ## API
 
@@ -347,7 +359,8 @@ scripts/
   install.ps1       Interactive installer (Windows)
   tests/            BATS tests for install script
 skills/
-  brainstorm-to-ralph/   Claude Code skill
+  brainstorm-to-ralph/   Idea → brainstorm → plan → draft → ralph
+  direct-to-ralph/       Submit ready work directly to ralph
 web/
   templates/        Dashboard HTML
   static/           CSS/JS
