@@ -7,10 +7,18 @@
 
 `/plan-to-ralph` is an interactive Claude Code skill that generates the three ralph loop files (`RALPH.md`, `docs/reference/focus-areas.md`, `docs/reference/gaps-identified.md`) through a guided Q&A process. It scans the codebase to discover components, suggests focus areas and pairings, generates a persona, and produces ready-to-use loop files customized for the project.
 
+**Scope:** This skill generates loop files only — it does not submit jobs to ralph-o-matic. After running `/plan-to-ralph`, use `/direct-to-ralph` or `ralph-o-matic submit` to start the loop. This separation is intentional: generating the loop configuration and submitting a job are distinct concerns, and users often want to review or tweak files before submitting.
+
+**RALPH.md format:** RALPH.md is purely a prompt consumed by the Claude subprocess inside the ralph loop. The executor does not parse its structure — it only detects `<promise>FINIT</promise>` and `<promise>CLOSER</promise>` tags in stdout to determine loop continuation. FINIT means all work is done; CLOSER means more iterations are needed.
+
+## Prerequisites
+
+- Must be in a git repository. If not, abort with: "This skill requires a git repository. Initialize one with `git init` first."
+
 ## Arguments
 
-- `CONTEXT` (optional) — Free-text description of what the loop should focus on (e.g., "on the work on the new identity system"). When provided, narrows the codebase scan, pre-seeds the persona, and skips questions that can be answered from context.
-- `--reset` — Skip backup and start fresh even if files already exist.
+- `CONTEXT` (optional, positional) — Free-text description of what the loop should focus on (e.g., "on the work on the new identity system"). When provided, narrows the codebase scan, pre-seeds the persona, and skips questions that can be answered from context. Follows the same pattern as `IDEA` in `brainstorm-to-ralph`.
+- `--reset` — Skip backup and overwrite any existing files directly. This is destructive — existing RALPH.md, focus-areas.md, and gaps-identified.md are overwritten without creating historical copies.
 
 ## Phases
 
@@ -28,7 +36,7 @@ If any of the 3 target files exist, copy them to `docs/reference/historical/` be
 
 ### Phase 2: Scan
 
-Dispatch a subagent to explore the codebase. Language-agnostic discovery:
+Use an Explore subagent (Agent tool with `subagent_type: "Explore"`) to discover codebase structure. This keeps scan results out of the main conversation context. Language-agnostic discovery:
 
 **Structure discovery:**
 - Top-level directories: `src/`, `internal/`, `lib/`, `cmd/`, `app/`, `packages/`, `pkg/`, `modules/`
@@ -40,8 +48,11 @@ Dispatch a subagent to explore the codebase. Language-agnostic discovery:
 
 **Context narrowing (when CONTEXT provided):**
 - Identify components matching the context description
-- Find everything touching those components: same package, importers, imports, shared config, related tests
+- Find everything touching those components: same package, co-located files, shared config, related tests
+- Use directory co-location and naming patterns (not full import graph parsing) to infer relationships — this keeps the scan language-agnostic and fast
 - Mark components as "direct" (matches context) or "indirect" (touches direct components)
+
+**Empty project:** If the scan discovers zero candidate components, skip the scan-based suggestions in Q&A and ask the user to define focus areas manually.
 
 **Output:** Structured list of candidate focus areas grouped as:
 - Core components (directly related to context, or all if no context)
@@ -54,7 +65,7 @@ Interactive questions, one at a time. Order:
 
 1. **Mission** — "What is this loop reviewing?" Skip if CONTEXT provides a clear answer.
 
-2. **Test command** — Auto-detect from project files (Makefile, package.json, pyproject.toml, go.mod, etc.). Propose detected command for confirmation. Accept override.
+2. **Test command** — Auto-detect from project files (Makefile targets, package.json scripts, pyproject.toml, go.mod presence, etc.). Propose detected command for confirmation. Accept override. If no test command is detected, ask the user to provide one. The test command is required — it appears in the checklist and iteration structure.
 
 3. **Persona** — Generate a persona from codebase context and Q&A answers so far. Show it and ask:
    - Accept as-is
@@ -63,9 +74,9 @@ Interactive questions, one at a time. Order:
 
    If they ask for alternatives, show a menu of 4 personas (including original). They can pick one or type their own.
 
-4. **Focus areas (single)** — Present discovered components grouped by category. User checks/unchecks to select which become single-area reviews (2 passes each). Each focus area includes: name, key files, and a one-line review scope description.
+4. **Focus areas (single)** — Present discovered components as a numbered list grouped by category. The user responds with which numbers to include, exclude, or add. They can also type new focus areas not in the list. Each focus area includes: name, key files, and a one-line review scope description. Single areas get 2 review passes (pass 1 = correctness & coverage, pass 2 = robustness & extensibility).
 
-5. **Focus areas (paired)** — Present suggested pairings based on:
+5. **Focus areas (paired)** — Present suggested pairings as a numbered list. The user responds with which to include, exclude, or add. Suggested pairings are based on:
    - Import/dependency relationships from scan
    - When CONTEXT provided: the context system paired with everything touching it (direct and indirect)
    - Common integration seams (API + DB, client + server, config + all components, tests + components)
@@ -115,7 +126,7 @@ Show the user a summary:
 - The persona (first line)
 - The test command
 - The checklist items
-- Offer to open/view any of the 3 files for final edits
+- Ask: "Want to review or edit any of the generated files before I commit?" If yes, show the requested file content. If they make manual edits, re-read the file to acknowledge changes. If no, proceed to commit.
 
 ### Phase 6: Commit
 
@@ -149,6 +160,31 @@ These are included in every generated RALPH.md without asking:
 **No changes needed:**
 - `Makefile` — `package-skills` target already iterates `skills/*/`
 
+## Manifest
+
+`skills/plan-to-ralph/manifest.json`:
+
+```json
+{
+  "name": "plan-to-ralph",
+  "version": "1.0.0",
+  "description": "Interactive Q&A to generate ralph-o-matic loop files (RALPH.md, focus-areas.md, gaps-identified.md) customized for your project",
+  "author": "ryan",
+  "commands": [
+    {
+      "name": "plan-to-ralph",
+      "description": "Generate ralph loop files through guided Q&A with codebase scanning",
+      "usage": "/plan-to-ralph [\"<context description>\"] [--reset]"
+    }
+  ],
+  "dependencies": {
+    "tools": ["git"]
+  }
+}
+```
+
+No plugin dependencies — the skill is self-contained.
+
 ## Packaging & Installation
 
-The skill ships as `plan-to-ralph-skill.tar.gz` (Unix) and `plan-to-ralph-skill.zip` (Windows) in release artifacts. Both installers download and extract to `~/.claude/skills/plan-to-ralph/` (Unix) or `%USERPROFILE%\.claude\skills\plan-to-ralph\` (Windows).
+The skill ships as `plan-to-ralph-skill.tar.gz` (Unix) and `plan-to-ralph-skill.zip` (Windows) in release artifacts. The Makefile `package-skills` target picks it up automatically by iterating `skills/*/`. Both installers download and extract to `~/.claude/skills/plan-to-ralph/` (Unix) or `%USERPROFILE%\.claude\skills\plan-to-ralph\` (Windows).
