@@ -879,7 +879,7 @@ function Install-Skill {
     $skillsDir = "$env:USERPROFILE\.claude\skills"
     New-Item -ItemType Directory -Path $skillsDir -Force | Out-Null
 
-    $skills = @("brainstorm-to-ralph", "direct-to-ralph")
+    $skills = @("brainstorm-to-ralph", "direct-to-ralph", "plan-to-ralph")
 
     foreach ($skillName in $skills) {
         $skillUrl = "$ReleaseUrl/$skillName-skill.zip"

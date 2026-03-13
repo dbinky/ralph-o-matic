@@ -37,7 +37,7 @@ Your Dev Env (Opus 4.6)            Ralph-o-Matic Server
 - **Authentication** — optional Microsoft Entra ID (Azure AD) SSO with role-based access control
 - **Web dashboard** with live updates via SSE
 - **Git integration** — auto-clones repos, creates result branches, opens PRs on completion
-- **Claude Code skills** — `brainstorm-to-ralph` for end-to-end idea-to-job workflows, `direct-to-ralph` for submitting ready work without brainstorming
+- **Claude Code skills** — `brainstorm-to-ralph` for end-to-end idea-to-job workflows, `direct-to-ralph` for submitting ready work without brainstorming, `plan-to-ralph` for generating loop configuration files through guided Q&A
 - **Cross-platform** — macOS, Linux, and Windows; amd64 and arm64
 
 ## Quick Start
@@ -299,6 +299,16 @@ Skip brainstorming and planning — submit work directly when you already have c
 /direct-to-ralph "Improve test coverage to 80%" --spec docs/coverage-plan.md
 ```
 
+### `/plan-to-ralph`
+
+Generate ralph loop files (RALPH.md, focus-areas.md, gaps-identified.md) through interactive Q&A. Scans your codebase to suggest focus areas, generates a review persona, and produces ready-to-use loop configuration.
+
+```
+/plan-to-ralph
+/plan-to-ralph "on the new authentication system"
+/plan-to-ralph --reset
+```
+
 ## API
 
 The server exposes a REST API at `http://<host>:9090/api/`:
@@ -361,6 +371,7 @@ scripts/
 skills/
   brainstorm-to-ralph/   Idea → brainstorm → plan → draft → ralph
   direct-to-ralph/       Submit ready work directly to ralph
+  plan-to-ralph/         Generate loop files via guided Q&A
 web/
   templates/        Dashboard HTML
   static/           CSS/JS

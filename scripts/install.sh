@@ -877,7 +877,7 @@ install_skill() {
     local skills_dir="$HOME/.claude/skills"
     mkdir -p "$skills_dir"
 
-    local skills=("brainstorm-to-ralph" "direct-to-ralph")
+    local skills=("brainstorm-to-ralph" "direct-to-ralph" "plan-to-ralph")
 
     for skill_name in "${skills[@]}"; do
         if [[ -d "/usr/local/share/ralph-o-matic/skills/$skill_name" ]]; then

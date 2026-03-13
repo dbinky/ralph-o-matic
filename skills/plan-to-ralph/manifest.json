@@ -1,0 +1,16 @@
+{
+  "name": "plan-to-ralph",
+  "version": "1.0.0",
+  "description": "Interactive Q&A to generate ralph-o-matic loop files (RALPH.md, focus-areas.md, gaps-identified.md) customized for your project",
+  "author": "ryan",
+  "commands": [
+    {
+      "name": "plan-to-ralph",
+      "description": "Generate ralph loop files through guided Q&A with codebase scanning",
+      "usage": "/plan-to-ralph [\"<context description>\"] [--reset]"
+    }
+  ],
+  "dependencies": {
+    "tools": ["git"]
+  }
+}
