@@ -161,15 +161,19 @@ _run_main_logic() {
     [[ "$output" == *"skipping"* ]]
 }
 
-@test "install_skill creates skills directory if missing" {
+@test "install_skill falls back to manual install when plugin commands fail" {
     export HOME="$(mktemp -d)"
 
-    # claude exists
+    # claude exists but plugin commands fail
     command() {
         if [[ "$1" == "-v" ]] && [[ "$2" == "claude" ]]; then return 0; fi
         builtin command "$@"
     }
     export -f command
+
+    # Stub claude to fail (plugin commands not available or marketplace not configured)
+    claude() { return 1; }
+    export -f claude
 
     # Stub curl to fail (no remote skills available) — skills won't be found locally either
     curl() { return 1; }
@@ -180,7 +184,7 @@ _run_main_logic() {
 
     run install_skill
 
-    # Directory should have been created
+    # Fallback path should have created the directory
     [ -d "$HOME/.claude/skills" ]
 
     # Cleanup

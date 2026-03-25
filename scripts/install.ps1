@@ -876,6 +876,27 @@ function Install-Skill {
         return
     }
 
+    # Try plugin install first (preferred method)
+    try {
+        claude plugin install ralph-o-matic@ralph-o-matic 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "ralph-o-matic plugin installed"
+            return
+        }
+    } catch {}
+
+    # Try adding the marketplace and installing
+    try {
+        claude plugin marketplace add dbinky/ralph-o-matic 2>$null
+        claude plugin install ralph-o-matic@ralph-o-matic 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "ralph-o-matic plugin installed via marketplace"
+            return
+        }
+    } catch {}
+
+    # Fallback: manual skill installation from release artifacts
+    Write-Warn "Plugin install unavailable, falling back to manual skill installation"
     $skillsDir = "$env:USERPROFILE\.claude\skills"
     New-Item -ItemType Directory -Path $skillsDir -Force | Out-Null
 

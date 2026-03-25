@@ -279,7 +279,14 @@ Admin-only endpoints (like `test-notify`) require the admin role.
 
 ## Claude Code Skills
 
-The installer sets up two Claude Code skills that integrate directly with ralph-o-matic:
+Install as a plugin (preferred):
+
+```bash
+claude plugin marketplace add dbinky/ralph-o-matic
+claude plugin install ralph-o-matic@ralph-o-matic
+```
+
+Or the installer will handle it automatically. Three skills are included:
 
 ### `/brainstorm-to-ralph`
 
@@ -342,7 +349,7 @@ make test          # Run unit tests with race detector
 make test-all      # Unit tests + BATS installer tests
 make lint          # Run golangci-lint
 make build-all     # Cross-compile for all platforms
-make release       # Build all + package skill
+make release       # Build all + validate plugin + package skills
 ```
 
 ## Architecture
@@ -364,6 +371,9 @@ internal/
   worker/           Job execution loop, retry, rate limiting
   platform/         Hardware detection, model catalog, Ollama client, selection algorithm
   queue/            Priority job queue with state machine
+.claude-plugin/
+  plugin.json       Plugin manifest (name, version, metadata)
+  marketplace.json  Marketplace index for plugin distribution
 scripts/
   install.sh        Interactive installer (macOS/Linux)
   install.ps1       Interactive installer (Windows)

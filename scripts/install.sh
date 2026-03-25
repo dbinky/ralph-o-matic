@@ -874,6 +874,22 @@ install_skill() {
         return
     fi
 
+    # Try plugin install first (preferred method)
+    if claude plugin install ralph-o-matic@ralph-o-matic 2>/dev/null; then
+        success "ralph-o-matic plugin installed"
+        return
+    fi
+
+    # Try adding the marketplace and installing
+    if claude plugin marketplace add dbinky/ralph-o-matic 2>/dev/null; then
+        if claude plugin install ralph-o-matic@ralph-o-matic 2>/dev/null; then
+            success "ralph-o-matic plugin installed via marketplace"
+            return
+        fi
+    fi
+
+    # Fallback: manual skill installation from release artifacts
+    warn "Plugin install unavailable, falling back to manual skill installation"
     local skills_dir="$HOME/.claude/skills"
     mkdir -p "$skills_dir"
 
@@ -884,7 +900,6 @@ install_skill() {
             cp -r "/usr/local/share/ralph-o-matic/skills/$skill_name" "$skills_dir/"
             success "$skill_name skill installed"
         else
-            # Download from release
             local skill_url="$RELEASE_URL/${skill_name}-skill.tar.gz"
             if curl -fsSL "$skill_url" -o /tmp/skill.tar.gz 2>/dev/null; then
                 tar -xzf /tmp/skill.tar.gz -C "$skills_dir/"

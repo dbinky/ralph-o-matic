@@ -91,10 +91,20 @@ fmt:
 vet:
 	$(GOCMD) vet ./...
 
-## Skill packaging
+## Plugin & skill packaging
+
+.PHONY: plugin-validate
+plugin-validate:
+	@echo "Validating plugin structure..."
+	@test -f .claude-plugin/plugin.json || (echo "Missing .claude-plugin/plugin.json" && exit 1)
+	@test -f .claude-plugin/marketplace.json || (echo "Missing .claude-plugin/marketplace.json" && exit 1)
+	@for skill in skills/*/; do \
+		test -f "$$skill/SKILL.md" || (echo "Missing SKILL.md in $$skill" && exit 1); \
+	done
+	@echo "Plugin structure valid"
 
 .PHONY: package-skills
-package-skills:
+package-skills: plugin-validate
 	@mkdir -p dist
 	@for skill in skills/*/; do \
 		name=$$(basename "$$skill"); \

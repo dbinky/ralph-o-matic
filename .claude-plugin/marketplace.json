@@ -1,0 +1,20 @@
+{
+  "name": "ralph-o-matic",
+  "metadata": {
+    "description": "Skills for ralph-o-matic iterative AI coding refinement loops using local LLMs"
+  },
+  "owner": {
+    "name": "dbinky"
+  },
+  "plugins": [
+    {
+      "name": "ralph-o-matic",
+      "source": {
+        "source": "github",
+        "repo": "dbinky/ralph-o-matic"
+      },
+      "description": "Claude Code skills for ralph-o-matic iterative AI coding refinement loops",
+      "version": "0.6.4"
+    }
+  ]
+}

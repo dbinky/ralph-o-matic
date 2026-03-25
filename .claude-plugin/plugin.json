@@ -1,0 +1,10 @@
+{
+  "name": "ralph-o-matic",
+  "version": "0.6.4",
+  "description": "Claude Code skills for ralph-o-matic iterative AI coding refinement loops",
+  "author": {
+    "name": "dbinky"
+  },
+  "repository": "https://github.com/dbinky/ralph-o-matic",
+  "keywords": ["ralph-o-matic", "ai", "coding", "refinement", "ollama"]
+}
