@@ -10,11 +10,11 @@
     {
       "name": "ralph-o-matic",
       "source": {
-        "source": "github",
-        "repo": "dbinky/ralph-o-matic"
+        "source": "url",
+        "url": "https://github.com/dbinky/ralph-o-matic.git"
       },
       "description": "Claude Code skills for ralph-o-matic iterative AI coding refinement loops",
-      "version": "0.6.4"
+      "version": "0.6.5"
     }
   ]
 }
