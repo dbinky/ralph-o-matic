@@ -23,6 +23,11 @@ type Notifier interface {
 	Name() string
 }
 
+// MessageSender can send a plain text message (not tied to a job event).
+type MessageSender interface {
+	SendMessage(ctx context.Context, message string) error
+}
+
 // ConfigProvider reads the current server config.
 // This is satisfied by *db.ConfigRepo.
 type ConfigProvider interface {
@@ -103,6 +108,45 @@ func (d *Dispatcher) callNotifier(ctx context.Context, n Notifier, job *models.J
 			"notifier", n.Name(),
 			"job_id", job.ID,
 			"event", string(event),
+			"error", err,
+		)
+	}
+}
+
+// SendMessage sends a plain text message to all enabled notifiers that
+// support the MessageSender interface. Errors are logged, never returned.
+func (d *Dispatcher) SendMessage(ctx context.Context, message string) {
+	if message == "" {
+		return
+	}
+
+	cfg, err := d.configProvider.Get()
+	if err != nil {
+		d.logger.Error("notify: failed to load config for SendMessage", "error", err)
+		return
+	}
+
+	notifiers := d.buildNotifiers(cfg)
+	for _, n := range notifiers {
+		if sender, ok := n.(MessageSender); ok {
+			d.callMessageSender(ctx, sender, n.Name(), message)
+		}
+	}
+}
+
+func (d *Dispatcher) callMessageSender(ctx context.Context, sender MessageSender, name, message string) {
+	defer func() {
+		if r := recover(); r != nil {
+			d.logger.Error("notify: message sender panicked",
+				"notifier", name,
+				"panic", fmt.Sprintf("%v", r),
+			)
+		}
+	}()
+
+	if err := sender.SendMessage(ctx, message); err != nil {
+		d.logger.Error("notify: SendMessage failed",
+			"notifier", name,
 			"error", err,
 		)
 	}

@@ -284,7 +284,170 @@ func TestDispatcher_ConfigProvider_Error(t *testing.T) {
 	})
 }
 
+// --- SendMessage Tests ---
+
+func TestDispatcher_SendMessage_NoNotifiers_NoOp(t *testing.T) {
+	cp := &mockConfigProvider{cfg: models.DefaultServerConfig()}
+	d := NewDispatcher(cp, slog.Default())
+	// Should not error — just no-op
+	assert.NotPanics(t, func() {
+		d.SendMessage(context.Background(), "hello")
+	})
+}
+
+func TestDispatcher_SendMessage_EmptyMessage_NoOp(t *testing.T) {
+	cp := &mockConfigProvider{cfg: teamsEnabledConfig()}
+	d := NewDispatcher(cp, slog.Default())
+	// Empty message should be a no-op
+	assert.NotPanics(t, func() {
+		d.SendMessage(context.Background(), "")
+	})
+}
+
+func TestDispatcher_SendMessage_TeamsEnabled(t *testing.T) {
+	cfg := models.DefaultServerConfig()
+	cfg.Notify.Teams.Enabled = true
+	cfg.Notify.Teams.WebhookURL = "http://127.0.0.1:1/webhook"
+
+	cp := &mockConfigProvider{cfg: cfg}
+	d := NewDispatcher(cp, slog.Default())
+	// Will fail to reach URL but should not panic
+	assert.NotPanics(t, func() {
+		d.SendMessage(context.Background(), "test message")
+	})
+}
+
+func TestDispatcher_SendMessage_ConfigError_NoOp(t *testing.T) {
+	cp := &mockConfigProvider{err: fmt.Errorf("db error")}
+	d := NewDispatcher(cp, slog.Default())
+	// Should not panic when config provider fails
+	assert.NotPanics(t, func() {
+		d.SendMessage(context.Background(), "test message")
+	})
+}
+
+func TestDispatcher_SendMessage_MockSender(t *testing.T) {
+	sender := &mockMessageSender{name: "test-sender"}
+
+	d := &testableMessageDispatcher{
+		notifiers: []Notifier{sender},
+		logger:    slog.Default(),
+	}
+
+	d.SendMessage(context.Background(), "pipeline update")
+
+	require.Equal(t, 1, sender.messageCount())
+	assert.Equal(t, "pipeline update", sender.lastMessage())
+}
+
+func TestDispatcher_SendMessage_PanickingSender_Recovers(t *testing.T) {
+	panicker := &mockMessageSender{name: "panicker", panicOn: true}
+	working := &mockMessageSender{name: "working"}
+
+	d := &testableMessageDispatcher{
+		notifiers: []Notifier{panicker, working},
+		logger:    slog.Default(),
+	}
+
+	assert.NotPanics(t, func() {
+		d.SendMessage(context.Background(), "test")
+	})
+
+	assert.Equal(t, 1, panicker.messageCount())
+	assert.Equal(t, 1, working.messageCount())
+}
+
+func TestDispatcher_SendMessage_SkipsNonSenders(t *testing.T) {
+	// mockNotifier does NOT implement MessageSender
+	notSender := &mockNotifier{name: "not-a-sender"}
+	sender := &mockMessageSender{name: "sender"}
+
+	d := &testableMessageDispatcher{
+		notifiers: []Notifier{notSender, sender},
+		logger:    slog.Default(),
+	}
+
+	d.SendMessage(context.Background(), "test")
+
+	// notSender should have 0 calls (no Notify called either)
+	assert.Equal(t, 0, notSender.callCount())
+	// sender should have received the message
+	assert.Equal(t, 1, sender.messageCount())
+}
+
 // --- Test Helpers ---
+
+// mockMessageSender implements both Notifier and MessageSender.
+type mockMessageSender struct {
+	mu       sync.Mutex
+	name     string
+	messages []string
+	err      error
+	panicOn  bool
+}
+
+func (m *mockMessageSender) Notify(_ context.Context, _ *models.Job, _ Event) error {
+	return nil
+}
+
+func (m *mockMessageSender) Name() string { return m.name }
+
+func (m *mockMessageSender) SendMessage(_ context.Context, message string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.messages = append(m.messages, message)
+	if m.panicOn {
+		panic("test panic")
+	}
+	return m.err
+}
+
+func (m *mockMessageSender) messageCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.messages)
+}
+
+func (m *mockMessageSender) lastMessage() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.messages[len(m.messages)-1]
+}
+
+// testableMessageDispatcher allows injecting mock notifiers for SendMessage testing.
+type testableMessageDispatcher struct {
+	notifiers []Notifier
+	logger    *slog.Logger
+}
+
+func (d *testableMessageDispatcher) SendMessage(ctx context.Context, message string) {
+	if message == "" {
+		return
+	}
+	for _, n := range d.notifiers {
+		if sender, ok := n.(MessageSender); ok {
+			d.callMessageSender(ctx, sender, n.Name(), message)
+		}
+	}
+}
+
+func (d *testableMessageDispatcher) callMessageSender(ctx context.Context, sender MessageSender, name, message string) {
+	defer func() {
+		if r := recover(); r != nil {
+			d.logger.Error("notify: message sender panicked",
+				"notifier", name,
+				"panic", fmt.Sprintf("%v", r),
+			)
+		}
+	}()
+
+	if err := sender.SendMessage(ctx, message); err != nil {
+		d.logger.Error("notify: SendMessage failed",
+			"notifier", name,
+			"error", err,
+		)
+	}
+}
 
 // testableDispatcher allows injecting mock notifiers directly.
 type testableDispatcher struct {

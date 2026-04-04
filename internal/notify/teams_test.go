@@ -275,6 +275,69 @@ func TestTeams_CardStructure(t *testing.T) {
 	assert.Contains(t, section["activityTitle"], "Job #42")
 }
 
+func TestTeams_SendMessage_Success(t *testing.T) {
+	var received map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "POST", r.Method)
+		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		err := json.NewDecoder(r.Body).Decode(&received)
+		require.NoError(t, err)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	notifier := NewTeamsNotifier(models.TeamsConfig{
+		Enabled:    true,
+		WebhookURL: server.URL,
+	})
+
+	err := notifier.SendMessage(context.Background(), "Pipeline started for user-auth")
+	require.NoError(t, err)
+
+	assert.Equal(t, "MessageCard", received["@type"])
+	assert.Equal(t, "Ralph-o-matic", received["summary"])
+	sections := received["sections"].([]interface{})
+	require.Len(t, sections, 1)
+	section := sections[0].(map[string]interface{})
+	assert.Equal(t, "Pipeline started for user-auth", section["text"])
+}
+
+func TestTeams_SendMessage_EmptyWebhookURL_ReturnsError(t *testing.T) {
+	notifier := NewTeamsNotifier(models.TeamsConfig{
+		Enabled:    true,
+		WebhookURL: "",
+	})
+
+	err := notifier.SendMessage(context.Background(), "test message")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no webhook URL")
+}
+
+func TestTeams_SendMessage_Non2xx_ReturnsError(t *testing.T) {
+	server, _ := newTeamsTestServer(t, http.StatusInternalServerError)
+
+	notifier := NewTeamsNotifier(models.TeamsConfig{
+		Enabled:    true,
+		WebhookURL: server.URL,
+	})
+
+	err := notifier.SendMessage(context.Background(), "test message")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "teams: webhook returned HTTP")
+}
+
+func TestTeams_SendMessage_Unreachable_ReturnsError(t *testing.T) {
+	notifier := NewTeamsNotifier(models.TeamsConfig{
+		Enabled:    true,
+		WebhookURL: "http://127.0.0.1:1/webhook",
+	})
+
+	err := notifier.SendMessage(context.Background(), "test message")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "teams: request failed")
+}
+
 func TestTeams_DurationIncluded(t *testing.T) {
 	server, captured := newTeamsTestServer(t, http.StatusOK)
 

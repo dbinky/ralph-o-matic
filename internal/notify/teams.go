@@ -67,6 +67,51 @@ func (t *TeamsNotifier) Notify(ctx context.Context, job *models.Job, event Event
 	return nil
 }
 
+// SendMessage sends a plain text message to Teams via webhook.
+func (t *TeamsNotifier) SendMessage(ctx context.Context, message string) error {
+	if t.config.WebhookURL == "" {
+		return fmt.Errorf("teams: no webhook URL configured")
+	}
+
+	card := map[string]interface{}{
+		"@type":      "MessageCard",
+		"@context":   "http://schema.org/extensions",
+		"themeColor": "0078D7",
+		"summary":    "Ralph-o-matic",
+		"sections": []interface{}{
+			map[string]interface{}{
+				"activityTitle": "Ralph-o-matic",
+				"text":          message,
+				"markdown":      true,
+			},
+		},
+	}
+
+	payload, err := json.Marshal(card)
+	if err != nil {
+		return fmt.Errorf("teams: failed to marshal card: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.config.WebhookURL, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("teams: failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := t.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("teams: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("teams: webhook returned HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
 func (t *TeamsNotifier) buildCard(job *models.Job, event Event) map[string]interface{} {
 	color := t.eventColor(event)
 	title := fmt.Sprintf("Job #%d %s", job.ID, capitalizeFirst(string(event)))
