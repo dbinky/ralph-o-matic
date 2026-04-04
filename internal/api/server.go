@@ -149,6 +149,7 @@ func (s *Server) setupRoutes() {
 					r.Get("/", s.handleGetConfig)
 					r.Patch("/", auth.RequireRole("Admin", s.handleUpdateConfig))
 					r.Post("/test-notify", auth.RequireRole("Admin", s.handleTestNotify))
+					r.Post("/notify", s.handleSendNotify)
 				})
 			})
 		})

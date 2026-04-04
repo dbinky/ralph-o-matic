@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ryan/ralph-o-matic/internal/db"
@@ -151,5 +152,71 @@ func (s *Server) handleTestNotify(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("Test %s notification sent successfully", req.Channel),
+	})
+}
+
+func (s *Server) handleSendNotify(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Message == "" {
+		writeError(w, http.StatusBadRequest, "message is required")
+		return
+	}
+
+	configRepo := db.NewConfigRepo(s.db)
+	cfg, err := configRepo.Get()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load config: "+err.Error())
+		return
+	}
+
+	var sent []string
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	if cfg.Notify.Teams.Enabled {
+		n := notify.NewTeamsNotifier(cfg.Notify.Teams)
+		if err := n.SendMessage(ctx, req.Message); err != nil {
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"success": false,
+				"error":   fmt.Sprintf("teams: %v", err),
+			})
+			return
+		}
+		sent = append(sent, "teams")
+	}
+
+	if cfg.Notify.SMTP.Enabled {
+		n := notify.NewSMTPNotifier(cfg.Notify.SMTP)
+		if sender, ok := interface{}(n).(notify.MessageSender); ok {
+			if err := sender.SendMessage(ctx, req.Message); err != nil {
+				writeJSON(w, http.StatusOK, map[string]interface{}{
+					"success": false,
+					"error":   fmt.Sprintf("smtp: %v", err),
+				})
+				return
+			}
+			sent = append(sent, "smtp")
+		}
+	}
+
+	if len(sent) == 0 {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"error":   "no notification channels enabled",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":  true,
+		"message":  fmt.Sprintf("Sent to: %s", strings.Join(sent, ", ")),
+		"channels": sent,
 	})
 }
