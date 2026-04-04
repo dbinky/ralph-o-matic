@@ -463,6 +463,39 @@ func testNotifyCmd() *cobra.Command {
 	}
 }
 
+func notifyCmd() *cobra.Command {
+	var message string
+
+	cmd := &cobra.Command{
+		Use:   "notify",
+		Short: "Send a message to all configured notification channels",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if message == "" {
+				if len(args) > 0 {
+					message = strings.Join(args, " ")
+				} else {
+					return fmt.Errorf("message is required: use --message or pass as argument")
+				}
+			}
+
+			resp, err := client.SendNotify(message)
+			if err != nil {
+				return err
+			}
+
+			if resp.Success {
+				fmt.Println(resp.Message)
+			} else {
+				return fmt.Errorf("%s", resp.Error)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&message, "message", "m", "", "Message to send")
+	return cmd
+}
+
 func serverConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server-config [set <key> <value>]",

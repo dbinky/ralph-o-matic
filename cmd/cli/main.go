@@ -47,6 +47,7 @@ func main() {
 		configCmd(),
 		serverConfigCmd(),
 		testNotifyCmd(),
+		notifyCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {

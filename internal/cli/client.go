@@ -208,6 +208,24 @@ func (c *Client) TestNotify(channel string) (*TestNotifyResponse, error) {
 	return &resp, nil
 }
 
+// SendNotifyResponse is the response from the notify endpoint.
+type SendNotifyResponse struct {
+	Success  bool     `json:"success"`
+	Message  string   `json:"message"`
+	Error    string   `json:"error,omitempty"`
+	Channels []string `json:"channels,omitempty"`
+}
+
+// SendNotify sends a message to all configured notification channels.
+func (c *Client) SendNotify(message string) (*SendNotifyResponse, error) {
+	req := map[string]string{"message": message}
+	var resp SendNotifyResponse
+	if err := c.post("/api/config/notify", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // GetLogs retrieves logs for a job
 func (c *Client) GetLogs(jobID int64) ([]map[string]interface{}, error) {
 	var resp struct {
