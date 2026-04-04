@@ -175,6 +175,9 @@ type ServerConfig struct {
 
 	// Notifications
 	Notify NotifyConfig `json:"notify"`
+
+	// Hooks
+	PostCompletionCommand string `json:"post_completion_command"`
 }
 
 // DefaultServerConfig returns a ServerConfig with sensible defaults
@@ -343,6 +346,10 @@ func (c *ServerConfig) Merge(updates *ServerConfig) *ServerConfig {
 		result.Notify.Teams.Enabled = true
 	}
 
+	if updates.PostCompletionCommand != "" {
+		result.PostCompletionCommand = updates.PostCompletionCommand
+	}
+
 	return &result
 }
 
@@ -447,6 +454,10 @@ func (c *ServerConfig) MergeJSON(raw json.RawMessage) (*ServerConfig, error) {
 				}
 			}
 		}
+	}
+
+	if _, ok := rawMap["post_completion_command"]; ok {
+		result.PostCompletionCommand = updates.PostCompletionCommand
 	}
 
 	return result, nil

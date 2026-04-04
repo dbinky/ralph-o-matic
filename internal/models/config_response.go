@@ -57,6 +57,7 @@ type ServerConfigResponse struct {
 	MaxGitRetries        int                     `json:"max_git_retries"`
 	GitRetryBackoffMs    int                     `json:"git_retry_backoff_ms"`
 	Notify               NotifyConfigResponse    `json:"notify"`
+	PostCompletionCommand string                 `json:"post_completion_command"`
 }
 
 // NewServerConfigResponse builds a redacted response from a full ServerConfig.
@@ -82,6 +83,7 @@ func NewServerConfigResponse(cfg *ServerConfig) *ServerConfigResponse {
 		MaxClaudeRetries:  cfg.MaxClaudeRetries,
 		MaxGitRetries:     cfg.MaxGitRetries,
 		GitRetryBackoffMs: cfg.GitRetryBackoffMs,
+		PostCompletionCommand: cfg.PostCompletionCommand,
 		Notify: NotifyConfigResponse{
 			SMTP: SMTPConfigResponse{
 				Enabled:     cfg.Notify.SMTP.Enabled,

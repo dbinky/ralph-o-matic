@@ -581,6 +581,29 @@ func TestServerConfig_MergeJSON_NotifyTeamsEnabledExplicitFalse(t *testing.T) {
 	assert.False(t, merged.Notify.Teams.Enabled)
 }
 
+func TestServerConfig_Merge_PostCompletionCommand(t *testing.T) {
+	base := DefaultServerConfig()
+	assert.Equal(t, "", base.PostCompletionCommand)
+
+	updates := &ServerConfig{PostCompletionCommand: "echo hello"}
+	result := base.Merge(updates)
+	assert.Equal(t, "echo hello", result.PostCompletionCommand)
+
+	updates2 := &ServerConfig{PostCompletionCommand: ""}
+	result2 := result.Merge(updates2)
+	assert.Equal(t, "echo hello", result2.PostCompletionCommand)
+}
+
+func TestServerConfig_MergeJSON_PostCompletionCommand_Clear(t *testing.T) {
+	base := DefaultServerConfig()
+	base.PostCompletionCommand = "echo hello"
+
+	raw := json.RawMessage(`{"post_completion_command": ""}`)
+	result, err := base.MergeJSON(raw)
+	require.NoError(t, err)
+	assert.Equal(t, "", result.PostCompletionCommand)
+}
+
 func TestServerConfig_MergeJSON_OpenRouterAllFields(t *testing.T) {
 	base := DefaultServerConfig()
 	raw := json.RawMessage(`{"openrouter":{"api_key":"","base_url":"https://custom.ai","large_model":"x/big","small_model":"x/small"}}`)

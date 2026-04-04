@@ -520,6 +520,13 @@ Use dotted keys for nested values, e.g.: large_model.name, notify.smtp.host`,
 					fmt.Printf("notify.smtp.from: %s\n", serverCfg.Notify.SMTP.From)
 				}
 				fmt.Printf("notify.teams.enabled: %v\n", serverCfg.Notify.Teams.Enabled)
+				fmt.Println()
+				fmt.Println("# Hooks")
+				if serverCfg.PostCompletionCommand != "" {
+					fmt.Printf("post_completion_command: %s\n", serverCfg.PostCompletionCommand)
+				} else {
+					fmt.Printf("post_completion_command: (none)\n")
+				}
 
 				return nil
 			}
