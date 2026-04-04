@@ -1018,6 +1018,68 @@ func TestWorker_Watchdog_NoFinalize(t *testing.T) {
 	assert.Nil(t, handler.getFinalizeSuccess(), "Finalize should not be called for watchdog-interrupted jobs")
 }
 
+// --- Post-Completion Hook Integration Tests ---
+
+type mockConfigProvider struct {
+	cfg *models.ServerConfig
+}
+
+func (m *mockConfigProvider) Get() (*models.ServerConfig, error) {
+	return m.cfg, nil
+}
+
+func TestWorker_PostCompletionHook_CalledOnComplete(t *testing.T) {
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{{Completed: true}},
+	}
+	job := &models.Job{
+		ID:            1,
+		Branch:        "test",
+		MaxIterations: 10,
+		Status:        models.StatusRunning,
+	}
+	q := &mockQueue{jobs: []*models.Job{job}}
+
+	cfg := models.DefaultServerConfig()
+	cfg.PostCompletionCommand = "echo hook-ran"
+	cp := &mockConfigProvider{cfg: cfg}
+
+	w := New(q, handler, time.Second)
+	w.SetConfigProvider(cp)
+	w.watchdogInterval = 24 * time.Hour
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	require.Len(t, q.completed, 1)
+	assert.Equal(t, int64(1), q.completed[0].ID)
+}
+
+func TestWorker_PostCompletionHook_NotCalledWhenNoConfig(t *testing.T) {
+	handler := &mockHandler{
+		results: []*executor.ExecutionResult{{Completed: true}},
+	}
+	job := &models.Job{
+		ID:            1,
+		Branch:        "test",
+		MaxIterations: 10,
+		Status:        models.StatusRunning,
+	}
+	q := &mockQueue{jobs: []*models.Job{job}}
+
+	w := New(q, handler, time.Second)
+	w.watchdogInterval = 24 * time.Hour
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	w.poll(ctx)
+
+	require.Len(t, q.completed, 1)
+}
+
 func TestDetectProgress_FilesModified(t *testing.T) {
 	result := &executor.ExecutionResult{
 		Metadata: &executor.ResponseMetadata{FilesModified: 3},

@@ -139,6 +139,7 @@ func run() error {
 	// Set up notification dispatcher (reads config per-call from DB)
 	dispatcher := notify.NewDispatcher(configRepo, slog.Default())
 	w.SetNotifier(dispatcher)
+	w.SetConfigProvider(configRepo)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

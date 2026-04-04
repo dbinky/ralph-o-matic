@@ -65,6 +65,9 @@ type Worker struct {
 
 	// Progress reporting interval (0 = use default 5s)
 	progressInterval time.Duration
+
+	// Config provider for reading post-completion hook command
+	configProvider notify.ConfigProvider
 }
 
 // New creates a worker that polls the queue at the given interval.
@@ -91,6 +94,11 @@ func (w *Worker) SetBroadcaster(b *broadcast.Broadcaster) {
 	w.broadcaster = b
 }
 
+// SetConfigProvider sets the config provider for reading hook commands.
+func (w *Worker) SetConfigProvider(cp notify.ConfigProvider) {
+	w.configProvider = cp
+}
+
 // notify sends a notification if a notifier is configured. Never panics.
 func (w *Worker) sendNotification(ctx context.Context, job *models.Job, event notify.Event) {
 	if w.notifier == nil {
@@ -102,6 +110,38 @@ func (w *Worker) sendNotification(ctx context.Context, job *models.Job, event no
 		}
 	}()
 	w.notifier.Notify(ctx, job, event)
+}
+
+// runPostCompletionHook checks config for a post-completion command and
+// runs it in a background goroutine. Never blocks the worker.
+func (w *Worker) runPostCompletionHook(job *models.Job) {
+	if w.configProvider == nil {
+		return
+	}
+
+	cfg, err := w.configProvider.Get()
+	if err != nil {
+		log.Printf("Worker: failed to load config for post-completion hook: %v", err)
+		return
+	}
+
+	if cfg.PostCompletionCommand == "" {
+		return
+	}
+
+	command := cfg.PostCompletionCommand
+	go func() {
+		log.Printf("Worker: running post-completion hook for job #%d", job.ID)
+		output, err := RunPostCompletionHook(context.Background(), command, job)
+		if err != nil {
+			log.Printf("Worker: post-completion hook failed for job #%d: %v\nOutput: %s", job.ID, err, output)
+			return
+		}
+		if output != "" {
+			log.Printf("Worker: post-completion hook output for job #%d:\n%s", job.ID, output)
+		}
+		log.Printf("Worker: post-completion hook completed for job #%d", job.ID)
+	}()
 }
 
 // Run polls the queue until ctx is cancelled.
@@ -265,6 +305,9 @@ func (w *Worker) poll(ctx context.Context) {
 		}
 		w.sendNotification(ctx, job, notify.EventFailed)
 	}
+
+	// Run post-completion hook asynchronously
+	w.runPostCompletionHook(job)
 }
 
 // watchExternalStop polls the database during iteration execution to detect
