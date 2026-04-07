@@ -1,6 +1,6 @@
 {
   "name": "ralph-o-matic",
-  "version": "0.6.4",
+  "version": "0.7.0",
   "description": "Claude Code skills for ralph-o-matic iterative AI coding refinement loops",
   "author": {
     "name": "dbinky"

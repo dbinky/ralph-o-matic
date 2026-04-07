@@ -876,24 +876,33 @@ function Install-Skill {
         return
     }
 
-    # Try plugin install first (preferred method)
+    # Try plugin install directly from repo
+    $pluginOk = $true
     try {
-        claude plugin install ralph-o-matic@ralph-o-matic 2>$null
+        claude plugin install dbinky/ralph-o-matic 2>$null
         if ($LASTEXITCODE -eq 0) {
             Write-Success "ralph-o-matic plugin installed"
-            return
+        } else {
+            $pluginOk = $false
         }
-    } catch {}
+    } catch { $pluginOk = $false }
 
-    # Try adding the marketplace and installing
+    # Install companion skill set (feature-pipeline, spec-to-design, auto-ralph-prep, etc.)
     try {
-        claude plugin marketplace add dbinky/ralph-o-matic 2>$null
-        claude plugin install ralph-o-matic@ralph-o-matic 2>$null
+        claude plugin install dbinky/dbinky-skill-set 2>$null
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "ralph-o-matic plugin installed via marketplace"
-            return
+            Write-Success "dbinky-skill-set plugin installed"
+        } else {
+            Write-Warn "Could not install dbinky-skill-set plugin (feature-pipeline skills)"
+            Write-Warn "Install manually: claude plugin install dbinky/dbinky-skill-set"
+            $pluginOk = $false
         }
-    } catch {}
+    } catch {
+        Write-Warn "Could not install dbinky-skill-set plugin (feature-pipeline skills)"
+        $pluginOk = $false
+    }
+
+    if ($pluginOk) { return }
 
     # Fallback: manual skill installation from release artifacts
     Write-Warn "Plugin install unavailable, falling back to manual skill installation"

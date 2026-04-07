@@ -171,7 +171,7 @@ _run_main_logic() {
     }
     export -f command
 
-    # Stub claude to fail (plugin commands not available or marketplace not configured)
+    # Stub claude to fail (both plugin installs not available)
     claude() { return 1; }
     export -f claude
 
