@@ -4,9 +4,15 @@ set -euo pipefail
 # Ralph-o-matic Installer
 # "It just works."
 
-VERSION="0.6.4"
+# VERSION_FALLBACK is used when the GitHub API is unreachable. It is also
+# a lower bound — if the API returns something, we use that instead. Bump
+# this on every release so offline installs still get a recent build.
+VERSION_FALLBACK="0.7.1"
+VERSION=""            # resolved at runtime; do not set here
+VERSION_OVERRIDE=""   # set by --version=X.Y.Z
 REPO_URL="https://github.com/dbinky/ralph-o-matic"
-RELEASE_URL="$REPO_URL/releases/download/v$VERSION"
+REPO_SLUG="dbinky/ralph-o-matic"
+RELEASE_URL=""        # set by resolve_version
 
 # Colors
 RED='\033[0;31m'
@@ -55,9 +61,43 @@ parse_args() {
             --large-model=*) LARGE_MODEL="${1#*=}"; shift ;;
             --small-model=*) SMALL_MODEL="${1#*=}"; shift ;;
             --update) UPDATE_FLAG=true; shift ;;
+            --version=*) VERSION_OVERRIDE="${1#*=}"; shift ;;
             *) error "Unknown option: $1" ;;
         esac
     done
+}
+
+# resolve_version picks the version to install:
+#   1. --version=X.Y.Z override
+#   2. Latest GitHub release tag (strips leading "v")
+#   3. VERSION_FALLBACK (baked into the script)
+# Sets VERSION and RELEASE_URL as side effects.
+resolve_version() {
+    if [[ -n "$VERSION_OVERRIDE" ]]; then
+        VERSION="${VERSION_OVERRIDE#v}"
+        info "Using pinned version: $VERSION"
+    else
+        local api_url="https://api.github.com/repos/$REPO_SLUG/releases/latest"
+        local tag=""
+        local body=""
+        if command -v curl &>/dev/null; then
+            # Fetch separately from parsing so pipefail doesn't abort on empty bodies.
+            body=$(curl -fsSL --max-time 10 "$api_url" 2>/dev/null || true)
+            # Grep the tag_name field; works without jq.
+            tag=$(printf '%s' "$body" | grep -m1 '"tag_name"' \
+                | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true)
+        fi
+
+        if [[ -n "$tag" && "$tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            VERSION="${tag#v}"
+            info "Resolved latest release: v$VERSION"
+        else
+            VERSION="$VERSION_FALLBACK"
+            warn "Could not resolve latest release from GitHub; using fallback v$VERSION"
+        fi
+    fi
+
+    RELEASE_URL="$REPO_URL/releases/download/v$VERSION"
 }
 
 # Platform detection
@@ -1430,6 +1470,7 @@ main() {
     fi
 
     print_banner
+    resolve_version
     detect_platform
 
     # --update: quick software-only update path

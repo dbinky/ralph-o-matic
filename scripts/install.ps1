@@ -11,14 +11,20 @@ param(
     [string]$Backend = "ollama",
     [string]$Server = "",
     [string]$LargeModel = "",
-    [string]$SmallModel = ""
+    [string]$SmallModel = "",
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$Version = "0.6.4"
+# VersionFallback is used when the GitHub API is unreachable. Bump on
+# every release so offline installs still get a recent build.
+$VersionFallback = "0.7.1"
+$VersionOverride = $Version
+$Version = ""            # resolved at runtime by Resolve-Version
 $RepoUrl = "https://github.com/dbinky/ralph-o-matic"
-$ReleaseUrl = "$RepoUrl/releases/download/v$Version"
+$RepoSlug = "dbinky/ralph-o-matic"
+$ReleaseUrl = ""         # set by Resolve-Version
 
 # Logging
 function Write-Info { Write-Host "▸ $args" -ForegroundColor Blue }
@@ -37,6 +43,39 @@ function Test-Admin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# Resolve-Version picks the version to install:
+#   1. -Version X.Y.Z override
+#   2. Latest GitHub release tag (strips leading "v")
+#   3. $VersionFallback (baked into the script)
+# Sets $script:Version and $script:ReleaseUrl.
+function Resolve-Version {
+    if (-not [string]::IsNullOrWhiteSpace($VersionOverride)) {
+        $script:Version = $VersionOverride.TrimStart('v')
+        Write-Info "Using pinned version: $($script:Version)"
+    } else {
+        $apiUrl = "https://api.github.com/repos/$RepoSlug/releases/latest"
+        $tag = $null
+        try {
+            # GitHub requires a User-Agent. TLS 1.2 for older Windows PowerShell.
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+            $resp = Invoke-RestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "ralph-o-matic-installer" } -TimeoutSec 10 -ErrorAction Stop
+            $tag = $resp.tag_name
+        } catch {
+            $tag = $null
+        }
+
+        if ($tag -and $tag -match '^v?[0-9]+\.[0-9]+\.[0-9]+') {
+            $script:Version = $tag.TrimStart('v')
+            Write-Info "Resolved latest release: v$($script:Version)"
+        } else {
+            $script:Version = $VersionFallback
+            Write-Warn "Could not resolve latest release from GitHub; using fallback v$($script:Version)"
+        }
+    }
+
+    $script:ReleaseUrl = "$RepoUrl/releases/download/v$($script:Version)"
 }
 
 function Get-Platform {
@@ -1184,6 +1223,7 @@ function Test-NotificationConfig {
 # Main
 function Main {
     Show-Banner
+    Resolve-Version
     Get-Platform
 
     # -Update: quick software-only update path

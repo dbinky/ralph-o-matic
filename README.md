@@ -8,31 +8,148 @@ Iterating on code until tests pass and acceptance criteria are met produces exce
 
 ## The Solution
 
-Draft your implementation with Claude Code + Opus. Then hand off to ralph-o-matic, which runs the refinement loop with built-in circuit breakers, retry logic, session continuity, and per-iteration commits. Use local models via Ollama to save API credits, use the Anthropic API when you need Claude-grade quality, or use OpenRouter for access to models from multiple providers on a pay-per-token basis.
+Draft your implementation with Claude Code + Opus. Then hand off to ralph-o-matic (ROM), which runs the refinement loop with built-in circuit breakers, retry logic, session continuity, and per-iteration commits. Use local models via Ollama to save API credits, use the Anthropic API when you need Claude-grade quality, or use OpenRouter for access to models from multiple providers on a pay-per-token basis.
+
+## The Feature Pipeline
+
+The `/feature-pipeline` skill (from the [dbinky-skill-set](https://github.com/dbinky/dbinky-skill-set) plugin) automates the full lifecycle of building a feature — from idea to merged PR. You answer brainstorming questions, then walk away. Everything else runs unattended: design alignment, planning, implementation, refinement, and PR review. You wake up to a finished pull request.
 
 ```
-Your Dev Env (Opus 4.6)              Ralph-o-Matic Server
-┌──────────────────────┐            ┌─────────────────────────┐
-│ /feature-pipeline    │            │ ralph-o-matic-server    │
-│                      │            │                         │
-│ 1. Brainstorm spec   │ ◄─ you    │                         │
-│ 2. Brainstorm design │ ◄─ you    │                         │
-│    ── walk away ──   │            │                         │
-│ 3. Align designs     │ auto      │                         │
-│ 4. Write plans       │ auto      │                         │
-│ 5. Align plans       │ auto      │                         │
-│ 6. Implement         │ auto      │                         │
-│ 7. Generate loop     │ auto      │                         │
-│ 8. Submit to ralph ──│───────────│─► Queue → Execute loop  │
-│                      │            │    Commit → Push → PR   │
-└──────────────────────┘            │ 9. Post-completion hook │
-                                    │    → Auto PR review     │
-                                    │    → Teams notification  │
-                                    └─────────────────────────┘
+Your Dev Env (Claude Code + Opus)              ROM Server
+┌─────────────────────────────────┐            ┌───────────────────────────┐
+│ /feature-pipeline               │            │ ralph-o-matic-server      │
+│                                 │            │                           │
+│ 1. Brainstorm product spec   ◄─ you         │                           │
+│ 2. Brainstorm impl. design   ◄─ you         │                           │
+│    ─── walk away ───────────────│────────    │                           │
+│ 3. Align designs to spec        │ auto       │                           │
+│ 4. Write implementation plans   │ auto       │                           │
+│ 5. Align plans to each other    │ auto       │                           │
+│ 6. Draft implementation         │ auto       │                           │
+│ 7. Generate ralph loop files    │ auto       │                           │
+│ 8. Submit to ROM ───────────────│───────────►│ Queue → Execute loop      │
+│                                 │            │   Commit → Push → PR      │
+└─────────────────────────────────┘            │                           │
+                                               │ 9. Post-completion hook   │
+ You get a Teams notification ◄────────────────│    → Auto PR review       │
+ Review the PR, merge it                       │    → Teams notification   │
+                                               └───────────────────────────┘
+```
+
+### How it works
+
+| Step | What happens | You involved? |
+|------|-------------|---------------|
+| 1 | **Brainstorm product spec** — interactive Q&A about what you want to build, outputs `docs/specs/{slug}-spec.md` | Yes |
+| 2 | **Brainstorm implementation design** — interactive Q&A about how to build it, outputs `docs/superpowers/specs/{slug}-design-phase-*.md` | Yes |
+| — | *You walk away. Everything below is unattended.* | — |
+| 3 | **Align designs to spec** — reads spec and all design docs, fixes contradictions, commits | No |
+| 4 | **Write implementation plans** — generates task files for each design phase | No |
+| 5 | **Align plans** — cross-checks plans against spec/designs and each other, fixes gaps | No |
+| 6 | **Draft implementation** — spawns parallel agents to execute plan tasks, runs tests, commits | No |
+| 7 | **Generate ralph loop files** — auto-derives RALPH.md, focus-areas.md, gaps-identified.md from spec/design/plan artifacts | No |
+| 8 | **Submit to ROM** — pre-flight checks, commit, push, submit job to ralph-o-matic server | No |
+| 9 | **Ralph refinement loop** — ROM iterates: review a focus area, fix the most important issue, run tests, commit, repeat | No (server) |
+| 10 | **Post-completion hook** — triggers automated PR review, applies fixes, sends Teams notification with PR link | No (server) |
+
+### Invoking the pipeline
+
+```bash
+/feature-pipeline Here's what I want to build: a user authentication system
+  with OAuth2, session management, and role-based access control.
+  It should support Google and GitHub as identity providers.
+```
+
+**Flags:**
+- `--slug user-auth` — override auto-derived feature slug
+- `--max-iterations 200` — override ralph iteration count (default: 200)
+- `--priority high` — override ralph priority (default: high)
+- `--spec-only` — stop after brainstorming (skip the automated pipeline)
+
+### Teams notifications
+
+The pipeline sends Teams notifications at each milestone so you can monitor progress without watching a terminal:
+
+| When | Notification |
+|------|-------------|
+| Automation begins (after step 2) | "Pipeline running unattended for `{slug}` on branch `{branch}`" |
+| Any automated step fails | "Pipeline failed at `{phase}`. Error: `{msg}`. Resume: `{command}`" |
+| Submitted to ROM | "Ralph loop started for `{slug}` — Job #{id}, {N} iterations" |
+| Ralph completes | "PR ready for review: `{url}`" |
+| Ralph or PR review fails | Error details with resume instructions |
+
+Every failure notification includes the exact command to resume from that point.
+
+### The refinement loop
+
+When ROM picks up a job, it runs Claude Code in a structured iteration loop. Each iteration:
+
+1. **Reads the tracking file** — picks the next incomplete focus area from `docs/reference/focus-areas.md`
+2. **Deep-reads the code** — examines every file in that focus area
+3. **Analyzes and logs gaps** — cross-references against the design doc, adds issues to `docs/reference/gaps-identified.md`
+4. **Fixes the single most important issue** — focused, testable improvement
+5. **Runs the test suite** — investigates and fixes any failures
+6. **Assesses a checklist** — all tests pass, no open issues, code is ship-ready
+7. **Commits and pushes** — every iteration is committed, so crashes don't lose work
+8. **Outputs a promise tag** — `FINIT` (all focus areas complete) or `CLOSER` (more work to do)
+
+Single focus areas require 2 review passes (correctness, then robustness). Paired focus areas (integration seams between components) require 1 pass. The loop continues until all areas are complete or the iteration cap is reached.
+
+## Composable Skills
+
+The feature pipeline chains together independently-invocable skills. You can use any of them standalone depending on where you are in your workflow.
+
+### Skill overview
+
+```
+feature-pipeline (master orchestrator)
+  ├── superpowers:brainstorming    ← interactive (spec)
+  ├── superpowers:brainstorming    ← interactive (design)
+  ├── spec-to-design               ← automated steps 3–6
+  ├── auto-ralph-prep              ← automated step 7
+  └── auto-ralph-submit            ← automated step 8
+                                      ↓
+                                ralph-o-matic server
+                                (refinement loop, overnight)
+                                      ↓
+                                post-completion hook
+                                      ↓
+                                /pr-review (automated)
+```
+
+### Full automation
+
+| Skill | Purpose | When to use |
+|-------|---------|-------------|
+| `/feature-pipeline` | End-to-end: brainstorm → implement → refine → PR review | Starting a new feature from scratch |
+| `/spec-to-design` | Steps 3–6: align designs, write plans, align plans, implement | You already have a spec and design docs |
+
+### Loop file generation
+
+| Skill | Purpose | When to use |
+|-------|---------|-------------|
+| `/auto-ralph-prep` | Auto-generate RALPH.md + tracking files from spec/design/plan artifacts (no Q&A) | Automated pipeline or when you have complete docs |
+| `/plan-to-ralph` | Generate loop files via interactive 7-question Q&A | You want to hand-tune the loop configuration |
+| `/plan-to-ralph --auto` | Same as `/auto-ralph-prep` (delegates to it) | Convenience alias |
+
+### Submission
+
+| Skill | Purpose | When to use |
+|-------|---------|-------------|
+| `/auto-ralph-submit` | Non-interactive submission with pre-flight checks, auto-commit, auto-push, Teams notification | Automated pipeline or known-good state |
+| `/direct-to-ralph` | Interactive submission — prompts for missing details, generates RALPH.md if needed | You have code ready and want to submit manually |
+| `/brainstorm-to-ralph` | End-to-end: brainstorm → plan → implement → submit | Similar to feature-pipeline but without the alignment/review steps |
+
+### Installing the plugins
+
+```bash
+claude plugin install dbinky/ralph-o-matic         # ROM skills (brainstorm-to-ralph, plan-to-ralph, direct-to-ralph)
+claude plugin install dbinky/dbinky-skill-set       # Pipeline skills (feature-pipeline, spec-to-design, auto-ralph-prep, auto-ralph-submit)
 ```
 
 ## Features
 
+- **Feature pipeline** — `/feature-pipeline` automates the entire workflow from idea to merged PR. You interact during brainstorming, then walk away.
 - **Three backends** — run loops against local Ollama models, the Anthropic API (via Claude Code), or OpenRouter (Kimi, Grok, Devstral, and more)
 - **Job queue** with priority scheduling (high/normal/low), pause/resume, drag-and-drop reordering
 - **Circuit breaker** — detects no-progress loops and repeated errors, stops wasting compute
@@ -43,13 +160,11 @@ Your Dev Env (Opus 4.6)              Ralph-o-Matic Server
 - **Smart model selection** — detects your hardware (RAM, GPU VRAM, Apple Silicon) and recommends optimal model placement
 - **Split-device inference** — run the large model on CPU/RAM and the small model on GPU, or both on GPU if you have the VRAM
 - **Remote Ollama support** — point at a remote Ollama instance instead of running locally
-- **Feature pipeline** — `/feature-pipeline` skill automates the entire workflow: brainstorm spec, brainstorm design, align, plan, implement, submit to ralph, auto PR review. You interact during brainstorming, then walk away.
 - **Post-completion hooks** — run a shell command when jobs finish (e.g., trigger automated PR review via Claude Code)
 - **Notifications** — email (SMTP) and Microsoft Teams webhook notifications on job completion, failure, or cancellation. Skills can send arbitrary messages via `ralph-o-matic notify`.
 - **Authentication** — optional Microsoft Entra ID (Azure AD) SSO with role-based access control
 - **Web dashboard** with live updates via SSE
 - **Git integration** — auto-clones repos, creates result branches, opens PRs on completion
-- **Claude Code skills** — `/feature-pipeline` for fully automated end-to-end workflows, plus composable sub-skills (`spec-to-design`, `auto-ralph-prep`, `auto-ralph-submit`) and interactive skills (`brainstorm-to-ralph`, `direct-to-ralph`, `plan-to-ralph`)
 - **Cross-platform** — macOS, Linux, and Windows; amd64 and arm64
 
 ## Quick Start
@@ -67,6 +182,8 @@ irm https://raw.githubusercontent.com/dbinky/ralph-o-matic/main/scripts/install.
 ```
 
 Both installers detect your hardware, let you choose a backend, recommend models, install dependencies, and start the server. Use `--yes` (bash) or `-Yes` (PowerShell) for non-interactive mode.
+
+Each installer resolves the version to install at runtime by querying the GitHub releases API, so piping `install.sh` or `install.ps1` from `main` always lands on the newest release. If the API is unreachable the installer falls back to a baked-in version. Pin a specific build with `--version=X.Y.Z` (bash) or `-Version X.Y.Z` (PowerShell).
 
 ### Installation Modes
 
@@ -87,6 +204,9 @@ curl -fsSL .../install.sh | bash -s -- --mode=client --server=http://192.168.1.5
 
 # Non-interactive with Anthropic backend
 curl -fsSL .../install.sh | bash -s -- --yes --backend=anthropic
+
+# Pin to a specific release
+curl -fsSL .../install.sh | bash -s -- --version=0.7.1
 ```
 
 **PowerShell examples:**
@@ -99,6 +219,9 @@ $script = irm https://raw.githubusercontent.com/dbinky/ralph-o-matic/main/script
 # Or save and run
 irm .../install.ps1 -OutFile install.ps1
 .\install.ps1 -Yes -Backend anthropic
+
+# Pin to a specific release
+.\install.ps1 -Version 0.7.1
 ```
 
 ### Choosing a Backend
@@ -323,103 +446,6 @@ export RALPH_ENTRA_CLIENT_SECRET=your-client-secret
 
 Admin-only endpoints (like `test-notify`) require the admin role.
 
-## Claude Code Skills
-
-Install the plugins:
-
-```bash
-claude plugin install dbinky/ralph-o-matic
-claude plugin install dbinky/dbinky-skill-set
-```
-
-### The Full Pipeline: `/feature-pipeline`
-
-The recommended workflow. You describe a feature, answer brainstorming questions for the spec and design, then walk away. Everything else — alignment, planning, implementation, ralph refinement, and PR review — runs unattended. You get Teams notifications at each milestone and wake up to a finished PR.
-
-```
-/feature-pipeline Here's what I want to build: a user authentication system
-  with OAuth2, session management, and role-based access control.
-  It should support Google and GitHub as identity providers.
-```
-
-**What happens:**
-
-| Step | What | You involved? |
-|------|------|--------------|
-| 1 | Brainstorm product spec | Yes — Q&A |
-| 2 | Brainstorm implementation design | Yes — Q&A |
-| 3 | Align design docs to spec | No — automated |
-| 4 | Write implementation plans | No — automated |
-| 5 | Align plans to each other | No — automated |
-| 6 | Draft implementation via parallel agents | No — automated |
-| 7 | Generate ralph loop files | No — automated |
-| 8 | Submit to ralph-o-matic | No — automated |
-| 9 | Ralph refinement loop (overnight) | No — server |
-| 10 | PR review + apply fixes | No — post-completion hook |
-
-**Flags:**
-- `--slug user-auth` — override auto-derived feature slug
-- `--max-iterations 200` — override ralph iteration count (default: 200)
-- `--priority high` — override ralph priority (default: high)
-- `--spec-only` — stop after brainstorming (skip automated pipeline)
-
-### Composable Sub-Skills
-
-Each step of the pipeline is also available as an independent skill:
-
-#### `/spec-to-design`
-
-Run steps 3–6 (alignment, planning, alignment, implementation) when you already have a spec and design docs from a manual brainstorm.
-
-```
-/spec-to-design --spec docs/specs/user-auth-spec.md
-```
-
-#### `/auto-ralph-prep`
-
-Auto-generate ralph loop files (RALPH.md, focus-areas.md, gaps-identified.md) from spec and design docs — no interactive Q&A. Derives mission, persona, focus areas, checklist, and constraints automatically.
-
-```
-/auto-ralph-prep docs/specs/user-auth-spec.md
-```
-
-#### `/auto-ralph-submit`
-
-Non-interactive submission to ralph-o-matic with sensible defaults. Pre-flight checks, auto-commit, auto-push, Teams notification.
-
-```
-/auto-ralph-submit --max-iterations 200 --priority high
-```
-
-### Interactive Skills
-
-#### `/brainstorm-to-ralph`
-
-End-to-end workflow from idea to queued refinement job. Walks through brainstorming, planning, and drafting locally with Opus, then submits the work to ralph-o-matic for iterative refinement.
-
-```
-/brainstorm-to-ralph "Add user authentication with OAuth"
-```
-
-#### `/direct-to-ralph`
-
-Skip brainstorming and planning — submit work directly when you already have code or a clear task for ralph to refine.
-
-```
-/direct-to-ralph "Fix all failing tests in the auth package"
-/direct-to-ralph "Improve test coverage to 80%" --spec docs/coverage-plan.md
-```
-
-#### `/plan-to-ralph`
-
-Generate ralph loop files through interactive Q&A. Scans your codebase to suggest focus areas, generates a review persona, and produces ready-to-use loop configuration. Supports `--auto` to skip Q&A and derive everything from spec/design docs.
-
-```
-/plan-to-ralph
-/plan-to-ralph "on the new authentication system"
-/plan-to-ralph --auto docs/specs/user-auth-spec.md
-```
-
 ## API
 
 The server exposes a REST API at `http://<host>:9090/api/`:
@@ -473,7 +499,7 @@ internal/
   git/              Git/GitHub operations
   models/           Core data types, per-backend loop config
   notify/           Notification dispatcher (SMTP, Teams webhooks)
-  worker/           Job execution loop, retry, rate limiting
+  worker/           Job execution loop, retry, rate limiting, post-completion hooks
   platform/         Hardware detection, model catalog, Ollama client, selection algorithm
   queue/            Priority job queue with state machine
 .claude-plugin/
@@ -482,16 +508,20 @@ scripts/
   install.sh        Interactive installer (macOS/Linux)
   install.ps1       Interactive installer (Windows)
   tests/            BATS tests for install script
+
+# Skills in dbinky/ralph-o-matic plugin:
 skills/
   brainstorm-to-ralph/   Idea → brainstorm → plan → draft → ralph
   direct-to-ralph/       Submit ready work directly to ralph
   plan-to-ralph/         Generate loop files via guided Q&A or auto-derive (--auto)
 
-# In dbinky/dbinky-skill-set plugin:
+# Skills in dbinky/dbinky-skill-set plugin:
   feature-pipeline/      Full automation: brainstorm → implement → ralph → PR review
-  spec-to-design/        Automated steps 3-6: align → plan → align → implement
+  spec-to-design/        Automated steps 3–6: align → plan → align → implement
   auto-ralph-prep/       Auto-generate loop files from spec/designs (no Q&A)
   auto-ralph-submit/     Non-interactive ralph submission with pre-flight checks
+  ralph-plan/            Automate ralph loop setup from branch changes or user scope
+
 web/
   templates/        Dashboard HTML
   static/           CSS/JS

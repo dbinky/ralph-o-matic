@@ -8,6 +8,10 @@ setup() {
     export -f error
 
     source scripts/install.sh
+
+    # Default stub: keep tests offline. Tests that exercise the real
+    # resolver redefine this locally.
+    resolve_version() { VERSION="0.0.0-test"; RELEASE_URL="http://test"; }
 }
 
 # Helper: exercise the main() logic without the exec 0</dev/tty redirect.
@@ -17,6 +21,7 @@ setup() {
 _run_main_logic() {
     parse_args "$@"
     print_banner
+    resolve_version
     detect_platform
 
     if [[ "$UPDATE_FLAG" == true ]]; then
