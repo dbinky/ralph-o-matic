@@ -91,39 +91,46 @@ Based on the prompt type selected, generate the prompt file.
 **Bounded prompt (with spec):**
 
 ```markdown
-You are refining code to meet a specification.
+You are refining code to meet a specification. The user is unavailable — do the work without asking for input.
 
 Spec: {SPEC_FILE}
 Progress: docs/plans/{BRANCH}-ralph-status.md
 
-Each iteration:
+Steps:
 1. Read the spec and progress file to understand current state
 2. Search the codebase before assuming anything is missing — do not reimplement existing code
 3. Pick the single highest-impact remaining task
 4. Implement it, keeping the change focused and testable
 5. Run tests — if they fail, fix before moving on
 6. Update the progress file: mark completed items, add discovered work, note what's next
+7. Commit and push
 
 The code may have been drafted by another agent. Do not trust it. Verify against the spec.
 
 When all spec requirements are satisfied and tests pass, output:
 <promise>FINIT</promise>
+
+Otherwise, output:
+<promise>CLOSER</promise>
+
+Output exactly one tag, then stop.
 ```
 
 **Open-ended prompt:**
 
 ```markdown
-You are improving this codebase toward production quality.
+You are improving this codebase toward production quality. The user is unavailable — do the work without asking for input.
 
 Progress: docs/plans/{BRANCH}-ralph-status.md
 
-Each iteration:
+Steps:
 1. Read the progress file to understand what's been done and what remains
 2. Search the codebase before assuming anything is missing
 3. Pick the single highest-impact improvement
 4. Implement it, keeping the change focused and testable
 5. Run tests — if they fail, fix before moving on
 6. Update the progress file: mark completed items, add discovered work, note what's next
+7. Commit and push
 
 Do not output a <promise> tag. Continue improving until stopped.
 ```
@@ -184,7 +191,7 @@ After pre-flight checks pass, determine whether the ralph server is local.
 
 | Option | Description |
 |--------|-------------|
-| Use local repo (Recommended) | Ralph works directly in your checkout — no clone, faster startup, changes pushed each iteration. Don't edit these files while ralph is running. |
+| Use local repo (Recommended) | Ralph works directly in your checkout — no clone, faster startup, changes pushed after each pass. Don't edit these files while ralph is running. |
 | Clone as usual | Ralph clones into its own workspace. Slower but your working tree stays untouched. |
 
 **If the user chooses local repo:** Get the repo root with `git rev-parse --show-toplevel`. Store this as `LOCAL_DIR` for use in Step 6.
@@ -199,7 +206,7 @@ After pre-flight checks pass, determine whether the ralph server is local.
 # Commit RALPH.md if it was generated or modified
 if [ -n "$(git status --porcelain RALPH.md)" ]; then
     git add RALPH.md
-    git commit -m "chore: add ralph loop prompt"
+    git commit -m "chore: add ralph review prompt"
     git push
 fi
 
@@ -234,7 +241,7 @@ If local mode was used, add:
 
 ```
   Note: Ralph is working directly in {LOCAL_DIR}.
-        Changes are pushed to the remote after each iteration.
+        Changes are pushed to the remote after each pass.
         Avoid editing files in this repo until the job completes.
 ```
 
