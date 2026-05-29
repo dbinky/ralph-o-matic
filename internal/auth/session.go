@@ -127,7 +127,10 @@ const cookieName = "ralph_session"
 // SetSessionCookie sets the session cookie on the response.
 // If secure is true, the Secure flag is set (use for HTTPS).
 func SetSessionCookie(w http.ResponseWriter, sessionID string, secure bool) {
-	http.SetCookie(w, &http.Cookie{
+	// G124: HttpOnly and SameSite=Lax are always set. Secure is intentionally
+	// conditional on `secure` (HTTPS deployments) so local HTTP development can
+	// still authenticate; production runs with secure=true.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is deployment-conditional; see comment above
 		Name:     cookieName,
 		Value:    sessionID,
 		Path:     "/",
@@ -141,7 +144,9 @@ func SetSessionCookie(w http.ResponseWriter, sessionID string, secure bool) {
 // It mirrors the security flags from SetSessionCookie to ensure the
 // browser matches and removes the correct cookie.
 func ClearSessionCookie(w http.ResponseWriter, secure bool) {
-	http.SetCookie(w, &http.Cookie{
+	// G124: mirrors SetSessionCookie's flags so the browser removes the matching
+	// cookie. Secure is deployment-conditional for the same local-dev reason.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is deployment-conditional; see comment above
 		Name:     cookieName,
 		Value:    "",
 		Path:     "/",

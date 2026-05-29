@@ -75,7 +75,8 @@ func handleLogin(provider *EntraProvider, secure bool) http.HandlerFunc {
 		state := hex.EncodeToString(stateBytes)
 
 		// Store state in cookie
-		http.SetCookie(w, &http.Cookie{
+		// G124: HttpOnly/SameSite set; Secure is deployment-conditional (local dev).
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is deployment-conditional; see comment above
 			Name:     stateCookieName,
 			Value:    state,
 			Path:     "/auth",
@@ -89,7 +90,10 @@ func handleLogin(provider *EntraProvider, secure bool) http.HandlerFunc {
 		oauth2Cfg := provider.OAuth2Config(redirectURL)
 		authURL := oauth2Cfg.AuthCodeURL(state)
 
-		http.Redirect(w, r, authURL, http.StatusFound)
+		// G710: authURL is the IdP's authorize endpoint built from trusted
+		// provider config. Only the redirect_uri query parameter embeds r.Host,
+		// and Entra rejects any redirect_uri not in the app's registered list.
+		http.Redirect(w, r, authURL, http.StatusFound) //nolint:gosec // G710: redirect target is the trusted IdP authorize URL
 	}
 }
 
@@ -162,7 +166,8 @@ func handleCallback(provider *EntraProvider, store *SessionStore, secure bool) h
 		SetSessionCookie(w, sessionID, secure)
 
 		// Clear state cookie
-		http.SetCookie(w, &http.Cookie{
+		// G124: HttpOnly/SameSite set; Secure is deployment-conditional (local dev).
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is deployment-conditional; see comment above
 			Name:     stateCookieName,
 			Value:    "",
 			Path:     "/auth",
@@ -177,7 +182,9 @@ func handleCallback(provider *EntraProvider, store *SessionStore, secure bool) h
 		if !isValidRedirect(redirect) {
 			redirect = "/"
 		}
-		http.Redirect(w, r, redirect, http.StatusFound)
+		// G710: redirect is constrained by isValidRedirect to site-relative paths
+		// only (must start with "/", rejects "//" and "/\" scheme-relative tricks).
+		http.Redirect(w, r, redirect, http.StatusFound) //nolint:gosec // G710: redirect validated by isValidRedirect above
 	}
 }
 

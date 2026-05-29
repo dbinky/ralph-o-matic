@@ -19,7 +19,7 @@ $ErrorActionPreference = "Stop"
 
 # VersionFallback is used when the GitHub API is unreachable. Bump on
 # every release so offline installs still get a recent build.
-$VersionFallback = "0.7.1"
+$VersionFallback = "0.7.2"
 $VersionOverride = $Version
 $Version = ""            # resolved at runtime by Resolve-Version
 $RepoUrl = "https://github.com/dbinky/ralph-o-matic"

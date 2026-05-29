@@ -10,9 +10,9 @@ import (
 type Backend string
 
 const (
-	BackendOllama      Backend = "ollama"
-	BackendAnthropic   Backend = "anthropic"
-	BackendOpenRouter  Backend = "openrouter"
+	BackendOllama     Backend = "ollama"
+	BackendAnthropic  Backend = "anthropic"
+	BackendOpenRouter Backend = "openrouter"
 )
 
 // Valid returns true for known backends and empty (which means "use default")
@@ -164,9 +164,9 @@ type ServerConfig struct {
 	JobRetentionDays int    `json:"job_retention_days"`
 
 	// Backend
-	DefaultBackend Backend           `json:"default_backend"`
-	Anthropic      AnthropicConfig   `json:"anthropic"`
-	OpenRouter     OpenRouterConfig  `json:"openrouter"`
+	DefaultBackend Backend          `json:"default_backend"`
+	Anthropic      AnthropicConfig  `json:"anthropic"`
+	OpenRouter     OpenRouterConfig `json:"openrouter"`
 
 	// Retry behavior
 	MaxClaudeRetries  int `json:"max_claude_retries"`
@@ -178,6 +178,12 @@ type ServerConfig struct {
 
 	// Hooks
 	PostCompletionCommand string `json:"post_completion_command"`
+
+	// Disable1MContext forces Claude Code to use the standard 200K context
+	// window (via CLAUDE_CODE_DISABLE_1M_CONTEXT=1) instead of the 1M window.
+	// Sonnet's 1M context requires usage credits on every plan, so this
+	// defaults to true to keep headless jobs from failing on credit errors.
+	Disable1MContext bool `json:"disable_1m_context"`
 }
 
 // DefaultServerConfig returns a ServerConfig with sensible defaults
@@ -201,6 +207,7 @@ func DefaultServerConfig() *ServerConfig {
 		MaxClaudeRetries:     3,
 		MaxGitRetries:        3,
 		GitRetryBackoffMs:    1000,
+		Disable1MContext:     true,
 	}
 }
 
@@ -458,6 +465,12 @@ func (c *ServerConfig) MergeJSON(raw json.RawMessage) (*ServerConfig, error) {
 
 	if _, ok := rawMap["post_completion_command"]; ok {
 		result.PostCompletionCommand = updates.PostCompletionCommand
+	}
+
+	// Defaults to true, so the explicit-presence check is the only way to set
+	// it to false (the standard non-zero Merge can't distinguish unset false).
+	if _, ok := rawMap["disable_1m_context"]; ok {
+		result.Disable1MContext = updates.Disable1MContext
 	}
 
 	return result, nil
