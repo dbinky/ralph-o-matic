@@ -92,7 +92,8 @@ func (r *ConfigRepo) Save(cfg *models.ServerConfig) error {
 		"notify.smtp.recipients":   strings.Join(cfg.Notify.SMTP.Recipients, ","),
 		"notify.teams.enabled":     strconv.FormatBool(cfg.Notify.Teams.Enabled),
 		"notify.teams.webhook_url": cfg.Notify.Teams.WebhookURL,
-		"post_completion_command":   cfg.PostCompletionCommand,
+		"post_completion_command":  cfg.PostCompletionCommand,
+		"disable_1m_context":       strconv.FormatBool(cfg.Disable1MContext),
 	}
 
 	tx, err := r.db.conn.Begin()
@@ -236,6 +237,8 @@ func applyConfigValue(cfg *models.ServerConfig, key, value string) error {
 		cfg.Notify.Teams.WebhookURL = value
 	case "post_completion_command":
 		cfg.PostCompletionCommand = value
+	case "disable_1m_context":
+		cfg.Disable1MContext = value == "true"
 	default:
 		return fmt.Errorf("unknown config key: %s", key)
 	}

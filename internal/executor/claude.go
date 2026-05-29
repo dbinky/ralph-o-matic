@@ -82,7 +82,7 @@ func (e *ClaudeExecutor) BuildEnv(backend models.Backend, extra map[string]strin
 	case models.BackendOpenRouter:
 		backendEnv = map[string]string{
 			"ANTHROPIC_BASE_URL":            e.config.OpenRouter.BaseURL,
-			"ANTHROPIC_AUTH_TOKEN":           e.config.OpenRouter.APIKey,
+			"ANTHROPIC_AUTH_TOKEN":          e.config.OpenRouter.APIKey,
 			"ANTHROPIC_MODEL":               e.config.OpenRouter.LargeModel,
 			"ANTHROPIC_DEFAULT_HAIKU_MODEL": e.config.OpenRouter.SmallModel,
 		}
@@ -97,6 +97,14 @@ func (e *ClaudeExecutor) BuildEnv(backend models.Backend, extra map[string]strin
 
 	for k, v := range backendEnv {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	// Force standard (200K) context when configured. Sonnet's 1M context window
+	// requires usage credits on every plan, so leaving 1M enabled makes headless
+	// jobs fail with "Usage credits required for 1M context". Configurable via
+	// the disable_1m_context server-config key (defaults to true).
+	if e.config.Disable1MContext {
+		env = append(env, "CLAUDE_CODE_DISABLE_1M_CONTEXT=1")
 	}
 
 	for k, v := range extra {

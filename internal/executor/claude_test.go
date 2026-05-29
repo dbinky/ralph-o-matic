@@ -21,6 +21,28 @@ func TestClaudeExecutor_BuildEnv(t *testing.T) {
 	assert.Contains(t, env, "ANTHROPIC_MODEL=devstral")
 	assert.Contains(t, env, "ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3:8b")
 	assert.Contains(t, env, "CUSTOM=value")
+	// Always force standard context so Max-plan accounts don't auto-upgrade to
+	// the 1M window, which fails headless jobs with a usage-credits error.
+	assert.Contains(t, env, "CLAUDE_CODE_DISABLE_1M_CONTEXT=1")
+}
+
+func TestClaudeExecutor_BuildEnv_Disables1MContextForAnthropic(t *testing.T) {
+	cfg := models.DefaultServerConfig()
+	exec := NewClaudeExecutor(cfg)
+
+	env := exec.BuildEnv(models.BackendAnthropic, nil)
+
+	assert.Contains(t, env, "CLAUDE_CODE_DISABLE_1M_CONTEXT=1")
+}
+
+func TestClaudeExecutor_BuildEnv_1MContextEnabledWhenConfigured(t *testing.T) {
+	cfg := models.DefaultServerConfig()
+	cfg.Disable1MContext = false
+	exec := NewClaudeExecutor(cfg)
+
+	env := exec.BuildEnv(models.BackendAnthropic, nil)
+
+	assert.NotContains(t, env, "CLAUDE_CODE_DISABLE_1M_CONTEXT=1")
 }
 
 func TestClaudeExecutor_BuildEnv_RemoteOllama(t *testing.T) {

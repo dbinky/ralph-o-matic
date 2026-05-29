@@ -536,6 +536,7 @@ Use dotted keys for nested values, e.g.: large_model.name, notify.smtp.host`,
 				fmt.Printf("max_claude_retries: %d\n", serverCfg.MaxClaudeRetries)
 				fmt.Printf("max_git_retries: %d\n", serverCfg.MaxGitRetries)
 				fmt.Printf("git_retry_backoff_ms: %d\n", serverCfg.GitRetryBackoffMs)
+				fmt.Printf("disable_1m_context: %v\n", serverCfg.Disable1MContext)
 				fmt.Println()
 				fmt.Println("# Storage")
 				if serverCfg.WorkspaceDir != "" {

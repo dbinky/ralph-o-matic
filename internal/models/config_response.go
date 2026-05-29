@@ -44,20 +44,21 @@ type NotifyConfigResponse struct {
 // It differs from ServerConfig in that sensitive fields (API keys, passwords,
 // webhook URLs) are replaced with boolean indicators.
 type ServerConfigResponse struct {
-	Ollama               OllamaConfig            `json:"ollama"`
-	LargeModel           ModelPlacement          `json:"large_model"`
-	SmallModel           ModelPlacement          `json:"small_model"`
-	DefaultMaxIterations int                     `json:"default_max_iterations"`
-	WorkspaceDir         string                  `json:"workspace_dir,omitempty"`
-	JobRetentionDays     int                     `json:"job_retention_days"`
-	DefaultBackend       Backend                    `json:"default_backend"`
-	Anthropic            AnthropicConfigResponse    `json:"anthropic"`
-	OpenRouter           OpenRouterConfigResponse   `json:"openrouter"`
-	MaxClaudeRetries     int                     `json:"max_claude_retries"`
-	MaxGitRetries        int                     `json:"max_git_retries"`
-	GitRetryBackoffMs    int                     `json:"git_retry_backoff_ms"`
-	Notify               NotifyConfigResponse    `json:"notify"`
-	PostCompletionCommand string                 `json:"post_completion_command"`
+	Ollama                OllamaConfig             `json:"ollama"`
+	LargeModel            ModelPlacement           `json:"large_model"`
+	SmallModel            ModelPlacement           `json:"small_model"`
+	DefaultMaxIterations  int                      `json:"default_max_iterations"`
+	WorkspaceDir          string                   `json:"workspace_dir,omitempty"`
+	JobRetentionDays      int                      `json:"job_retention_days"`
+	DefaultBackend        Backend                  `json:"default_backend"`
+	Anthropic             AnthropicConfigResponse  `json:"anthropic"`
+	OpenRouter            OpenRouterConfigResponse `json:"openrouter"`
+	MaxClaudeRetries      int                      `json:"max_claude_retries"`
+	MaxGitRetries         int                      `json:"max_git_retries"`
+	GitRetryBackoffMs     int                      `json:"git_retry_backoff_ms"`
+	Notify                NotifyConfigResponse     `json:"notify"`
+	PostCompletionCommand string                   `json:"post_completion_command"`
+	Disable1MContext      bool                     `json:"disable_1m_context"`
 }
 
 // NewServerConfigResponse builds a redacted response from a full ServerConfig.
@@ -80,10 +81,11 @@ func NewServerConfigResponse(cfg *ServerConfig) *ServerConfigResponse {
 			SmallModel: cfg.OpenRouter.SmallModel,
 			APIKeySet:  cfg.OpenRouter.APIKey != "",
 		},
-		MaxClaudeRetries:  cfg.MaxClaudeRetries,
-		MaxGitRetries:     cfg.MaxGitRetries,
-		GitRetryBackoffMs: cfg.GitRetryBackoffMs,
+		MaxClaudeRetries:      cfg.MaxClaudeRetries,
+		MaxGitRetries:         cfg.MaxGitRetries,
+		GitRetryBackoffMs:     cfg.GitRetryBackoffMs,
 		PostCompletionCommand: cfg.PostCompletionCommand,
+		Disable1MContext:      cfg.Disable1MContext,
 		Notify: NotifyConfigResponse{
 			SMTP: SMTPConfigResponse{
 				Enabled:     cfg.Notify.SMTP.Enabled,
