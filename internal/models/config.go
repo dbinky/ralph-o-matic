@@ -179,10 +179,12 @@ type ServerConfig struct {
 	// Hooks
 	PostCompletionCommand string `json:"post_completion_command"`
 
-	// Disable1MContext forces Claude Code to use the standard 200K context
-	// window (via CLAUDE_CODE_DISABLE_1M_CONTEXT=1) instead of the 1M window.
-	// Sonnet's 1M context requires usage credits on every plan, so this
-	// defaults to true to keep headless jobs from failing on credit errors.
+	// Disable1MContext keeps Claude Code in the standard 200K context window
+	// instead of the credit-billed 1M window. When true the executor sets both
+	// CLAUDE_CODE_DISABLE_1M_CONTEXT=1 (hide 1M from the picker) and
+	// CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 (auto-compact before a long session
+	// overflows 200K and triggers a 1M request). Sonnet's 1M context requires
+	// usage credits on every plan, so this defaults to true.
 	Disable1MContext bool `json:"disable_1m_context"`
 }
 

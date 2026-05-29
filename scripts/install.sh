@@ -7,7 +7,7 @@ set -euo pipefail
 # VERSION_FALLBACK is used when the GitHub API is unreachable. It is also
 # a lower bound — if the API returns something, we use that instead. Bump
 # this on every release so offline installs still get a recent build.
-VERSION_FALLBACK="0.7.2"
+VERSION_FALLBACK="0.7.3"
 VERSION=""            # resolved at runtime; do not set here
 VERSION_OVERRIDE=""   # set by --version=X.Y.Z
 REPO_URL="https://github.com/dbinky/ralph-o-matic"
