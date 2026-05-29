@@ -206,7 +206,7 @@ curl -fsSL .../install.sh | bash -s -- --mode=client --server=http://192.168.1.5
 curl -fsSL .../install.sh | bash -s -- --yes --backend=anthropic
 
 # Pin to a specific release
-curl -fsSL .../install.sh | bash -s -- --version=0.7.2
+curl -fsSL .../install.sh | bash -s -- --version=0.7.3
 ```
 
 **PowerShell examples:**
@@ -221,7 +221,7 @@ irm .../install.ps1 -OutFile install.ps1
 .\install.ps1 -Yes -Backend anthropic
 
 # Pin to a specific release
-.\install.ps1 -Version 0.7.2
+.\install.ps1 -Version 0.7.3
 ```
 
 ### Choosing a Backend
