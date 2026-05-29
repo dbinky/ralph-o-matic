@@ -100,11 +100,21 @@ func (e *ClaudeExecutor) BuildEnv(backend models.Backend, extra map[string]strin
 	}
 
 	// Force standard (200K) context when configured. Sonnet's 1M context window
-	// requires usage credits on every plan, so leaving 1M enabled makes headless
-	// jobs fail with "Usage credits required for 1M context". Configurable via
-	// the disable_1m_context server-config key (defaults to true).
+	// requires usage credits on every plan, so a job whose resumed session grows
+	// past 200K otherwise fails with "Usage credits required for 1M context".
+	//
+	// Two vars are required. DISABLE_1M_CONTEXT removes 1M variants from the model
+	// picker but, on its own, does NOT stop Claude Code from reaching for the 1M
+	// window when a session overflows 200K: it still sizes auto-compaction to the
+	// model's max window (1M for extended-context models like Sonnet 4.6), so it
+	// never compacts at 200K and instead requests 1M. AUTO_COMPACT_WINDOW caps that
+	// budget to 200K, so the session auto-compacts (~95%) before 1M is ever needed.
+	// Configurable via the disable_1m_context server-config key (defaults to true).
 	if e.config.Disable1MContext {
-		env = append(env, "CLAUDE_CODE_DISABLE_1M_CONTEXT=1")
+		env = append(env,
+			"CLAUDE_CODE_DISABLE_1M_CONTEXT=1",
+			"CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000",
+		)
 	}
 
 	for k, v := range extra {

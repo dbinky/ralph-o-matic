@@ -21,9 +21,11 @@ func TestClaudeExecutor_BuildEnv(t *testing.T) {
 	assert.Contains(t, env, "ANTHROPIC_MODEL=devstral")
 	assert.Contains(t, env, "ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3:8b")
 	assert.Contains(t, env, "CUSTOM=value")
-	// Always force standard context so Max-plan accounts don't auto-upgrade to
-	// the 1M window, which fails headless jobs with a usage-credits error.
+	// Force standard context: disable the 1M picker variant AND cap the
+	// auto-compaction window to 200K so a long session compacts before it would
+	// otherwise overflow into the credit-billed 1M window.
 	assert.Contains(t, env, "CLAUDE_CODE_DISABLE_1M_CONTEXT=1")
+	assert.Contains(t, env, "CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000")
 }
 
 func TestClaudeExecutor_BuildEnv_Disables1MContextForAnthropic(t *testing.T) {
@@ -33,6 +35,7 @@ func TestClaudeExecutor_BuildEnv_Disables1MContextForAnthropic(t *testing.T) {
 	env := exec.BuildEnv(models.BackendAnthropic, nil)
 
 	assert.Contains(t, env, "CLAUDE_CODE_DISABLE_1M_CONTEXT=1")
+	assert.Contains(t, env, "CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000")
 }
 
 func TestClaudeExecutor_BuildEnv_1MContextEnabledWhenConfigured(t *testing.T) {
@@ -43,6 +46,7 @@ func TestClaudeExecutor_BuildEnv_1MContextEnabledWhenConfigured(t *testing.T) {
 	env := exec.BuildEnv(models.BackendAnthropic, nil)
 
 	assert.NotContains(t, env, "CLAUDE_CODE_DISABLE_1M_CONTEXT=1")
+	assert.NotContains(t, env, "CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000")
 }
 
 func TestClaudeExecutor_BuildEnv_RemoteOllama(t *testing.T) {
