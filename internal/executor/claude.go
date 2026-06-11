@@ -23,6 +23,12 @@ type ClaudeExecutor struct {
 	claudePath string // absolute path to claude binary
 }
 
+// SetConfig replaces the executor's config so changes made via the config
+// API take effect on the next execution without a server restart.
+func (e *ClaudeExecutor) SetConfig(config *models.ServerConfig) {
+	e.config = config
+}
+
 // NewClaudeExecutor creates a new executor with automatic binary resolution
 func NewClaudeExecutor(config *models.ServerConfig) *ClaudeExecutor {
 	return &ClaudeExecutor{

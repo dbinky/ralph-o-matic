@@ -50,11 +50,28 @@ func (h *RalphHandler) SetLogBroadcaster(b *broadcast.Broadcaster) {
 	h.logRepo.SetBroadcaster(b)
 }
 
+// refreshConfig reloads the server config from the database so changes made
+// via PATCH /api/config (default backend, model names, etc.) take effect on
+// the next iteration without a server restart. On read failure the previous
+// snapshot is kept so a transient DB error never aborts an iteration.
+func (h *RalphHandler) refreshConfig() {
+	cfg, err := db.NewConfigRepo(h.db).Get()
+	if err != nil {
+		log.Printf("Warning: failed to reload config, keeping cached snapshot: %v", err)
+		return
+	}
+	h.config = cfg
+	h.executor.SetConfig(cfg)
+}
+
 // Handle executes a single iteration of the ralph loop for a job.
 // The caller (worker) is responsible for iteration counting, looping,
 // and calling Finalize when the job is done.
 func (h *RalphHandler) Handle(ctx context.Context, job *models.Job) (*ExecutionResult, error) {
 	log.Printf("Starting ralph iteration %d for job %d: %s", job.Iteration, job.ID, job.Branch)
+
+	// Pick up any config changes made since the last iteration.
+	h.refreshConfig()
 
 	workDir := h.resolveWorkDir(job)
 	if workDir == "" {
