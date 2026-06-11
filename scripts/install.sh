@@ -387,53 +387,53 @@ validate_claude_auth() {
 select_anthropic_models() {
     # Auto-select defaults with --yes flag
     if [[ "$YES_FLAG" == true ]]; then
-        LARGE_MODEL="claude-sonnet-4-6-20260218"
-        SMALL_MODEL="claude-sonnet-4-6-20260218"
+        LARGE_MODEL="claude-sonnet-4-6"
+        SMALL_MODEL="claude-sonnet-4-6"
         return
     fi
 
     echo ""
     echo "Select the LARGE model (used for main coding iterations):"
     echo ""
-    echo "  [1] claude-opus-4-6               (most capable, slower, higher cost)"
-    echo "  [2] claude-sonnet-4-6-20260218    (fast and capable, recommended)"
+    echo "  [1] claude-opus-4-8               (most capable, slower, higher cost)"
+    echo "  [2] claude-sonnet-4-6    (fast and capable, recommended)"
     echo "  [3] Custom model ID"
     echo ""
     read -p "Select [1-3]: " -n 1 -r
     echo ""
     case $REPLY in
-        1) LARGE_MODEL="claude-opus-4-6" ;;
-        2) LARGE_MODEL="claude-sonnet-4-6-20260218" ;;
+        1) LARGE_MODEL="claude-opus-4-8" ;;
+        2) LARGE_MODEL="claude-sonnet-4-6" ;;
         3)
             read -p "Enter model ID: " -r LARGE_MODEL
             if [[ -z "$LARGE_MODEL" ]]; then
-                warn "Empty model ID, using claude-sonnet-4-6-20260218"
-                LARGE_MODEL="claude-sonnet-4-6-20260218"
+                warn "Empty model ID, using claude-sonnet-4-6"
+                LARGE_MODEL="claude-sonnet-4-6"
             fi
             ;;
-        *) warn "Invalid choice, using claude-sonnet-4-6-20260218"; LARGE_MODEL="claude-sonnet-4-6-20260218" ;;
+        *) warn "Invalid choice, using claude-sonnet-4-6"; LARGE_MODEL="claude-sonnet-4-6" ;;
     esac
 
     echo ""
     echo "Select the SMALL model (used for quick checks and lightweight tasks):"
     echo ""
-    echo "  [1] claude-sonnet-4-6-20260218    (fast and capable, recommended)"
+    echo "  [1] claude-sonnet-4-6    (fast and capable, recommended)"
     echo "  [2] claude-haiku-4-5-20251001     (faster, lower cost)"
     echo "  [3] Custom model ID"
     echo ""
     read -p "Select [1-3]: " -n 1 -r
     echo ""
     case $REPLY in
-        1) SMALL_MODEL="claude-sonnet-4-6-20260218" ;;
+        1) SMALL_MODEL="claude-sonnet-4-6" ;;
         2) SMALL_MODEL="claude-haiku-4-5-20251001" ;;
         3)
             read -p "Enter model ID: " -r SMALL_MODEL
             if [[ -z "$SMALL_MODEL" ]]; then
-                warn "Empty model ID, using claude-sonnet-4-6-20260218"
-                SMALL_MODEL="claude-sonnet-4-6-20260218"
+                warn "Empty model ID, using claude-sonnet-4-6"
+                SMALL_MODEL="claude-sonnet-4-6"
             fi
             ;;
-        *) warn "Invalid choice, using claude-sonnet-4-6-20260218"; SMALL_MODEL="claude-sonnet-4-6-20260218" ;;
+        *) warn "Invalid choice, using claude-sonnet-4-6"; SMALL_MODEL="claude-sonnet-4-6" ;;
     esac
 
     success "Selected: large=$LARGE_MODEL, small=$SMALL_MODEL"

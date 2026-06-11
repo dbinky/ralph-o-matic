@@ -196,8 +196,8 @@ func DefaultServerConfig() *ServerConfig {
 		SmallModel:     ModelPlacement{Name: "qwen3:8b", Device: "gpu", MemoryGB: 5.2},
 		DefaultBackend: BackendOllama,
 		Anthropic: AnthropicConfig{
-			LargeModel: "claude-sonnet-4-6-20260218",
-			SmallModel: "claude-sonnet-4-6-20260218",
+			LargeModel: "claude-sonnet-4-6",
+			SmallModel: "claude-sonnet-4-6",
 		},
 		OpenRouter: OpenRouterConfig{
 			BaseURL:    "https://openrouter.ai/api/v1",

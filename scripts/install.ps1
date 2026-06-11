@@ -654,58 +654,58 @@ function Test-ClaudeAuth {
 function Select-AnthropicModels {
     # Auto-select defaults with -Yes flag
     if ($Yes) {
-        $script:LargeModel = "claude-sonnet-4-6-20260218"
-        $script:SmallModel = "claude-sonnet-4-6-20260218"
+        $script:LargeModel = "claude-sonnet-4-6"
+        $script:SmallModel = "claude-sonnet-4-6"
         return
     }
 
     Write-Host ""
     Write-Host "Select the LARGE model (used for main coding iterations):"
     Write-Host ""
-    Write-Host "  [1] claude-opus-4-6               (most capable, slower, higher cost)"
-    Write-Host "  [2] claude-sonnet-4-6-20260218    (fast and capable, recommended)"
+    Write-Host "  [1] claude-opus-4-8               (most capable, slower, higher cost)"
+    Write-Host "  [2] claude-sonnet-4-6    (fast and capable, recommended)"
     Write-Host "  [3] Custom model ID"
     Write-Host ""
     $choice = Read-Host "Select [1-3]"
 
     switch ($choice) {
-        "1" { $script:LargeModel = "claude-opus-4-6" }
-        "2" { $script:LargeModel = "claude-sonnet-4-6-20260218" }
+        "1" { $script:LargeModel = "claude-opus-4-8" }
+        "2" { $script:LargeModel = "claude-sonnet-4-6" }
         "3" {
             $script:LargeModel = Read-Host "Enter model ID"
             if (-not $script:LargeModel) {
-                Write-Warn "Empty model ID, using claude-sonnet-4-6-20260218"
-                $script:LargeModel = "claude-sonnet-4-6-20260218"
+                Write-Warn "Empty model ID, using claude-sonnet-4-6"
+                $script:LargeModel = "claude-sonnet-4-6"
             }
         }
         default {
-            Write-Warn "Invalid choice, using claude-sonnet-4-6-20260218"
-            $script:LargeModel = "claude-sonnet-4-6-20260218"
+            Write-Warn "Invalid choice, using claude-sonnet-4-6"
+            $script:LargeModel = "claude-sonnet-4-6"
         }
     }
 
     Write-Host ""
     Write-Host "Select the SMALL model (used for quick checks and lightweight tasks):"
     Write-Host ""
-    Write-Host "  [1] claude-sonnet-4-6-20260218    (fast and capable, recommended)"
+    Write-Host "  [1] claude-sonnet-4-6    (fast and capable, recommended)"
     Write-Host "  [2] claude-haiku-4-5-20251001     (faster, lower cost)"
     Write-Host "  [3] Custom model ID"
     Write-Host ""
     $choice = Read-Host "Select [1-3]"
 
     switch ($choice) {
-        "1" { $script:SmallModel = "claude-sonnet-4-6-20260218" }
+        "1" { $script:SmallModel = "claude-sonnet-4-6" }
         "2" { $script:SmallModel = "claude-haiku-4-5-20251001" }
         "3" {
             $script:SmallModel = Read-Host "Enter model ID"
             if (-not $script:SmallModel) {
-                Write-Warn "Empty model ID, using claude-sonnet-4-6-20260218"
-                $script:SmallModel = "claude-sonnet-4-6-20260218"
+                Write-Warn "Empty model ID, using claude-sonnet-4-6"
+                $script:SmallModel = "claude-sonnet-4-6"
             }
         }
         default {
-            Write-Warn "Invalid choice, using claude-sonnet-4-6-20260218"
-            $script:SmallModel = "claude-sonnet-4-6-20260218"
+            Write-Warn "Invalid choice, using claude-sonnet-4-6"
+            $script:SmallModel = "claude-sonnet-4-6"
         }
     }
 

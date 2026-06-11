@@ -117,8 +117,8 @@ func TestAnthropicConfig_Validate(t *testing.T) {
 func TestDefaultServerConfig_AnthropicDefaults(t *testing.T) {
 	cfg := DefaultServerConfig()
 	assert.Equal(t, BackendOllama, cfg.DefaultBackend)
-	assert.Equal(t, "claude-sonnet-4-6-20260218", cfg.Anthropic.LargeModel)
-	assert.Equal(t, "claude-sonnet-4-6-20260218", cfg.Anthropic.SmallModel)
+	assert.Equal(t, "claude-sonnet-4-6", cfg.Anthropic.LargeModel)
+	assert.Equal(t, "claude-sonnet-4-6", cfg.Anthropic.SmallModel)
 }
 
 func TestServerConfig_Validate(t *testing.T) {
@@ -247,7 +247,7 @@ func TestServerConfig_Merge_Backend(t *testing.T) {
 		}
 		merged := base.Merge(updates)
 		assert.Equal(t, "claude-sonnet-4-20250514", merged.Anthropic.LargeModel)
-		assert.Equal(t, "claude-sonnet-4-6-20260218", merged.Anthropic.SmallModel)
+		assert.Equal(t, "claude-sonnet-4-6", merged.Anthropic.SmallModel)
 	})
 }
 
@@ -554,10 +554,10 @@ func TestServerConfig_MergeJSON_DefaultBackendExplicit(t *testing.T) {
 
 func TestServerConfig_MergeJSON_AnthropicModels(t *testing.T) {
 	base := DefaultServerConfig()
-	raw := json.RawMessage(`{"anthropic":{"large_model":"claude-opus-4-6","small_model":"claude-haiku-4-5"}}`)
+	raw := json.RawMessage(`{"anthropic":{"large_model":"claude-opus-4-8","small_model":"claude-haiku-4-5"}}`)
 	merged, err := base.MergeJSON(raw)
 	require.NoError(t, err)
-	assert.Equal(t, "claude-opus-4-6", merged.Anthropic.LargeModel)
+	assert.Equal(t, "claude-opus-4-8", merged.Anthropic.LargeModel)
 	assert.Equal(t, "claude-haiku-4-5", merged.Anthropic.SmallModel)
 }
 

@@ -296,8 +296,8 @@ The installer recommends a (large, small) pairing based on your hardware:
 
 | Model | Role | Notes |
 |-------|------|-------|
-| claude-opus-4-6 | large | Most capable, slower, higher cost |
-| claude-sonnet-4-6-20260218 | large + small (default) | Fast and capable |
+| claude-opus-4-8 | large | Most capable, slower, higher cost |
+| claude-sonnet-4-6 | large + small (default) | Fast and capable |
 | claude-haiku-4-5-20251001 | small | Fastest, lowest cost |
 
 ### OpenRouter Models
@@ -336,8 +336,8 @@ ralph-o-matic server-config set ollama.host http://remote:11434
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `default_backend` | `ollama` | Active backend (`ollama`, `anthropic`, `openrouter`) |
-| `anthropic.large_model` | `claude-sonnet-4-6-20260218` | Primary coding model |
-| `anthropic.small_model` | `claude-sonnet-4-6-20260218` | Fast model for simple tasks |
+| `anthropic.large_model` | `claude-sonnet-4-6` | Primary coding model |
+| `anthropic.small_model` | `claude-sonnet-4-6` | Fast model for simple tasks |
 
 Authentication is handled by Claude Code's built-in auth — no API key needed.
 

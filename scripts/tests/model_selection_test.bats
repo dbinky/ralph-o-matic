@@ -164,8 +164,8 @@ setup() {
     # With -n 1, read consumes one character at a time (no newlines needed)
     select_anthropic_models <<< $'11'
 
-    [ "$LARGE_MODEL" = "claude-opus-4-6" ]
-    [ "$SMALL_MODEL" = "claude-sonnet-4-6-20260218" ]
+    [ "$LARGE_MODEL" = "claude-opus-4-8" ]
+    [ "$SMALL_MODEL" = "claude-sonnet-4-6" ]
 }
 
 @test "select_anthropic_models picks sonnet for both with choices 2,1" {
@@ -176,8 +176,8 @@ setup() {
     # Large=sonnet(2), Small=sonnet(1)
     select_anthropic_models <<< $'21'
 
-    [ "$LARGE_MODEL" = "claude-sonnet-4-6-20260218" ]
-    [ "$SMALL_MODEL" = "claude-sonnet-4-6-20260218" ]
+    [ "$LARGE_MODEL" = "claude-sonnet-4-6" ]
+    [ "$SMALL_MODEL" = "claude-sonnet-4-6" ]
 }
 
 @test "select_anthropic_models picks haiku for small with choice 2" {
@@ -188,7 +188,7 @@ setup() {
     # Large=sonnet(2), Small=haiku(2)
     select_anthropic_models <<< $'22'
 
-    [ "$LARGE_MODEL" = "claude-sonnet-4-6-20260218" ]
+    [ "$LARGE_MODEL" = "claude-sonnet-4-6" ]
     [ "$SMALL_MODEL" = "claude-haiku-4-5-20251001" ]
 }
 
@@ -199,13 +199,13 @@ setup() {
 
     select_anthropic_models
 
-    [ "$LARGE_MODEL" = "claude-sonnet-4-6-20260218" ]
-    [ "$SMALL_MODEL" = "claude-sonnet-4-6-20260218" ]
+    [ "$LARGE_MODEL" = "claude-sonnet-4-6" ]
+    [ "$SMALL_MODEL" = "claude-sonnet-4-6" ]
 }
 
 @test "apply_model_config sends anthropic payload when backend is anthropic" {
     BACKEND="anthropic"
-    LARGE_MODEL="claude-opus-4-6"
+    LARGE_MODEL="claude-opus-4-8"
     SMALL_MODEL="claude-haiku-4-5-20251001"
 
     curl() {
@@ -230,7 +230,7 @@ setup() {
 
 @test "apply_model_config warns on anthropic config HTTP failure" {
     BACKEND="anthropic"
-    LARGE_MODEL="claude-opus-4-6"
+    LARGE_MODEL="claude-opus-4-8"
     SMALL_MODEL="claude-haiku-4-5-20251001"
 
     curl() {
@@ -331,8 +331,8 @@ setup() {
     # Send "9" for large (invalid) and "9" for small (invalid)
     select_anthropic_models <<< $'99'
 
-    [ "$LARGE_MODEL" = "claude-sonnet-4-6-20260218" ]
-    [ "$SMALL_MODEL" = "claude-sonnet-4-6-20260218" ]
+    [ "$LARGE_MODEL" = "claude-sonnet-4-6" ]
+    [ "$SMALL_MODEL" = "claude-sonnet-4-6" ]
 }
 
 # --- OpenRouter backend tests ---

@@ -159,7 +159,7 @@ Add to `scripts/tests/model_selection_test.bats`:
     # Simulate user picking 1 for large, 1 for small
     select_anthropic_models <<< $'1\n1\n'
 
-    [ "$LARGE_MODEL" = "claude-opus-4-6" ]
+    [ "$LARGE_MODEL" = "claude-opus-4-8" ]
     [ "$SMALL_MODEL" = "claude-haiku-4-5-20251001" ]
 }
 
@@ -188,7 +188,7 @@ select_anthropic_models() {
     echo ""
     echo "Select the LARGE model (used for main coding iterations):"
     echo ""
-    echo "  [1] claude-opus-4-6               (most capable, slower, higher cost)"
+    echo "  [1] claude-opus-4-8               (most capable, slower, higher cost)"
     echo "  [2] claude-sonnet-4-5-20250929     (strong balance of quality and speed)"
     echo "  [3] claude-sonnet-4-5-20250929     (same as 2, with extended 1M context)"
     echo "  [4] Custom model ID"
@@ -196,7 +196,7 @@ select_anthropic_models() {
     read -p "Select [1-4]: " -r
     echo ""
     case $REPLY in
-        1) LARGE_MODEL="claude-opus-4-6" ;;
+        1) LARGE_MODEL="claude-opus-4-8" ;;
         2) LARGE_MODEL="claude-sonnet-4-5-20250929" ;;
         3) LARGE_MODEL="claude-sonnet-4-5-20250929" ;;
         4)
@@ -261,7 +261,7 @@ Add to `scripts/tests/model_selection_test.bats`:
 ```bash
 @test "apply_model_config sends anthropic payload when backend is anthropic" {
     BACKEND="anthropic"
-    LARGE_MODEL="claude-opus-4-6"
+    LARGE_MODEL="claude-opus-4-8"
     SMALL_MODEL="claude-haiku-4-5-20251001"
 
     # Capture the curl call
@@ -483,7 +483,7 @@ function Select-AnthropicModels {
     Write-Host ""
     Write-Host "Select the LARGE model (used for main coding iterations):"
     Write-Host ""
-    Write-Host "  [1] claude-opus-4-6               (most capable, slower, higher cost)"
+    Write-Host "  [1] claude-opus-4-8               (most capable, slower, higher cost)"
     Write-Host "  [2] claude-sonnet-4-5-20250929     (strong balance of quality and speed)"
     Write-Host "  [3] claude-sonnet-4-5-20250929     (same as 2, with extended 1M context)"
     Write-Host "  [4] Custom model ID"
@@ -491,7 +491,7 @@ function Select-AnthropicModels {
     $choice = Read-Host "Select [1-4]"
 
     switch ($choice) {
-        "1" { $LargeModel = "claude-opus-4-6" }
+        "1" { $LargeModel = "claude-opus-4-8" }
         "2" { $LargeModel = "claude-sonnet-4-5-20250929" }
         "3" { $LargeModel = "claude-sonnet-4-5-20250929" }
         "4" {
