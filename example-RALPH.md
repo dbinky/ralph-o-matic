@@ -35,9 +35,11 @@ Review and improve the [FEATURE/SYSTEM] implementation. Focus on a SINGLE focus 
 
 Do NOT check a box unless you could defend it in a code review:
 
-- [ ] All tests pass (`[YOUR TEST COMMAND]`)
+- [ ] No NEW test failures vs the recorded branch-point baseline (`[YOUR TEST COMMAND]`); pre-existing failures are excluded, and nothing that built at baseline is now broken
+- [ ] Every new component is wired-and-fed — constructed at the real composition root and fed a real producer (verified by `grep -rn <Symbol>`, not nil/empty/hardcoded, not only set in tests)
+- [ ] Coverage is real, not green-theater — ≥1 test per component would fail if its production input were nil/empty (fakes don't ignore load-bearing arguments; "integration" tests assert the sink, not an intermediate hop)
 - [ ] The analysis phase was unable to find a single thing wrong with the code
-- [ ] There are no open issues in `docs/reference/gaps-identified.md` for this focus area
+- [ ] There are no open issues in `docs/reference/gaps-identified.md` for this focus area (an inert/no-op path logged as "acceptable" is an OPEN issue, not a pass)
 - [ ] The chosen focus area is complete and polished — you'd be proud to ship it
 
 ## Wrap Up

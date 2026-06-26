@@ -89,6 +89,16 @@ Store the scan results for use in Phase 3.
 
 **If the scan finds zero components** (empty repo or no source code), note this — you'll ask the user to define focus areas manually in Phase 3.
 
+### Record the branch-point test baseline
+
+Before any refinement runs, capture which tests **already fail right now**, so the loop can gate on NEW-vs-baseline rather than demanding a fully green suite. The repo MAY be red on arrival — that is fine; pre-existing failures are not this review's job.
+
+1. Run the project's test command (the one you'll confirm as `TEST_COMMAND` in Phase 3 — auto-detect it now if needed). For a mixed-language repo, run each suite.
+2. For each suite, capture: whether it **built/compiled** at all, the pass/fail counts, and the stable identifier of each failing test (fully-qualified name or `file > test`, no timestamps/durations).
+3. Write the result to `docs/reference/test-baseline.md` as a simple, human-readable record — per suite: the exact command, build-ok status, pass/fail counts, and the list of pre-existing failing test ids. If a suite fails to build, note `BUILD FAILED` with a one-line error summary instead of a test list. If you genuinely find no test suite, write the file noting that and move on.
+
+Store the recorded failing set as `BASELINE_FAILURES` (and the build status per suite). The generated RALPH.md will gate "done" on **no NEW failures vs this baseline** — see Phase 4. Pre-existing failures are logged, not fixed, and must not block the loop.
+
 ---
 
 ## Phase 3: Q&A
@@ -214,13 +224,15 @@ Present the proposed checklist:
 Proposed review checklist (assessed each pass):
 
 Universal (always included):
-  [1] All tests pass (`{TEST_COMMAND}`)
-  [2] No open issues in `docs/reference/gaps-identified.md` for this focus area
-  [3] The focus area is complete and polished — you'd be proud to ship it
+  [1] No NEW test failures vs the recorded branch-point baseline (`{TEST_COMMAND}`) — pre-existing failures excluded; nothing that built at baseline is now broken
+  [2] Wired-and-fed: every new field/collaborator/config for this area is constructed at the REAL composition root and fed real data from an existing producer (verified by `grep -rn <Symbol>` — populated outside `*_test.go`), not nil/empty/hardcoded
+  [3] No green-theater: ≥1 test for this area would fail if its production input were nil/empty; fakes don't ignore load-bearing args; "integration" tests assert the SINK
+  [4] No open issues in `docs/reference/gaps-identified.md` for this focus area
+  [5] The focus area is complete and polished — you'd be proud to ship it
 
 Proposed (based on your project):
-  [4] {proposed item based on context, e.g., "The code aligns with the design doc"}
-  [5] {proposed item, e.g., "Module boundaries are clean — no adapter types in core"}
+  [6] {proposed item based on context, e.g., "The code aligns with the design doc"}
+  [7] {proposed item, e.g., "Module boundaries are clean — no adapter types in core"}
 
 Add, remove, or edit items? Or accept as-is?
 ```
@@ -291,8 +303,14 @@ You are an automated code reviewer. The user is unavailable — do the work with
 2. **Read the Area's Code** — Deeply examine the code for the chosen focus area. Read every file. Understand the patterns.
 3. **Analyze findings and update the gaps list** — Cross-reference what you just read with the design doc and codebase conventions. Add any issues found to `docs/reference/gaps-identified.md` in the `## Open Issues` section.
 4. **Fix the single most important issue, then stop.** Fix it thoroughly — if it spans multiple files, fix all of them consistently. Once fixed, move the issue to `## Fixed Previously` in `docs/reference/gaps-identified.md`. **Proceed immediately to step 5. Do not fix another issue.**
-5. **Run the tests** — Run `{TEST_COMMAND}`. Investigate and fix each failure.
+5. **Run the tests** — Run `{TEST_COMMAND}`. Compare the failing set against the recorded branch-point baseline in `docs/reference/test-baseline.md`. Investigate and fix any **NEW** failure (one not in the baseline) and any new build break. Pre-existing failures from the baseline are NOT your job — log them under `## Won't Fix (Beyond Current Scope)` in `gaps-identified.md` and move on. Do NOT try to make the entire suite green.
 6. **Assess the checklist** — Evaluate honestly, then proceed immediately to the Wrap Up phase. Do not go back to step 4.
+
+## Baseline-relative gating
+
+`docs/reference/test-baseline.md` records which tests already failed **before** this work began. "Done" gates on **no NEW failures vs that baseline** (the current failing set must be a subset of the baseline) and **no new build break** — NOT on a fully green suite. The repo may be red on arrival; pre-existing failures are not this work's responsibility and must not block the loop.
+
+A fully green suite does NOT by itself mean done: green over-mocked tests can coexist with an unwired feature. Before checking the wired-and-fed box, run the PROVENANCE GREP — for every new exported field/collaborator/config, `grep -rn <Symbol>` and confirm it is constructed/populated OUTSIDE `*_test.go` and assembled into the real composition root. Apply the PROBE to coverage: "would this test still pass if the prod input were nil?" If yes, it's green-theater. An inert/no-op path logged "acceptable" is an OPEN gap, not done.
 
 ## The Checklist (be brutally honest)
 
@@ -428,6 +446,9 @@ Ralph review files generated:
   docs/reference/gaps-identified.md
     Empty template ready
 
+  docs/reference/test-baseline.md
+    Branch-point baseline: {N} pre-existing failures recorded (gating is NEW-vs-baseline, not full-green)
+
 Want to review or edit any of the generated files before I commit?
 ```
 
@@ -440,7 +461,7 @@ If they want to review a file, show its content using the Read tool. If they mak
 Stage and commit all generated files plus any historical backups:
 
 ```bash
-git add RALPH.md docs/reference/focus-areas.md docs/reference/gaps-identified.md
+git add RALPH.md docs/reference/focus-areas.md docs/reference/gaps-identified.md docs/reference/test-baseline.md
 # Also stage historical backups if they were created
 git add docs/reference/historical/ 2>/dev/null || true
 git commit -m "chore: generate ralph review files via plan-to-ralph"
