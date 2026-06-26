@@ -95,19 +95,22 @@ You are refining code to meet a specification. The user is unavailable — do th
 
 Spec: {SPEC_FILE}
 Progress: docs/plans/{BRANCH}-ralph-status.md
+Test baseline: docs/plans/{BRANCH}-test-baseline.md (tests that already failed before this work — these do NOT block)
 
 Steps:
-1. Read the spec and progress file to understand current state
+1. Read the spec, progress file, and test baseline to understand current state
 2. Search the codebase before assuming anything is missing — do not reimplement existing code
 3. Pick the single highest-impact remaining task
 4. Implement it, keeping the change focused and testable
-5. Run tests — if they fail, fix before moving on
+5. Run tests — compare against the baseline. Fix any NEW failure (not in the baseline) and any new build break before moving on. Pre-existing baseline failures are NOT your job; do not chase a fully green suite.
 6. Update the progress file: mark completed items, add discovered work, note what's next
 7. Commit and push
 
 The code may have been drafted by another agent. Do not trust it. Verify against the spec.
 
-When all spec requirements are satisfied and tests pass, output:
+Wired-and-fed: a task is done only when its component is constructed at the REAL composition root (not just in a test) AND fed real data from a producer that exists — not nil/empty/hardcoded. For every new exported field/collaborator/config, `grep -rn <Symbol>` and confirm it is populated outside `*_test.go`. A fully green suite does NOT by itself mean done: green over-mocked tests can hide an unwired feature — probe "would this test still pass if the prod input were nil?"
+
+When all spec requirements are satisfied AND wired-and-fed AND there are no NEW test failures vs the baseline (and nothing that built at baseline is now broken), output:
 <promise>FINIT</promise>
 
 Otherwise, output:
@@ -122,17 +125,18 @@ Output exactly one tag, then stop.
 You are improving this codebase toward production quality. The user is unavailable — do the work without asking for input.
 
 Progress: docs/plans/{BRANCH}-ralph-status.md
+Test baseline: docs/plans/{BRANCH}-test-baseline.md (tests that already failed before this work — these do NOT block)
 
 Steps:
-1. Read the progress file to understand what's been done and what remains
+1. Read the progress file and test baseline to understand what's been done and what remains
 2. Search the codebase before assuming anything is missing
 3. Pick the single highest-impact improvement
 4. Implement it, keeping the change focused and testable
-5. Run tests — if they fail, fix before moving on
+5. Run tests — compare against the baseline. Fix any NEW failure (not in the baseline) and any new build break before moving on. Pre-existing baseline failures are NOT your job; do not chase a fully green suite.
 6. Update the progress file: mark completed items, add discovered work, note what's next
 7. Commit and push
 
-Do not output a <promise> tag. Continue improving until stopped.
+Keep every improvement wired-and-fed: constructed at the real composition root and fed a real producer (not nil/empty/hardcoded, not only set in tests) — a green over-mocked test can hide an unwired change. Do not output a <promise> tag. Continue improving until stopped.
 ```
 
 Write the generated prompt to `RALPH.md` in the repository root.
@@ -179,6 +183,16 @@ fi
 echo "✓ Branch not in queue"
 ```
 
+### Record the branch-point test baseline
+
+Before submitting, capture which tests **already fail right now** so the loop gates on NEW-vs-baseline rather than demanding a fully green suite. The repo MAY be red on arrival — that is fine; pre-existing failures are not this work's job.
+
+1. Run the project's test command (auto-detect it: `make test`, `npm test`, `go test ./...`, `pytest`, `cargo test`, `dotnet test`, etc.). For a mixed-language repo, run each suite.
+2. For each suite, capture whether it built/compiled, the pass/fail counts, and the stable identifier of each failing test (no timestamps/durations).
+3. Write the result to `docs/plans/{BRANCH}-test-baseline.md` — per suite: the exact command, build-ok status, pass/fail counts, and the list of pre-existing failing test ids. If a suite fails to build, note `BUILD FAILED` with a one-line summary. If no test suite exists, note that and continue.
+
+This is the file the generated RALPH.md prompt references. Pre-existing failures here are logged, not fixed, and must not block the loop. Commit this file alongside RALPH.md in Step 6.
+
 ### Local Server Detection
 
 After pre-flight checks pass, determine whether the ralph server is local.
@@ -203,10 +217,10 @@ After pre-flight checks pass, determine whether the ralph server is local.
 ## Step 6: Commit, Push, Submit
 
 ```bash
-# Commit RALPH.md if it was generated or modified
-if [ -n "$(git status --porcelain RALPH.md)" ]; then
-    git add RALPH.md
-    git commit -m "chore: add ralph review prompt"
+# Commit RALPH.md (and the recorded test baseline) if generated or modified
+if [ -n "$(git status --porcelain RALPH.md "docs/plans/${BRANCH}-test-baseline.md")" ]; then
+    git add RALPH.md "docs/plans/${BRANCH}-test-baseline.md"
+    git commit -m "chore: add ralph review prompt and test baseline"
     git push
 fi
 
