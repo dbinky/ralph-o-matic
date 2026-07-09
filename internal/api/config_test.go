@@ -214,8 +214,8 @@ func TestAPI_GetConfig_IncludesAnthropicDefaults(t *testing.T) {
 	var resp models.ServerConfigResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, models.BackendOllama, resp.DefaultBackend)
-	assert.Equal(t, "claude-sonnet-4-6-20260218", resp.Anthropic.LargeModel)
-	assert.Equal(t, "claude-sonnet-4-6-20260218", resp.Anthropic.SmallModel)
+	assert.Equal(t, "claude-sonnet-4-6", resp.Anthropic.LargeModel)
+	assert.Equal(t, "claude-sonnet-4-6", resp.Anthropic.SmallModel)
 }
 
 func TestAPI_GetConfig_NoConcurrentJobsField(t *testing.T) {

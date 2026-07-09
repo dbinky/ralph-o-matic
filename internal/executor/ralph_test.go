@@ -153,3 +153,39 @@ func TestRalphHandler_ResolveWorkDir_PathTraversal(t *testing.T) {
 	assert.Equal(t, workspacePath, result)
 	assert.NotContains(t, result, "..")
 }
+
+func TestRalphHandler_RefreshConfig(t *testing.T) {
+	t.Run("picks up config changes saved after handler creation", func(t *testing.T) {
+		database := newTestDB(t)
+		handler := NewRalphHandler(database, models.DefaultServerConfig(), "/tmp")
+
+		// Simulate PATCH /api/config: save a changed config to the database
+		// after the handler captured its startup snapshot.
+		updated := models.DefaultServerConfig()
+		updated.DefaultBackend = models.BackendAnthropic
+		updated.Anthropic.LargeModel = "claude-sonnet-4-6"
+		updated.Anthropic.SmallModel = "claude-haiku-4-5-20251001"
+		require.NoError(t, db.NewConfigRepo(database).Save(updated))
+
+		handler.refreshConfig()
+
+		assert.Equal(t, models.BackendAnthropic, handler.config.DefaultBackend)
+		assert.Equal(t, "claude-sonnet-4-6", handler.config.Anthropic.LargeModel)
+		// The executor must see the same refreshed config: BuildEnv resolves
+		// ANTHROPIC_MODEL from it when the anthropic backend is selected.
+		env := handler.executor.BuildEnv(models.BackendAnthropic, nil)
+		assert.Contains(t, env, "ANTHROPIC_MODEL=claude-sonnet-4-6")
+		assert.Contains(t, env, "ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4-5-20251001")
+	})
+
+	t.Run("keeps cached snapshot when database read fails", func(t *testing.T) {
+		database := newTestDB(t)
+		handler := NewRalphHandler(database, models.DefaultServerConfig(), "/tmp")
+		before := handler.config
+
+		database.Close()
+		handler.refreshConfig()
+
+		assert.Same(t, before, handler.config)
+	})
+}

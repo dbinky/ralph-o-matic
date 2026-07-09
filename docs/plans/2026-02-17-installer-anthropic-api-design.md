@@ -57,7 +57,7 @@ Fail early with actionable error messages if either check fails.
 
 | # | Model ID | Description |
 |---|----------|-------------|
-| 1 | `claude-opus-4-6` | Most capable, slower, higher cost |
+| 1 | `claude-opus-4-8` | Most capable, slower, higher cost |
 | 2 | `claude-sonnet-4-5-20250929` | Strong balance of quality and speed |
 | 3 | `claude-sonnet-4-5-20250929` (1M) | Extended context window |
 | 4 | Custom model ID | User types model ID |
